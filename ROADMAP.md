@@ -43,6 +43,21 @@ The main gap against the target (`TARGET.md` §"Agent context and memory").
 - Persist the sizes of the Workspace's pane grid across restarts.
 - Finish the GPUI window's parity with the Tauri one and retire `argus-desktop` (`GPUI.md`).
 
+## Panels in the grid
+
+A cell of the Workspace's grid holds a pane or a panel. `Panel::cells` admits only the browsers,
+because their tiles reflow into any room. Each other panel joins once the grid can size it.
+
+- A panel's cell reports its room, as a pane's does, so the grid's room check
+  (`workspace_grid::has_room`) counts it.
+- Each panel's own floor in the grid, beside a pane's 20 columns by 6 rows. A saved view's
+  columns, the console's terminal and an extension's page each need more than the browsers.
+- A cell's gutters tell the panel its width, and a panel that keeps its own widths (a saved view's
+  dragged columns, the console's sides) fits them to the cell rather than overflowing it.
+- The keys for a panel that types: the console and an editable view in a cell take them, and the
+  grid's focus keys reach them. Today a panel's cell never has the keys.
+- Then admit the panels one at a time: the views, a saved view, an extension's view, the console.
+
 ## Terminal client
 
 - Draw extensions (HUN-217).
