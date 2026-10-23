@@ -76,6 +76,14 @@ impl Carrier {
     /// row's own click.
     pub fn press_panel(&self, at: Point<Pixels>, panel: Panel, title: String, stage: bool, cx: &mut App) {
         let Some(work) = self.0.borrow().clone() else { return };
-        work.update(cx, |work, cx| work.press(at, Held::Panel { panel, title, stage, click: false }, cx)).ok();
+        work.update(cx, |work, cx| work.press(at, Held::Panel { panel, title, stage, click: false, review: None }, cx)).ok();
+    }
+
+    /// Follows a press of Git in the rail with no review open: carried as the changes' panel, whose
+    /// drop opens `checkout`'s review first. A press that never travels is Git's own click.
+    pub fn press_git(&self, at: Point<Pixels>, checkout: u64, cx: &mut App) {
+        let Some(work) = self.0.borrow().clone() else { return };
+        let held = Held::Panel { panel: Panel::Changes, title: "Changes".into(), stage: true, click: false, review: Some(checkout) };
+        work.update(cx, |work, cx| work.press(at, held, cx)).ok();
     }
 }

@@ -50,8 +50,10 @@ use crate::theme::Tokens;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Held {
     /// A dock tab or a single panel's head: carried to a dock or the stage.
-    /// A press that never travels is a click only on a tab, which shows it.
-    Panel { panel: Panel, title: String, stage: bool, click: bool },
+    /// A press that never travels is a click only on a tab, which shows it. `review` is the
+    /// checkout whose review a drop opens first, for Git carried from the rail with none open:
+    /// the session opens a review at once, so the panel is there for the call that places it.
+    Panel { panel: Panel, title: String, stage: bool, click: bool, review: Option<u64> },
     /// A dock's sash, grabbed `grab` pixels from the dock's edge.
     Sash { dock: Dock, grab: f32 },
     /// A pane carried by a cell's header or from the rail, to a cell, the stage or a checkout
@@ -178,11 +180,12 @@ impl WorkView {
     /// The cell a panel dropped at `at` would split off beside, as Rust tells which panels may
     /// have one. Over a cell the docks keep only a slim band at the area's edges: their full strips
     /// would cover a cell's lower and outer zones.
-    fn panel_cell(&self, panel: &Panel, title: &str, at: Point<Pixels>, cx: &App) -> Option<(Carried, Landing)> {
+    fn panel_cell(&self, panel: &Panel, title: &str, opens: bool, at: Point<Pixels>, cx: &App) -> Option<(Carried, Landing)> {
         if drop_target::in_band(at, self.work.get(), self.zoom.get()) {
             return None;
         }
-        let cells = self.heard.read(cx).docks.present.iter().any(|present| &present.panel == panel && present.cell);
+        let present = self.heard.read(cx).docks.present.iter().any(|present| &present.panel == panel && present.cell);
+        let cells = present || (opens && panel.cells());
         let carried = Carried::Panel { panel: panel.clone(), title: title.to_owned() };
         let landed = cells.then(|| self.landed(&carried, at, cx))?;
         matches!(landed, Landing::Cell { .. }).then_some((carried, landed))
@@ -252,8 +255,8 @@ impl WorkView {
         let at = self.drag.at()?;
         let (work, center) = (self.work.get(), self.center.get());
         let (title, lit) = match held {
-            Held::Panel { panel, title, .. } if self.panel_cell(panel, title, at, cx).is_some() => {
-                let (_, landed) = self.panel_cell(panel, title, at, cx)?;
+            Held::Panel { panel, title, review, .. } if self.panel_cell(panel, title, review.is_some(), at, cx).is_some() => {
+                let (_, landed) = self.panel_cell(panel, title, review.is_some(), at, cx)?;
                 (title.as_str(), preview::lit(landed, work.origin, &Spots::peek(cx), tokens))
             }
             Held::Panel { title, stage, .. } => {
@@ -293,13 +296,16 @@ impl Dragger for WorkView {
                 self.ask(Call::Docks { gesture: DockGesture::Show { panel } }, cx)
             }
             Step::Clicked(_) => {}
-            Step::Dropped(Held::Panel { panel, title, stage, .. }, at) => {
-                if let Some((carried, landed)) = self.panel_cell(&panel, &title, at, cx) {
-                    if let Some(call) = carried_call(&carried, landed) {
-                        self.ask(call, cx);
+            Step::Dropped(Held::Panel { panel, title, stage, review, .. }, at) => {
+                let call = match self.panel_cell(&panel, &title, review.is_some(), at, cx) {
+                    Some((carried, landed)) => carried_call(&carried, landed),
+                    None => self.target(at, stage).map(|target| drop_target::call(target, panel)),
+                };
+                if let Some(call) = call {
+                    if let Some(checkout) = review {
+                        self.ask(Call::OpenReview { checkout }, cx);
                     }
-                } else if let Some(target) = self.target(at, stage) {
-                    self.ask(drop_target::call(target, panel), cx);
+                    self.ask(call, cx);
                 }
             }
             Step::Dropped(Held::Sash { dock, grab }, at) => {

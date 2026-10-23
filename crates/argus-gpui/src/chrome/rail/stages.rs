@@ -21,6 +21,7 @@ use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{DockGesture, Panel};
 use crate::chrome::nav::Nav;
 use crate::keys::over::run_over;
+use crate::layout::carry::Carrier;
 use crate::kit::keycap::keycap;
 use crate::kit::tip::tip;
 use crate::review::entry::checkout_here;
@@ -53,6 +54,18 @@ impl RailView {
         };
         for call in calls.into_iter().chain(nav.call()) {
             self.caller.call(call);
+        }
+    }
+
+    /// A press of Git that may travel: the changes' panel as it is while a review is open, or one
+    /// its drop opens. History open, or no checkout to review, it is Git's click only.
+    fn carry_git(&self, event: &MouseDownEvent, held: bool, cx: &mut Context<Self>) {
+        let heard = self.heard.read(cx);
+        let open = heard.open();
+        if open.review {
+            self.carry_panel(event, &Panel::Changes, "Changes", held, cx);
+        } else if let (false, false, Some(checkout)) = (held, open.history, checkout_here(&heard.rail, self.slice.rail.cursor.pick.map(|pick| pick.checkout))) {
+            Carrier::of(cx).press_git(event.position, checkout, cx);
         }
     }
 
@@ -133,6 +146,11 @@ impl RailView {
                         }
                         this.go(nav, held, cx)
                     }))
+                    // A press that travels carries the changes beside an agent, opened for the
+                    // checkout here when no review is.
+                    .when(nav == Nav::Git, |row| {
+                        row.on_mouse_down(MouseButton::Left, cx.listener(move |this, event: &MouseDownEvent, _, cx| this.carry_git(event, held, cx)))
+                    })
                     // A press that travels carries every browser, as their panel, beside an agent.
                     .when(nav == Nav::Browsers && !slice.subs.is_empty(), |row| {
                         row.on_mouse_down(

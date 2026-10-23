@@ -116,3 +116,21 @@ fn a_cell_holding_the_changes_draws_the_review_beside_the_pane(cx: &mut TestAppC
     assert!(!has(cx, &opened, "git-strip") && !has(cx, &opened, "git-tab-changes"), "no Git stage over the pane");
     assert!(has(cx, &opened, "cell-0"), "the pane stays beside it");
 }
+
+/// Git carried from the rail with no review open opens the review of the checkout here, and the
+/// changes split off where it is let go.
+#[gpui_kit::test]
+fn the_git_item_carried_onto_a_cell_opens_the_review_there(cx: &mut TestAppContext) {
+    let opened = opened(cx, alone());
+    let cell = bounds(cx, &opened, "cell-0");
+    let near_right = point(cell.origin.x + cell.size.width - px(60.0), cell.center().y);
+    let from = centre(cx, &opened, "nav-git");
+    down(cx, &opened, from);
+    drag_to(cx, &opened, near_right);
+    assert_eq!(label(cx, &opened, "drag-ghost").as_deref(), Some("Changes"));
+    up(cx, &opened, near_right);
+    let said = asked(&opened);
+    assert_eq!(said.len(), 2, "{said:?}");
+    assert!(said[0].starts_with("OpenReview"), "the review first, so the panel is there: {said:?}");
+    assert_eq!(said[1], "Docks { gesture: Grid { panel: Changes, onto: Pane(1), zone: Right } }");
+}

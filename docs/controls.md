@@ -201,8 +201,10 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
 - **Git** opens the Changes pane in place of the pane, with History beside it. Its **Back to the
   side pane** button docks it on the right (or where it last sat); from there its dock menu moves
   it to another dock or floats it, dragging its tab onto a cell of the grid puts it beside an
-  agent's pane, and **Expand** puts it back on the stage. Beside the work it stays open while you
-  go elsewhere, and Git brings it in sight. Narrower than 760px it shows the files first, and a
+  agent's pane, and **Expand** puts it back on the stage. Dragging the sidebar's **Git** item onto
+  a pane opens the review there directly. Beside the work it stays open while you go elsewhere, and
+  Git brings it in sight. A file's **Open** reads it in the Code stage at the cursor's line; beside
+  the work the Changes pane stays where it is. Narrower than 760px it shows the files first, and a
   file's diff once you open one. Expand works the same way for any panel that can fill the stage,
   such as the browsers and extensions' views.
 - **Recent sessions**: the clock on a repository's rail row lists its agent sessions across every
@@ -214,7 +216,7 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
 
 The Code stage (`5`) reads a checkout's working tree rather than its diff: a tree of its files with
 each changed file marked and counted, one file whole with the lines it changed washed as a review washes them and a mark where lines were removed, a
-ruler beside it marking where in the whole file it changed, and that file's outline with the
+ruler beside it, and beside the editor, marking where in the whole file it changed, and that file's outline with the
 changes in it listed. A file whose only change is its line endings is not counted as changed.
 Opened from a staged review it reads the index, and from the history a commit, and says so in its
 header. `e` opens the file in your editor.
