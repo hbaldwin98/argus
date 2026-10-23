@@ -22,6 +22,7 @@ use argus_desktop_core::layout::docks::{DockGesture, Panel};
 use crate::chrome::nav::Nav;
 use crate::keys::over::run_over;
 use crate::layout::carry::Carrier;
+use crate::layout::work::Absent;
 use crate::kit::keycap::keycap;
 use crate::kit::tip::tip;
 use crate::review::entry::checkout_here;
@@ -65,7 +66,7 @@ impl RailView {
         if open.review {
             self.carry_panel(event, &Panel::Changes, "Changes", held, cx);
         } else if let (false, false, Some(checkout)) = (held, open.history, checkout_here(&heard.rail, self.slice.rail.cursor.pick.map(|pick| pick.checkout))) {
-            Carrier::of(cx).press_git(event.position, checkout, cx);
+            Carrier::of(cx).press_absent(event.position, Panel::Changes, "Changes".into(), true, Some(Absent::Review { checkout }), cx);
         }
     }
 
@@ -151,11 +152,19 @@ impl RailView {
                     .when(nav == Nav::Git, |row| {
                         row.on_mouse_down(MouseButton::Left, cx.listener(move |this, event: &MouseDownEvent, _, cx| this.carry_git(event, held, cx)))
                     })
-                    // A press that travels carries every browser, as their panel, beside an agent.
-                    .when(nav == Nav::Browsers && !slice.subs.is_empty(), |row| {
+                    // A press that travels carries every browser, as their panel, beside an agent; with
+                    // none open, a cell for the next.
+                    .when(nav == Nav::Browsers, |row| {
+                        let none = slice.subs.is_empty();
                         row.on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, _, cx| this.carry_panel(event, &Panel::Browsers, nav.label(), held, cx)),
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                                if !none {
+                                    this.carry_panel(event, &Panel::Browsers, nav.label(), held, cx);
+                                } else if !held {
+                                    Carrier::of(cx).press_absent(event.position, Panel::Browsers, nav.label().into(), false, Some(Absent::Empty), cx);
+                                }
+                            }),
                         )
                     })
                     .child(icon)

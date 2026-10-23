@@ -184,8 +184,8 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
   page through history.
 - **Stages**: `1` Workspace, `2` Feature, `3` Checkouts, `4` Console, `5` Code, `6` Browsers. The
   sidebar lists extension views and saved views after them. Drag the sidebar's **Browsers** item
-  onto a pane to watch every agent's browser beside it, in a cell of the grid; its header moves it
-  like a pane's, and its close takes it out.
+  onto a pane to watch every agent's browser beside it, in a cell of the grid; with none open yet,
+  the cell waits for the next. Its header moves it like a pane's, and its close takes it out.
 - **New** (`Ctrl-N`) opens the composer: a repository, checkout and agent, and the agent's first
   message; `Ctrl-Enter` starts it, or **Shell** starts a shell. `+` on a checkout starts a shell (`S`)
   or an agent (`A`). Drag a pane's row onto another checkout to move it there.

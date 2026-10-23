@@ -75,15 +75,24 @@ fn the_browsers_item_carried_from_the_rail_onto_a_cell_splits_them_off_there(cx:
     assert_eq!(asked(&opened), ["Docks { gesture: Grid { panel: Browsers, onto: Pane(1), zone: Bottom } }"]);
 }
 
+/// With no browser open the item still carries, to a cell that waits for the next; let go off
+/// the grid it asks for nothing, since an empty dock would show nothing.
 #[gpui_kit::test]
-fn the_browsers_item_is_carried_only_while_a_browser_is_open(cx: &mut TestAppContext) {
+fn the_browsers_item_with_none_open_carries_a_cell_for_the_next(cx: &mut TestAppContext) {
     let opened = opened(cx, alone());
-    let target = centre(cx, &opened, "cell-0");
+    let cell = bounds(cx, &opened, "cell-0");
+    let near_bottom = point(cell.center().x, cell.origin.y + cell.size.height - px(60.0));
     let from = centre(cx, &opened, "nav-browsers");
     down(cx, &opened, from);
-    drag_to(cx, &opened, target);
-    assert!(!has(cx, &opened, "drag-ghost"));
-    up(cx, &opened, target);
+    drag_to(cx, &opened, near_bottom);
+    assert_eq!(label(cx, &opened, "drag-ghost").as_deref(), Some("Browsers"));
+    up(cx, &opened, near_bottom);
+    assert_eq!(asked(&opened), ["Docks { gesture: Grid { panel: Browsers, onto: Pane(1), zone: Bottom } }"]);
+    opened.calls.borrow_mut().clear();
+    let rail = bounds(cx, &opened, "nav-git");
+    down(cx, &opened, from);
+    drag_to(cx, &opened, rail.center());
+    up(cx, &opened, rail.center());
     assert!(asked(&opened).iter().all(|call| !call.starts_with("Docks")), "{:?}", asked(&opened));
 }
 

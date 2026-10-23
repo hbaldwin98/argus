@@ -46,14 +46,23 @@ use crate::kit::drag::{self, Drag, Dragger, Step};
 use crate::theme::scale::{css, rem, zoom};
 use crate::theme::Tokens;
 
+/// A panel carried before it is there, and how its drop brings it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Absent {
+    /// Git with no review open: the drop opens `checkout`'s review first. The session opens a
+    /// review at once, so the panel is there for the call that places it.
+    Review { checkout: u64 },
+    /// The browsers with none open: only a cell takes them, to wait for the next.
+    Empty,
+}
+
 /// What is being pressed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Held {
     /// A dock tab or a single panel's head: carried to a dock or the stage.
-    /// A press that never travels is a click only on a tab, which shows it. `review` is the
-    /// checkout whose review a drop opens first, for Git carried from the rail with none open:
-    /// the session opens a review at once, so the panel is there for the call that places it.
-    Panel { panel: Panel, title: String, stage: bool, click: bool, review: Option<u64> },
+    /// A press that never travels is a click only on a tab, which shows it. `absent` is set for a
+    /// panel carried from the rail before it is there.
+    Panel { panel: Panel, title: String, stage: bool, click: bool, absent: Option<Absent> },
     /// A dock's sash, grabbed `grab` pixels from the dock's edge.
     Sash { dock: Dock, grab: f32 },
     /// A pane carried by a cell's header or from the rail, to a cell, the stage or a checkout
@@ -255,10 +264,11 @@ impl WorkView {
         let at = self.drag.at()?;
         let (work, center) = (self.work.get(), self.center.get());
         let (title, lit) = match held {
-            Held::Panel { panel, title, review, .. } if self.panel_cell(panel, title, review.is_some(), at, cx).is_some() => {
-                let (_, landed) = self.panel_cell(panel, title, review.is_some(), at, cx)?;
+            Held::Panel { panel, title, absent, .. } if self.panel_cell(panel, title, absent.is_some(), at, cx).is_some() => {
+                let (_, landed) = self.panel_cell(panel, title, absent.is_some(), at, cx)?;
                 (title.as_str(), preview::lit(landed, work.origin, &Spots::peek(cx), tokens))
             }
+            Held::Panel { title, absent: Some(Absent::Empty), .. } => (title.as_str(), None),
             Held::Panel { title, stage, .. } => {
                 let lit = self.target(at, *stage).map(|target| drop_target::preview(target, work, center, tokens));
                 (title.as_str(), lit)
@@ -296,13 +306,14 @@ impl Dragger for WorkView {
                 self.ask(Call::Docks { gesture: DockGesture::Show { panel } }, cx)
             }
             Step::Clicked(_) => {}
-            Step::Dropped(Held::Panel { panel, title, stage, review, .. }, at) => {
-                let call = match self.panel_cell(&panel, &title, review.is_some(), at, cx) {
+            Step::Dropped(Held::Panel { panel, title, stage, absent, .. }, at) => {
+                let call = match self.panel_cell(&panel, &title, absent.is_some(), at, cx) {
                     Some((carried, landed)) => carried_call(&carried, landed),
+                    None if absent == Some(Absent::Empty) => None,
                     None => self.target(at, stage).map(|target| drop_target::call(target, panel)),
                 };
                 if let Some(call) = call {
-                    if let Some(checkout) = review {
+                    if let Some(Absent::Review { checkout }) = absent {
                         self.ask(Call::OpenReview { checkout }, cx);
                     }
                     self.ask(call, cx);

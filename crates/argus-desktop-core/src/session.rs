@@ -2045,9 +2045,10 @@ impl Session {
 
     /// A panel dropped on a cell of the grid: it splits off beside that
     /// cell, out of its dock or dialog, and the Workspace comes back to show
-    /// it. A panel that may not have a cell, or is not there now, stays.
+    /// it. A panel that may not have a cell, or is not there now, stays; the
+    /// browsers with none open are a cell for the next to show in.
     fn grid_panel(&mut self, panel: &Panel, onto: &Occupant, zone: Zone) -> Result<(), workspace_grid::Refusal> {
-        if !panel.cells() || !self.present().contains(panel) {
+        if !panel.cells() || !(self.present().contains(panel) || *panel == Panel::Browsers) {
             return Ok(());
         }
         self.shown.open_panel(panel)?;
@@ -2160,14 +2161,14 @@ impl Session {
     }
 
     /// The panels that exist now: the console always, the views while an
-    /// agent has one up, the browsers while an agent has one open, and each
-    /// extension's view listed where the person is.
+    /// agent has one up, the browsers while an agent has one open or a cell
+    /// waits for one, and each extension's view listed where the person is.
     fn present(&self) -> Vec<Panel> {
         let mut present = vec![Panel::Console];
         if !self.views.is_empty() {
             present.push(Panel::Views);
         }
-        if self.browsers.any() {
+        if self.browsers.any() || self.shown.grid().holds_panel(&Panel::Browsers) {
             present.push(Panel::Browsers);
         }
         present.extend(self.extension_views.present(&self.here()));
@@ -3393,7 +3394,8 @@ impl Session {
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
         let present = self.present();
-        // A panel's cell goes with it: the last browser closing empties it.
+        // A panel's cell goes with it: the review closing empties its cell. The browsers' cell
+        // is present while it is there, waiting for the next browser.
         for panel in self.shown.grid().panels() {
             if !present.contains(&panel) {
                 self.shown.release_panel(&panel, &mut self.out);
@@ -4803,7 +4805,7 @@ mod tests {
     }
 
     #[test]
-    fn the_browsers_dropped_on_a_cell_split_off_beside_it_and_go_with_the_last_browser() {
+    fn the_browsers_dropped_on_a_cell_split_off_beside_it_and_wait_there_with_none_open() {
         let watched = |sent: &[ClientMsg]| {
             sent.iter().rev().find_map(|m| match m {
                 ClientMsg::WatchBrowsers { showing } => Some(showing.clone()),
@@ -4815,7 +4817,9 @@ mod tests {
         let mut s = session(Hello::this_build());
         s.resize(Side::Workspace, 30, 100);
         s.select(PaneId(2));
-        assert_eq!(docks(&mut s, into_grid()), Vec::<String>::new(), "no browser, no panel to drop");
+        docks(&mut s, into_grid());
+        assert!(s.shown.grid().holds_panel(&Panel::Browsers), "no browser yet, a cell waits for one");
+        s.call(Call::CloseBeside { side: Side::Beside(0) });
         assert!(!s.shown.grid().holds_panel(&Panel::Browsers));
 
         s.receive(with_tree(tree_with_browser(30)));
@@ -4844,8 +4848,9 @@ mod tests {
 
         docks(&mut s, into_grid());
         s.receive(ServerMsg::BrowserClosed { pane: PaneId(30) });
-        assert!(!s.shown.grid().holds_panel(&Panel::Browsers), "the last browser closing empties its cell");
-        assert_eq!(s.shown.grid().sides(), [Side::Workspace]);
+        assert!(s.shown.grid().holds_panel(&Panel::Browsers), "the last browser closing leaves its cell waiting for the next");
+        s.call(Call::CloseBeside { side: Side::Beside(0) });
+        assert_eq!(s.shown.grid().sides(), [Side::Workspace], "only its close takes it out");
     }
 
     #[test]
