@@ -39,7 +39,7 @@ use argus_desktop_core::code::stage::CodePage;
 use argus_desktop_core::code::steps::marks;
 use argus_desktop_core::code::vim::Shared;
 use argus_desktop_core::connection::page::{Call, Connection};
-use gpui_kit::component::input::{Editor, EditorState};
+use gpui_kit::component::input::{Editor, EditorState, RopeExt as _};
 use gpui_kit::component::v_flex;
 use gpui_kit::{div, prelude::*, Context, Entity, Focusable as _, Subscription, TestSupportExt as _, Window};
 
@@ -47,6 +47,22 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::{Edited, Heard};
 use crate::theme::Tokens;
 use session::{Key, Session};
+
+/// The editor's file in pixels: one line, what shows, the whole of it, and how far down it is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Measures {
+    pub line: f32,
+    pub viewport: f32,
+    pub content: f32,
+    pub scrolled: f32,
+}
+
+impl Measures {
+    /// Where lines `first` to `last` (from one) stand in the whole file.
+    pub fn span(&self, first: usize, last: usize) -> (f32, f32) {
+        (first.saturating_sub(1) as f32 * self.line, last.max(first) as f32 * self.line)
+    }
+}
 
 pub struct CodeEditor {
     caller: Caller,
@@ -182,6 +198,27 @@ impl CodeEditor {
 
     fn shown_state(&self) -> Option<Entity<EditorState>> {
         self.sessions.get(self.shown.as_ref()?)?.state.clone()
+    }
+
+    /// The file shown as the ruler scales it, once the editor has been laid out: lines that never
+    /// wrap, each a line high.
+    pub fn measures(&self, cx: &gpui_kit::App) -> Option<Measures> {
+        let state = self.shown_state()?;
+        let state = state.read(cx);
+        let line = f32::from(state.line_height()?);
+        let viewport = f32::from(state.text_bounds()?.size.height);
+        Some(Measures { line, viewport, content: line * state.text().lines_len() as f32, scrolled: (-f32::from(state.scroll_offset().y)).max(0.0) })
+    }
+
+    /// Scrolls the file shown to `y` from its top, keeping the sideways scroll; the editor holds
+    /// it to its ends.
+    pub fn scroll_to_px(&self, y: f32, cx: &mut gpui_kit::App) {
+        if let Some(state) = self.shown_state() {
+            state.update(cx, |state, cx| {
+                let x = state.scroll_offset().x;
+                state.set_scroll_offset(gpui_kit::point(x, gpui_kit::px(-y)), cx);
+            });
+        }
     }
 
     /// The text of the file shown, as the editor holds it.

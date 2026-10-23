@@ -4,7 +4,7 @@
 //!
 //! Marks and band are measured off the rows as the list holds them (`DiffView::rows_span`), so a
 //! removal marker or the comment box between lines moves them together rather than sliding one
-//! past the other. The arithmetic is core's (`code::ruler`); this reads the list's measures every
+//! past the other; while the editor stands in for the lines, off its lines, which never wrap. The arithmetic is core's (`code::ruler`); this reads the list's measures every
 //! frame, so a scroll by any means moves the band. A press on the band holds it there, a press
 //! elsewhere on the track centres the band on the pointer first, and the drag that follows goes the
 //! decided 5 px before it is one; a mark is a button of its own and sends the line it stands for.
@@ -18,6 +18,7 @@ use argus_desktop_core::connection::page::Call;
 use gpui_kit::{div, prelude::*, px, Bounds, Context, Entity, FocusHandle, KeyDownEvent, MouseButton, MouseDownEvent, Pixels, Role, SharedString, TestSupportExt as _, Window};
 
 use crate::connection::caller::Caller;
+use super::editor::CodeEditor;
 use crate::connection::heard::Heard;
 use crate::kit::area;
 use crate::kit::diff::DiffView;
@@ -26,10 +27,19 @@ use crate::kit::tip::tip;
 use crate::theme::scale::{pixels, rem};
 use crate::theme::Tokens;
 
+/// What the ruler is the scrollbar of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Over {
+    Lines,
+    Editor,
+}
+
 pub struct Ruler {
     heard: Entity<Heard>,
     caller: Caller,
     diff: Entity<DiffView>,
+    editor: Entity<CodeEditor>,
+    over: Over,
     marks: Vec<CodeMark>,
     /// Where the track was laid out, for the pointer's place on it and the height the file is scaled to.
     area: Rc<Cell<Bounds<Pixels>>>,
@@ -38,32 +48,55 @@ pub struct Ruler {
 }
 
 impl Ruler {
-    pub fn new(heard: Entity<Heard>, caller: Caller, diff: Entity<DiffView>, cx: &mut Context<Self>) -> Self {
-        Self { heard, caller, diff, marks: Vec::new(), area: Rc::default(), drag: Drag::new(), keys: cx.focus_handle() }
+    pub fn new(heard: Entity<Heard>, caller: Caller, diff: Entity<DiffView>, editor: Entity<CodeEditor>, cx: &mut Context<Self>) -> Self {
+        Self { heard, caller, diff, editor, over: Over::Lines, marks: Vec::new(), area: Rc::default(), drag: Drag::new(), keys: cx.focus_handle() }
     }
 
-    /// The marks the session sends, drawn only for a file with lines.
-    pub fn show(&mut self, marks: &[CodeMark], cx: &mut Context<Self>) {
-        if self.marks != marks {
+    /// The marks the session sends, over what stands for the file's lines.
+    pub fn show(&mut self, marks: &[CodeMark], over: Over, cx: &mut Context<Self>) {
+        if self.marks != marks || self.over != over {
             self.marks = marks.to_vec();
+            self.over = over;
             cx.notify();
+        }
+    }
+
+    /// How far down the file is, how much of it shows, and how tall it is, in pixels.
+    fn measures(&self, cx: &gpui_kit::App) -> (f32, f32, f32) {
+        match self.over {
+            Over::Lines => {
+                let diff = self.diff.read(cx);
+                (diff.scrolled_px(), diff.viewport_px(), diff.content_px())
+            }
+            Over::Editor => self.editor.read(cx).measures(cx).map_or((0.0, 0.0, 0.0), |m| (m.scrolled, m.viewport, m.content)),
+        }
+    }
+
+    /// Where lines `first` to `last` stand in the whole file.
+    fn span(&self, first: usize, last: usize, cx: &gpui_kit::App) -> Option<(f32, f32)> {
+        match self.over {
+            Over::Lines => self.diff.read(cx).rows_span(first, last),
+            Over::Editor => self.editor.read(cx).measures(cx).map(|m| m.span(first, last)),
         }
     }
 
     /// The band now, in the window's pixels, from the track's top.
     fn band(&self, tokens: &Tokens, window: &Window, cx: &gpui_kit::App) -> Span {
-        let diff = self.diff.read(cx);
+        let (scrolled, viewport, content) = self.measures(cx);
         let track = f32::from(self.area.get().size.height);
         let least = f32::from(pixels(tokens.ruler_view_min_h, window.rem_size()));
-        ruler::band(diff.scrolled_px(), diff.viewport_px(), track, diff.content_px(), least)
+        ruler::band(scrolled, viewport, track, content, least)
     }
 
     /// Scrolls the file as the pointer at `y` (the window's) asks, holding the band as it was held.
-    fn follow_pointer(&self, y: Pixels, hold: Hold, cx: &gpui_kit::App) {
-        let diff = self.diff.read(cx);
+    fn follow_pointer(&self, y: Pixels, hold: Hold, cx: &mut gpui_kit::App) {
+        let (_, viewport, content) = self.measures(cx);
         let top = self.area.get().origin.y;
-        let at = scrolled_to(f32::from(y - top), hold, f32::from(self.area.get().size.height), diff.content_px(), diff.viewport_px());
-        diff.scroll_to_px(at);
+        let at = scrolled_to(f32::from(y - top), hold, f32::from(self.area.get().size.height), content, viewport);
+        match self.over {
+            Over::Lines => self.diff.read(cx).scroll_to_px(at),
+            Over::Editor => self.editor.update(cx, |editor, cx| editor.scroll_to_px(at, cx)),
+        }
     }
 
     fn ask(&self, gesture: CodeGesture, cx: &gpui_kit::App) {
@@ -106,10 +139,8 @@ impl Render for Ruler {
         let tokens = *Tokens::global(cx);
         let rem_size = window.rem_size();
         let track = f32::from(self.area.get().size.height);
-        let (content, scale) = {
-            let diff = self.diff.read(cx);
-            (diff.content_px(), scale(track, diff.content_px()))
-        };
+        let (_, _, content) = self.measures(cx);
+        let scale = scale(track, content);
         let least = f32::from(pixels(tokens.ruler_mark_min_h, rem_size));
         let band = self.band(&tokens, window, cx);
         let marks: Vec<_> = self
@@ -117,7 +148,7 @@ impl Render for Ruler {
             .iter()
             .enumerate()
             .filter_map(|(at, found)| {
-                let (first, last) = self.diff.read(cx).rows_span(found.line as usize, (found.line + found.span.max(1) - 1) as usize)?;
+                let (first, last) = self.span(found.line as usize, (found.line + found.span.max(1) - 1) as usize, cx)?;
                 Some((at, found.clone(), mark(first, last, scale, least)))
             })
             .collect();

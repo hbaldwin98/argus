@@ -99,3 +99,23 @@ fn the_text_stops_short_of_the_scrollbars(cx: &mut TestAppContext) {
     assert!(text.right() <= outer.right() - bar, "the text reaches {:?}, the bar starts at {:?}", text.right(), outer.right() - bar);
     assert!(text.bottom() <= outer.bottom() - bar, "the text reaches {:?}, the bar starts at {:?}", text.bottom(), outer.bottom() - bar);
 }
+
+/// CODE-43 beside the editor: the ruler stands at the editor's side, a mark where its lines are in
+/// the whole file, and a press on one goes to its line.
+#[gpui_kit::test]
+fn the_ruler_stands_beside_the_editor_with_a_mark_where_each_change_is(cx: &mut TestAppContext) {
+    use crate::code::file::tests::{bounds_of, mark};
+    use crate::checkouts::stage::tests::click_id;
+    let page = CodePage { ruler: vec![mark(101, 40, "added")], ..changed(400, &[], &[]) };
+    let opened = with(cx, page);
+    hear(cx, &opened, vec![opened_with("src/lib.rs", &text_of(400))]);
+    settle(cx, &opened);
+    assert!(present(cx, &opened, "code-ruler"), "the editor has the ruler for its scrollbar");
+    let (track, run) = (bounds_of(cx, &opened, "code-ruler"), bounds_of(cx, &opened, ("code-mark", 0usize)));
+    let fraction = (run.origin.y - track.origin.y).as_f32() / track.size.height.as_f32();
+    assert!((fraction - 100.0 / 400.0).abs() < 0.01, "line 101 is a quarter of the way down, at {fraction}");
+    assert!((run.size.height.as_f32() / track.size.height.as_f32() - 40.0 / 400.0).abs() < 0.01, "forty lines are a tenth");
+    sent(&opened);
+    click_id(cx, &opened, ("code-mark", 0usize));
+    assert_eq!(sent(&opened), ["Code { gesture: Click { target: Go { line: 101 } } }"]);
+}

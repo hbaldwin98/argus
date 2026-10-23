@@ -7,7 +7,7 @@
 //! showing what is true. Each file is scrolled where it was last left, kept by path, since a hidden
 //! list forgets; and only a move of the cursor brings it into view, and then a third of the way down
 //! (`code::scroll`). The lines are the diff's rows in one view (`kit/diff`); while the stage edits the
-//! file, `editor` takes their place and the comment box is an in-flow block above it, with no ruler.
+//! file, `editor` takes their place, the ruler beside it, and the comment box is an in-flow block above them.
 //! A markdown file is read as a document (`rendered`) until the header's choice says Source, which
 //! this window keeps by path; the lines come back while a comment is open, since it is on them.
 
@@ -38,7 +38,7 @@ use editor::CodeEditor;
 use rendered::mode::{is_markdown, Mode, Modes};
 use rendered::choice::Choose;
 use rendered::Rendered;
-use ruler::Ruler;
+use ruler::{Over, Ruler};
 
 pub use header::bar as header;
 
@@ -70,8 +70,8 @@ impl CodeFile {
         let tokens = *Tokens::global(cx);
         let diff = cx.new(|cx| DiffView::new("code-lines", true, false, cx).reading(&tokens));
         let comment = cx.new(|cx| CommentBox::new(heard.clone(), caller.clone(), Rc::new(ways::Code), window, cx));
-        let ruler = cx.new(|cx| Ruler::new(heard.clone(), caller.clone(), diff.clone(), cx));
         let editor = cx.new(|cx| CodeEditor::new(heard.clone(), caller.clone(), window, cx));
+        let ruler = cx.new(|cx| Ruler::new(heard.clone(), caller.clone(), diff.clone(), editor.clone(), cx));
         let document = cx.new(|cx| Rendered::new(heard.clone(), caller.clone(), editor.clone(), cx));
         let pressed = cx.subscribe(&diff, |this, _, event: &DiffEvent, cx| match *event {
             // A click on a line moves the cursor to it, and Shift extends a range from where it was.
@@ -120,7 +120,8 @@ impl CodeFile {
         } else {
             self.editor.update(cx, |editor, cx| editor.leave(cx));
         }
-        self.ruler.update(cx, |ruler, cx| ruler.show(if lines { &page.ruler } else { &[] }, cx));
+        let over = if editing { Over::Editor } else { Over::Lines };
+        self.ruler.update(cx, |ruler, cx| ruler.show(if lines || editing { &page.ruler } else { &[] }, over, cx));
         let key = cursor_key(page.path.as_deref(), page.at);
         if key != self.cursor {
             self.cursor = key;
@@ -168,7 +169,13 @@ impl CodeFile {
                 .size_full()
                 .min_h_0()
                 .when(page.comment.is_some(), |wrap| wrap.child(div().id("code-comment").test_support().flex_shrink_0().px(rem(tokens.sp_12)).py(rem(tokens.sp_8)).border_b_1().border_color(tokens.line).bg(tokens.bg_sunken).child(self.comment.clone())))
-                .child(div().flex_1().min_h_0().child(self.editor.clone()))
+                .child(
+                    h_flex()
+                        .flex_1()
+                        .min_h_0()
+                        .child(div().flex_1().min_w_0().h_full().child(self.editor.clone()))
+                        .when(!page.lines.is_empty(), |wrap| wrap.child(self.ruler.clone())),
+                )
                 .into_any_element(),
             Area::Lines => h_flex()
                 .id("code-wrap")
