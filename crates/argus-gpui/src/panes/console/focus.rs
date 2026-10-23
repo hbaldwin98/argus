@@ -2,12 +2,13 @@
 //! focus follows it.
 //!
 //! The keys are the session's: its `typing` says which side has them, and the focus follows that,
-//! from where the keys already were in the Workspace's pane or a console screen. A rail pick or a
-//! text field that has them keeps them.
+//! from where the keys already were in the Workspace's pane, a console screen or an extension's
+//! console view. A rail pick or a text field that has them keeps them.
 
 use gpui_kit::{App, Context, FocusHandle, Window};
 
 use super::ConsoleView;
+use crate::extensions::bodies::Bodies;
 
 impl ConsoleView {
     /// The handle of the screen that has the console's keys, if a console does.
@@ -33,7 +34,8 @@ impl ConsoleView {
         }
         self.typed = keyed.clone();
         let (first, second) = (self.first.read(cx).focus_handle().clone(), self.second.read(cx).focus_handle().clone());
-        let in_panes = window.focused(cx).is_none_or(|held| held == self.stage || held == first || held == second);
+        let bodies = Bodies::of(cx);
+        let in_panes = window.focused(cx).is_none_or(|held| held == self.stage || held == first || held == second || bodies.holds_screen(&held, cx));
         if in_panes {
             window.focus(&keyed.unwrap_or_else(|| self.stage.clone()), cx);
         }

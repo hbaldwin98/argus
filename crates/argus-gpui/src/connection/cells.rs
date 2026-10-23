@@ -39,10 +39,10 @@ impl Heard {
     }
 
     /// Whether `side` is a cell of the grid that has the keys now. The Workspace's own cell has
-    /// them unless the keys are on a split or typing in a console.
+    /// them unless the keys are on a split, typing in a console, or in an extension's console view.
     pub fn cell_has_keys(&self, side: Side) -> bool {
         match side {
-            Side::Workspace => self.console.typing.is_none() && self.rail.row.keyed.is_none_or(|cell| cell == 0),
+            Side::Workspace => self.console.typing.is_none() && !self.view_has_keys() && self.rail.row.keyed.is_none_or(|cell| cell == 0),
             Side::Beside(n) => self.rail.row.keyed == Some(n + 1),
             _ => false,
         }

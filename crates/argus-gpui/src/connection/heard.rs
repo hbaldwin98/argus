@@ -482,6 +482,12 @@ impl Heard {
         self.extension_tables.iter().filter_map(|table| table.console.as_ref()).find(|console| console.side == Some(side))
     }
 
+    /// Whether an extension's console view has the keys: no cell of the grid has them then, though
+    /// the rail numbers none, as it numbers none while a console side types.
+    pub fn view_has_keys(&self) -> bool {
+        self.extension_tables.iter().filter_map(|table| table.console.as_ref()).any(|console| console.keyed)
+    }
+
     /// Whether the console says its keys are in `pane`.
     pub fn keyed(&self, pane: Option<u64>) -> bool {
         pane.is_some() && self.console.typing == pane

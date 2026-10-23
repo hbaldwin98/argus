@@ -4,20 +4,23 @@
 //! A browser's cell has its own page's focus in place of a screen's. The Workspace's own screen is where the rest of the window hands the keys back to (the rail on
 //! Enter, a dialog closing, the console letting its panes go), so a focus that lands on it while a
 //! split has the keys is sent on to that split. A rail pick, a text field or a dialog that has the
-//! keys keeps them: the focus moves only from where the panes already had it.
+//! keys keeps them: the focus moves only from where the panes already had it, an extension's console
+//! view among them. While that view has the keys no cell does, and it takes the focus itself.
 
 use gpui_kit::{Context, Entity, Subscription, Window};
 
 use super::SplitView;
+use crate::extensions::bodies::Bodies;
 use crate::panes::terminal::Terminal;
 
-/// The cell the focus was last put on, to move it only when the session moves the keys.
+/// Where the keys were last seen, to move the focus only when the session moves them: a cell, or
+/// off the grid in an extension's console view.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Keys(Option<u8>);
+pub struct Keys(Option<Option<u8>>);
 
 impl Keys {
-    /// Notes that the keys are in `cell` now; whether that is a move.
-    pub fn moved(&mut self, cell: u8) -> bool {
+    /// Notes that the keys are in `cell` now, `None` for off the grid; whether that is a move.
+    pub fn moved(&mut self, cell: Option<u8>) -> bool {
         let moved = self.0 != Some(cell);
         self.0 = Some(cell);
         moved
@@ -48,15 +51,17 @@ impl SplitView {
     pub(super) fn follow_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (cell, typing) = {
             let heard = self.heard.read(cx);
-            (heard.keyed_cell().unwrap_or(0), heard.console.typing.is_some())
+            ((!heard.view_has_keys()).then(|| heard.keyed_cell().unwrap_or(0)), heard.console.typing.is_some())
         };
         if !self.keys.moved(cell) || typing {
             return;
         }
+        let Some(cell) = cell else { return };
         let cells = 1 + self.beside.len();
         let held = window.focused(cx);
+        let bodies = Bodies::of(cx);
         let screens = std::iter::once(&self.workspace).chain(&self.beside).map(|screen| screen.read(cx).focus_handle().clone());
-        let in_panes = held.as_ref().is_none_or(|held| (0..cells as u8).any(|n| self.handle_of(n, cx).as_ref() == Some(held)) || screens.into_iter().any(|screen| screen == *held));
+        let in_panes = held.as_ref().is_none_or(|held| (0..cells as u8).any(|n| self.handle_of(n, cx).as_ref() == Some(held)) || screens.into_iter().any(|screen| screen == *held) || bodies.holds_screen(held, cx));
         if !in_panes {
             return;
         }
@@ -73,10 +78,12 @@ mod tests {
     #[test]
     fn the_focus_moves_when_the_keys_do_and_not_when_they_stay() {
         let mut keys = Keys::default();
-        assert!(keys.moved(0), "the first word is a move");
-        assert!(!keys.moved(0));
-        assert!(keys.moved(2));
-        assert!(!keys.moved(2));
-        assert!(keys.moved(0));
+        assert!(keys.moved(Some(0)), "the first word is a move");
+        assert!(!keys.moved(Some(0)));
+        assert!(keys.moved(Some(2)));
+        assert!(!keys.moved(Some(2)));
+        assert!(keys.moved(Some(0)));
+        assert!(keys.moved(None), "off the grid is a move");
+        assert!(keys.moved(Some(0)), "and so is coming back to the cell they left");
     }
 }

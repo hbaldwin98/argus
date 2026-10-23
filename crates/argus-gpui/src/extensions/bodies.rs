@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use argus_desktop_core::layout::docks::Panel;
-use gpui_kit::{prelude::*, AnyView, App, Entity, Global, Window};
+use gpui_kit::{prelude::*, AnyView, App, Entity, FocusHandle, Global, Window};
 
 use super::view::ExtensionView;
 use crate::connection::caller::Caller;
@@ -49,6 +49,12 @@ impl Bodies {
     pub fn page(&self, heard: &Entity<Heard>, caller: &Caller, window: &mut Window, cx: &mut App) -> Option<AnyView> {
         let panel = heard.read(cx).extension_tables.iter().find(|table| table.page).map(|table| table.panel.clone())?;
         self.view(&panel, heard, caller, window, cx).map(Into::into)
+    }
+
+    /// Whether `handle` is the screen of a console view, which the panes' focus moves on from when the
+    /// session gives the keys back to a pane.
+    pub fn holds_screen(&self, handle: &FocusHandle, cx: &App) -> bool {
+        self.0.borrow().iter().filter_map(|(_, view)| view.read(cx).console.terminal().cloned()).any(|terminal| terminal.read(cx).focus_handle() == handle)
     }
 
     /// The view whose body has the keys, if one does: a click in it gave them.
