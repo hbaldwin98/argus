@@ -45,8 +45,9 @@ The main gap against the target (`TARGET.md` §"Agent context and memory").
 
 ## Panels in the grid
 
-A cell of the Workspace's grid holds a pane or a panel. `Panel::cells` admits only the browsers,
-because their tiles reflow into any room. Each other panel joins once the grid can size it.
+A cell of the Workspace's grid holds a pane or a panel. `Panel::cells` admits the browsers, whose
+tiles reflow into any room, and the changes, which lay themselves out by their own width. Each
+other panel joins once the grid can size it.
 
 - A panel's cell reports its room, as a pane's does, so the grid's room check
   (`workspace_grid::has_room`) counts it.
@@ -57,6 +58,18 @@ because their tiles reflow into any room. Each other panel joins once the grid c
 - The keys for a panel that types: the console and an editable view in a cell take them, and the
   grid's focus keys reach them. Today a panel's cell never has the keys.
 - Then admit the panels one at a time: the views, a saved view, an extension's view, the console.
+
+## Float anything
+
+Anything on screen docks, floats or sits in a cell: today a panel can, if it `floats`, and a pane
+cannot. The person wants agents' panes, the browsers and every panel to float as the changes do.
+
+- Every panel floats: drop `Panel::floats`' exceptions once each body is drawn well at a dialog's
+  size (the console's terminal and the views are the ones left).
+- A pane in a dialog: a dialog that holds an `Occupant::Pane`, reporting its room as a cell does,
+  so the pane's program is sized to the dialog, and taking the keys when pressed.
+- One carry for all: a pane's header, a cell's header and a dock's tab each drag to a dock, onto
+  a cell, or out over the stage to float, as the browsers' tab does today.
 
 ## Terminal client
 
