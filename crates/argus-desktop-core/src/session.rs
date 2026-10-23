@@ -4232,8 +4232,10 @@ mod tests {
         assert!(s.stages.now() == Stage::Checkouts, "over the stage it was opened over");
     }
 
-    /// The Files tab lists the checkout, reads a file with no change whole,
-    /// and gives way to a change opened; Open reads the file read in Code.
+    /// The Files tab lists the checkout as the review opens, with no press of
+    /// the tab (one left shown from the last review has none to ask with),
+    /// and again when it is shown; reads a file with no change whole, and
+    /// gives way to a change opened; Open reads the file read in Code.
     #[test]
     fn the_files_tab_lists_the_checkout_and_reads_an_unchanged_file_whole() {
         use argus_protocol::{CodeFile, CodeLine, CodeTree};
@@ -4248,14 +4250,21 @@ mod tests {
         let [ClientMsg::Review { request_id: unstaged, .. }, ..] = sent.as_slice() else {
             panic!("{:?}", names(&sent));
         };
+        let Some(ClientMsg::ListCode { request_id: opened, version: CodeVersion::WorkingTree, .. }) = sent.iter().find(|msg| matches!(msg, ClientMsg::ListCode { .. })) else {
+            panic!("listed as it opens: {:?}", names(&sent));
+        };
+        let opened = *opened;
         s.receive(reviewed(argus_protocol::ReviewBase::Unstaged, *unstaged));
-        assert!(review(&mut s).and_then(|page| page.tree).is_some_and(|tree| !tree.listed), "offered, not yet listed");
+        assert!(review(&mut s).and_then(|page| page.tree).is_some_and(|tree| !tree.listed && tree.loading), "asked, not yet listed");
+        let tree = |request_id: u64, files: &[String]| ServerMsg::CodeTree(CodeTree { request_id, checkout: CheckoutId(100), version: CodeVersion::WorkingTree, files: files.to_vec(), changes: Vec::new() });
+        s.receive(tree(opened, &["README.md".to_owned()]));
+        assert!(review(&mut s).and_then(|page| page.tree).is_some_and(|tree| tree.listed && !tree.loading), "the list in with no press of the tab");
         let sent = s.call(Call::ReviewFiles);
         let [ClientMsg::ListCode { request_id, version: CodeVersion::WorkingTree, .. }] = sent.as_slice() else {
             panic!("{:?}", names(&sent));
         };
         let files = vec!["README.md".to_owned(), "src/brief.rs".to_owned()];
-        s.receive(ServerMsg::CodeTree(CodeTree { request_id: *request_id, checkout: CheckoutId(100), version: CodeVersion::WorkingTree, files: files.clone(), changes: Vec::new() }));
+        s.receive(tree(*request_id, &files));
         assert_eq!(review(&mut s).and_then(|page| page.tree).map(|tree| tree.files), Some(files), "the Code stage passed on what it did not ask for");
 
         let sent = s.call(Call::ReviewRead { path: "README.md".into() });

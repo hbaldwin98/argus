@@ -1,6 +1,7 @@
 //! The checkout's files as the Changes pane's Files tab reads them: every file of the working tree,
-//! listed each time the tab is shown, and one file read whole. A changed file opens as its change
-//! does, so only a file the review has no diff of is read here; opening a change puts it away.
+//! listed as the review opens and again each time the tab is shown, and one file read whole. A
+//! changed file opens as its change does, so only a file the review has no diff of is read here;
+//! opening a change puts it away.
 //!
 //! The list and the file are the Code stage's asks (`ListCode`, `ReadCode`), answered by request
 //! id, so an answer to an older ask is dropped and the list on screen stays until the next is in.

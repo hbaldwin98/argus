@@ -62,6 +62,11 @@ impl ReviewDialog {
         if abilities.drafts {
             msgs.push(dialog.drafts.list(checkout.id, id()));
         }
+        // Listed now, not when the tab is first shown: the tab counts the files, and a tab left
+        // shown from the last review has no press to ask with.
+        if abilities.files {
+            msgs.extend(dialog.list_files(id()));
+        }
         (dialog, msgs)
     }
 
