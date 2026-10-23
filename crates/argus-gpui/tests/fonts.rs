@@ -2,7 +2,9 @@
 //!
 //! GPUI's test platform has a no-op text system, so this runs the real
 //! platform's, as `examples/screenshot.rs` does; no window is opened. It is
-//! the only test here, because one process can start the application once.
+//! the only test here, because one process can start the application once,
+//! and it has no harness (`Cargo.toml`): macOS starts the platform only on the
+//! main thread, where the harness never runs a test.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -12,8 +14,7 @@ use argus_gpui::kit::fonts::SYMBOLS;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{font, px};
 
-#[test]
-fn the_pages_families_load_and_the_theme_names_them() {
+fn main() {
     let outcome: Rc<RefCell<Option<Result<(), String>>>> = Rc::new(RefCell::new(None));
     let sink = outcome.clone();
     argus_gpui::window::application().run(move |cx| {
@@ -23,6 +24,7 @@ fn the_pages_families_load_and_the_theme_names_them() {
     });
     let outcome = outcome.borrow_mut().take();
     outcome.expect("the application quit before the check ran").unwrap();
+    println!("test the_pages_families_load_and_the_theme_names_them ... ok");
 }
 
 fn check(cx: &gpui_kit::App) -> Result<(), String> {
