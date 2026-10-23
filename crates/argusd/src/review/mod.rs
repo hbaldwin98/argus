@@ -3,4 +3,5 @@
 //! `connection::dispatch`'s.
 
 pub mod diff;
+pub mod picked;
 pub mod queue;

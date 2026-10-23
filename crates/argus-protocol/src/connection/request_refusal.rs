@@ -74,7 +74,10 @@ impl Asked {
             | M::AddRepository { request_id, .. }
             | M::InitRepository { request_id, .. }
             | M::ResumeSession { request_id, .. } => (*request_id, false, Older::Made),
-            M::Feature { request_id, .. } | M::ReviewComment { request_id, .. } => (*request_id, false, Older::Error),
+            M::Feature { request_id, .. }
+            | M::ReviewComment { request_id, .. }
+            | M::Stage { request_id, .. }
+            | M::Commit { request_id, .. } => (*request_id, false, Older::Error),
             M::Review { request_id, checkout, .. } => (*request_id, true, Older::Review(*checkout)),
             M::ReviewContext { request_id, checkout, .. } => (*request_id, true, Older::ReviewContext(*checkout)),
             M::ListCode { request_id, checkout, .. }

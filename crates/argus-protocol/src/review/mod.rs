@@ -7,6 +7,7 @@ pub mod agent_comment;
 pub mod captures;
 pub mod history_view;
 pub mod session;
+pub mod staging;
 pub mod view;
 
 use serde::{Deserialize, Serialize};

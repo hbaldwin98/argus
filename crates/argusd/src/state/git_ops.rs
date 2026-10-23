@@ -1,7 +1,7 @@
 //! Everything that changes a repository: branch switches, worktrees,
 //! fetch and pull.
 //!
-//! These are the daemon's only writes to Git, and unlike the read-only
+//! These and `index_writes`' are the daemon's only writes to Git, and unlike the read-only
 //! observation in `git` they shell out to the `git` executable — a
 //! refusal from git is the message the user should see, and reproducing
 //! its rules in `git2` calls would only be a second place to get them
@@ -17,12 +17,25 @@ use super::*;
 
 /// Runs git in `dir` and turns a non-zero exit into git's own message.
 /// Anything the user is going to have to act on is already in there.
-async fn run_git(dir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
-    let output = crate::system::command::git()
+pub(super) async fn run_git(dir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
+    run_git_fed(dir, args, None).await
+}
+
+/// [`run_git`] with `input` on git's standard input, for what is too long
+/// or too free to pass as an argument: a commit message.
+pub(super) async fn run_git_fed(dir: &std::path::Path, args: &[&str], input: Option<&[u8]>) -> anyhow::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let mut child = crate::system::command::git()
         .args(args)
         .current_dir(dir)
-        .output()
-        .await?;
+        .stdin(if input.is_some() { std::process::Stdio::piped() } else { std::process::Stdio::null() })
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+        stdin.write_all(input).await?;
+    }
+    let output = child.wait_with_output().await?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -40,7 +53,7 @@ impl Daemon {
     /// What every write to a repository owes the clients afterwards: this
     /// checkout's own status, the repository's branch lists (a switch or a
     /// delete moves a name between "occupied" and "free"), and a tree.
-    fn after_git_write(&self, checkout: CheckoutId) {
+    pub(super) fn after_git_write(&self, checkout: CheckoutId) {
         self.refresh_checkout_git(checkout);
         self.refresh_branches();
         self.broadcast_tree();

@@ -3,6 +3,7 @@
 
 mod board_rules;
 mod branches;
+mod index_writes;
 mod browsers;
 mod extension_consoles;
 mod extensions;

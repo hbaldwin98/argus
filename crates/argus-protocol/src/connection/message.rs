@@ -19,6 +19,7 @@ use crate::connection::hello::Hello;
 use crate::panes::keys::KeyboardMode;
 use crate::tree::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext};
+use crate::review::staging::IndexChange;
 use crate::board::diagrams::{DiagramAction, DiagramList};
 use crate::agents::sessions::{Resume, Session};
 use crate::agents::transcript::Conversation;
@@ -292,6 +293,24 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         harness: String,
         session_id: String,
+    },
+    /// Writes `change` to the checkout's index at once. Answered with
+    /// [`ServerMsg::Written`] under `request_id`, or refused by it; the
+    /// tree's next `changes` says the review moved. Only to a daemon that
+    /// listed `INDEX_WRITES`.
+    Stage {
+        request_id: u64,
+        checkout: CheckoutId,
+        change: IndexChange,
+    },
+    /// Commits what the index holds with the person's own `git commit`, so
+    /// their hooks, signing and identity apply. Answered with
+    /// [`ServerMsg::Written`] under `request_id`, or refused with what git
+    /// said. Only to a daemon that listed `INDEX_WRITES`.
+    Commit {
+        request_id: u64,
+        checkout: CheckoutId,
+        message: String,
     },
     /// Persist a review comment, then notify the selected live agent.
     /// Answered with [`ServerMsg::ReviewCommentSaved`] under `request_id`,
@@ -795,6 +814,11 @@ pub enum ServerMsg {
         checkout: CheckoutId,
         message: String,
     },
+    /// A change a client asked for by `request_id` was made: what moved is
+    /// for the tree and the next review to say.
+    Written {
+        request_id: u64,
+    },
     /// The durable write succeeded. Delivery only describes the immediate
     /// terminal notification; an undelivered comment remains readable.
     ReviewCommentSaved {
@@ -1219,6 +1243,33 @@ mod tests {
                 if body == "tidy"),
             "{read:?}"
         );
+    }
+
+    #[test]
+    fn a_pick_of_lines_and_a_commit_cross_the_wire_whole() {
+        use crate::review::staging::PickedLine;
+        use crate::review::LineKind;
+        let sent = [
+            ClientMsg::Stage {
+                request_id: 4,
+                checkout: CheckoutId(2),
+                change: IndexChange::Lines {
+                    from: ReviewBase::Staged,
+                    path: "src/a b.rs".into(),
+                    lines: vec![PickedLine { kind: LineKind::Removed, lineno: 9, text: "  let x;".into() }],
+                },
+            },
+            ClientMsg::Stage { request_id: 5, checkout: CheckoutId(2), change: IndexChange::Unstage { paths: vec!["a".into()] } },
+            ClientMsg::Commit { request_id: 6, checkout: CheckoutId(2), message: "Say why
+
+body".into() },
+        ];
+        for msg in sent {
+            let read: ClientMsg = rmp_serde::from_slice(&wire(&msg)).unwrap();
+            assert_eq!(format!("{read:?}"), format!("{msg:?}"));
+        }
+        let read: ServerMsg = rmp_serde::from_slice(&wire(&ServerMsg::Written { request_id: 6 })).unwrap();
+        assert!(matches!(read, ServerMsg::Written { request_id: 6 }));
     }
 
     #[test]

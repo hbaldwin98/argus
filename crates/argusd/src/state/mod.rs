@@ -39,6 +39,7 @@ mod extensions;
 mod views;
 mod git_ops;
 mod git_reads;
+mod index_writes;
 mod panel;
 mod panes;
 pub(crate) mod processes;

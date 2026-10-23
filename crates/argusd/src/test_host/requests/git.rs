@@ -2,7 +2,7 @@
 //! its review and history, its files and their search, and the agent
 //! sessions recorded against it.
 
-use argus_protocol::{ClientMsg, CodeVersion, ReviewAnchor, ReviewBase, SearchOptions, TextChange};
+use argus_protocol::{ClientMsg, CodeVersion, IndexChange, LineKind, PickedLine, ReviewAnchor, ReviewBase, SearchOptions, TextChange};
 use proptest::prelude::*;
 
 use super::values::{checkout, checkout_path, commit, maybe_text, pane, repository, request_id, text};
@@ -207,6 +207,27 @@ pub fn delete_branch(k: &Known) -> BoxedStrategy<ClientMsg> {
 
 /// The fixture has no remote, so a fetch or a pull is Git's refusal, run
 /// for real against a repository nothing else uses.
+pub fn stage(k: &Known) -> BoxedStrategy<ClientMsg> {
+    let paths = proptest::collection::vec(checkout_path(k), 0..3);
+    let kind = prop_oneof![Just(LineKind::Added), Just(LineKind::Removed), Just(LineKind::Context)];
+    let picked = (kind, line(), text()).prop_map(|(kind, lineno, text)| PickedLine { kind, lineno, text });
+    let change = prop_oneof![
+        paths.clone().prop_map(|paths| IndexChange::Stage { paths }),
+        paths.prop_map(|paths| IndexChange::Unstage { paths }),
+        (base(), checkout_path(k), proptest::collection::vec(picked, 0..4))
+            .prop_map(|(from, path, lines)| IndexChange::Lines { from, path, lines }),
+    ];
+    (request_id(), checkout(k), change)
+        .prop_map(|(request_id, checkout, change)| ClientMsg::Stage { request_id, checkout, change })
+        .boxed()
+}
+
+pub fn commit_index(k: &Known) -> BoxedStrategy<ClientMsg> {
+    (request_id(), checkout(k), text())
+        .prop_map(|(request_id, checkout, message)| ClientMsg::Commit { request_id, checkout, message })
+        .boxed()
+}
+
 pub fn fetch(k: &Known) -> BoxedStrategy<ClientMsg> {
     checkout(k).prop_map(|checkout| ClientMsg::Fetch { checkout }).boxed()
 }

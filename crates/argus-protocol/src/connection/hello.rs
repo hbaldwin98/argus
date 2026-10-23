@@ -46,6 +46,7 @@ pub const CAPABILITIES: &[&str] = &[
     REQUEST_REFUSALS,
     BROWSERS,
     BROWSER_POINTER,
+    INDEX_WRITES,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
@@ -156,6 +157,11 @@ pub const CODE_EDIT: &str = "code-edit";
 /// A checkout's folders as they are on disk: `ClientMsg::ListDir` from a
 /// client, `ServerMsg::CheckoutDir` and its refusals from the daemon.
 pub const FILES: &str = "files";
+
+/// `ClientMsg::Stage` and `ClientMsg::Commit`, answered by
+/// `ServerMsg::Written`: the index taken whole files or picked lines, and a
+/// commit made of it.
+pub const INDEX_WRITES: &str = "index-writes";
 
 /// `ServerMsg::Refused`: a refusal of a request that named itself, by its
 /// id, in place of `Created` with nothing and an `Error`, or the request's

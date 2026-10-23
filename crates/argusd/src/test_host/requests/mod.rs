@@ -101,7 +101,7 @@ kinds! {
     SpawnConsole, Kill, RenamePane, MoveToCheckout, CreateWorktree, RemoveCheckout, OpenWorkspace,
     CreateWorkspace, Review, ReviewContext, ListCode, ReadCode, SearchCode, OpenEdit, Edit, CloseEdit,
     ListDir, ListCommits,
-    ListCommitFiles, ListSessions, ReadSession, ListResumes, ResumeSession, ReviewComment,
+    ListCommitFiles, ListSessions, ReadSession, ListResumes, ResumeSession, ReviewComment, Stage, Commit,
     GetDecisions, Feature, TrackerMap, Reconcile, Task, Decide, ChangeDecision, SequenceDiagram,
     ListBranches, ListFiles, SwitchBranch, CreateBranch, DeleteBranch, Fetch, Pull, OpenInEditor,
     RemoveProject, RemoveRepository, AddProject, PreviewProject, ListDirectories, AddRepository,
@@ -147,6 +147,8 @@ pub fn kind(msg: &ClientMsg) -> Kind {
         M::ListResumes { .. } => Kind::ListResumes,
         M::ResumeSession { .. } => Kind::ResumeSession,
         M::ReviewComment { .. } => Kind::ReviewComment,
+        M::Stage { .. } => Kind::Stage,
+        M::Commit { .. } => Kind::Commit,
         M::GetDecisions { .. } => Kind::GetDecisions,
         M::Feature { .. } => Kind::Feature,
         M::TrackerMap { .. } => Kind::TrackerMap,
@@ -230,6 +232,8 @@ pub fn generate(kind: Kind, k: &Known) -> BoxedStrategy<ClientMsg> {
         K::ListResumes => git::list_resumes(),
         K::ResumeSession => git::resume_session(k),
         K::ReviewComment => git::review_comment(k),
+        K::Stage => git::stage(k),
+        K::Commit => git::commit_index(k),
         K::ListBranches => git::list_branches(k),
         K::ListFiles => git::list_files(k),
         K::SwitchBranch => git::switch_branch(k),
@@ -310,6 +314,8 @@ pub fn request_id_mut(msg: &mut ClientMsg) -> Option<&mut u64> {
         | M::ListResumes { request_id }
         | M::ResumeSession { request_id, .. }
         | M::ReviewComment { request_id, .. }
+        | M::Stage { request_id, .. }
+        | M::Commit { request_id, .. }
         | M::Feature { request_id, .. }
         | M::OpenInEditor { request_id, .. }
         | M::AddProject { request_id, .. }

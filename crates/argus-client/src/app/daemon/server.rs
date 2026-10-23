@@ -367,6 +367,8 @@ impl App {
             // Sent only to a client that listed `BROWSERS`, which the
             // terminal does not: it has no way to draw a picture.
             ServerMsg::BrowserPage(_) | ServerMsg::BrowserFrame(_) | ServerMsg::BrowserClosed { .. } | ServerMsg::BrowserCursor { .. } => {}
+            // Answers `Stage` and `Commit`, which the terminal never sends.
+            ServerMsg::Written { .. } => {}
             ServerMsg::Stopping => self.should_quit = true,
         }
     }

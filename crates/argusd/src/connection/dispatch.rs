@@ -365,6 +365,12 @@ pub(super) fn dispatch(
                 move |d| async move { d.pull(checkout).await },
             )
         }
+        ClientMsg::Stage { request_id, checkout, change } => {
+            spawn_written(daemon, &reply, request_id, move |d| async move { d.stage(checkout, change).await })
+        }
+        ClientMsg::Commit { request_id, checkout, message } => {
+            spawn_written(daemon, &reply, request_id, move |d| async move { d.commit(checkout, &message).await })
+        }
         ClientMsg::DeleteBranch {
             checkout,
             branch,
@@ -806,6 +812,25 @@ where
     tokio::spawn(async move {
         if let Err(error) = work(daemon).await {
             reply.refuse(&error);
+        }
+    });
+    Ok(())
+}
+
+/// [`spawn_reporting`] for a change that named itself: its client is told
+/// it was made.
+fn spawn_written<F, Fut>(daemon: &Arc<Daemon>, reply: &Reply, request_id: u64, work: F) -> anyhow::Result<()>
+where
+    F: FnOnce(Arc<Daemon>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = anyhow::Result<()>> + Send,
+{
+    let daemon = daemon.clone();
+    let reply = reply.clone();
+    tokio::spawn(async move {
+        match work(daemon).await {
+            Ok(()) if request_id != 0 => reply.send(ServerMsg::Written { request_id }),
+            Ok(()) => {}
+            Err(error) => reply.refuse(&error),
         }
     });
     Ok(())
