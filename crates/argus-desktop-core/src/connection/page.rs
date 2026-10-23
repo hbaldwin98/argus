@@ -22,6 +22,8 @@ use crate::checkouts::table::Checkouts;
 use crate::code::edit::{EditEvent, EditGesture};
 use crate::code::stage::{CodeGesture, CodePage};
 use crate::review::comment_box::CommentPage;
+use crate::review::drafts::{DraftGesture, DraftsPage};
+use crate::review::staging::{ReviewSection, StageGesture, StagingPage};
 use crate::panes::console::{ConsoleGesture, ConsolePage};
 use crate::layout::docks::{DockGesture, DocksPage, Panel};
 use crate::extensions::dialog::ExtDialogPage;
@@ -185,6 +187,16 @@ pub enum Call {
     /// Sends the comment, or with no `body` puts the box away.
     ReviewComment { body: Option<String> },
     ReviewJump { gesture: ReviewJumpGesture },
+    /// A file of one of the Changes pane's lists, on the side it is listed on.
+    OpenChange { staged: bool, path: String },
+    /// A changed line's box, a file moved between lists, or a hunk taken.
+    Stage { gesture: StageGesture },
+    /// What is staged, committed with this message.
+    Commit { message: String },
+    /// The comment box's words, added to the review being written.
+    DraftComment { body: String },
+    /// A draft edited or deleted, or the review discarded or sent.
+    Drafts { gesture: DraftGesture },
     OpenHistory { checkout: u64 },
     /// A key of the history dialog, or with `row` a click on a row.
     HistoryAction { action: Action, row: Option<usize> },
@@ -1592,6 +1604,13 @@ pub struct ReviewPage {
     pub comment: Option<CommentPage>,
     /// The Ctrl-P field over the file list, while it is open.
     pub jump: Option<ReviewJump>,
+    /// The Changes pane's lists, both sides at once; empty for a commit.
+    pub sections: Vec<ReviewSection>,
+    /// Lines can be ticked into the index, and what is staged committed:
+    /// the daemon writes it and the review is of working changes.
+    pub staging: Option<StagingPage>,
+    /// The review being written, when the daemon keeps drafts.
+    pub drafts: Option<DraftsPage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -371,6 +371,12 @@ impl ReviewSession {
         self.side(self.base).failed.as_deref()
     }
 
+    /// The diff of `base`, on screen or not, once it has arrived: what the
+    /// Changes pane lists both sides' files from.
+    pub fn view_of(&self, base: ReviewBase) -> Option<&ReviewView> {
+        self.side(base).view.as_ref()
+    }
+
     /// How many files `base` changed, once it has said.
     pub fn files(&self, base: ReviewBase) -> Option<usize> {
         self.side(base).view.as_ref().map(|v| v.review.files.len())

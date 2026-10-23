@@ -334,6 +334,10 @@ impl Session {
         self.code.forget_sent_comment();
         self.code.set_can_edit(self.status.daemon_can(argus_protocol::CODE_EDIT));
         self.dialogs.forget_sent_comments();
+        self.dialogs.set_abilities(crate::review::dialog::Abilities {
+            index_writes: self.status.daemon_can(argus_protocol::connection::hello::INDEX_WRITES),
+            drafts: self.status.daemon_can(argus_protocol::connection::hello::REVIEW_DRAFTS),
+        });
         self.sessions = Sessions::default();
         self.older = OlderDaemon::default();
         for msg in opening {
@@ -783,6 +787,26 @@ impl Session {
             Call::ReviewRefresh => self.review_refresh(),
             Call::ReviewComment { body } => self.review_comment(body),
             Call::ReviewJump { gesture } => self.review_jump(gesture),
+            Call::OpenChange { staged, path } => {
+                self.dialogs.open_change(staged, &path, &mut self.passing);
+                self.finish()
+            }
+            Call::Stage { gesture } => {
+                self.dialogs.stage(gesture, || self.awaited.name(), &mut self.out, &mut self.passing);
+                self.finish()
+            }
+            Call::Commit { message } => {
+                self.dialogs.commit(&message, || self.awaited.name(), &mut self.out, &mut self.passing);
+                self.finish()
+            }
+            Call::DraftComment { body } => {
+                self.dialogs.draft_comment(&body, || self.awaited.name(), &mut self.out, &mut self.passing);
+                self.finish()
+            }
+            Call::Drafts { gesture } => {
+                self.dialogs.drafts(gesture, &self.tree, || self.awaited.name(), &mut self.out, &mut self.passing);
+                self.finish()
+            }
             Call::OpenHistory { checkout } => self.open_history(CheckoutId(checkout)),
             Call::HistoryAction { action, row } => self.history_action(action, row),
             Call::FilterHistory { filter } => self.filter_history(filter),
@@ -4142,7 +4166,9 @@ mod tests {
         let asks = |sent: Vec<ClientMsg>| sent.iter().filter(|m| matches!(m, ClientMsg::Review { .. })).count();
         let mut s = session(Hello::this_build());
         let sent = s.open_review(CheckoutId(100));
-        let [ClientMsg::Review { request_id: unstaged, .. }, ClientMsg::Review { request_id: staged, .. }] = sent.as_slice() else {
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::Draft { .. })), "the review's drafts are asked for as it opens");
+        let reads: Vec<ClientMsg> = sent.iter().filter(|m| matches!(m, ClientMsg::Review { .. })).cloned().collect();
+        let [ClientMsg::Review { request_id: unstaged, .. }, ClientMsg::Review { request_id: staged, .. }] = reads.as_slice() else {
             panic!("{:?}", names(&sent));
         };
         let (unstaged, staged) = (*unstaged, *staged);
@@ -6120,7 +6146,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 155] = [
+    const CALLS: [&str; 160] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -6276,6 +6302,11 @@ mod tests {
         r#"{"call":"move_to_checkout","pane":1,"checkout":1}"#,
         r#"{"call":"reveal_checkout","checkout":1}"#,
         r#"{"call":"edit","gesture":{"on":"change","checkout":1,"path":"a.rs","base":0,"changes":[{"from":0,"to":1,"insert":"x"}]}}"#,
+        r#"{"call":"open_change","staged":true,"path":"a.rs"}"#,
+        r#"{"call":"stage","gesture":{"on":"rows","rows":[3,4]}}"#,
+        r#"{"call":"commit","message":"Say why"}"#,
+        r#"{"call":"draft_comment","body":"why two?"}"#,
+        r#"{"call":"drafts","gesture":{"on":"submit","summary":"","to":null}}"#,
     ];
 
     /// Each call reads as the page writes it and goes through the session,

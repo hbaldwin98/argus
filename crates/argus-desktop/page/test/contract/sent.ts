@@ -7029,6 +7029,17 @@ export const sent = [
   "checkout": 100,
   "comment": null,
   "commit": null,
+  "drafts": {
+    "drafts": [],
+    "recipients": [
+      {
+        "pane": 1,
+        "title": "claude"
+      }
+    ],
+    "sending": false,
+    "to": 1
+  },
   "empty": null,
   "file": null,
   "files": [],
@@ -7039,8 +7050,29 @@ export const sent = [
   "pick": null,
   "removed": 0,
   "rows": [],
+  "sections": [
+    {
+      "files": [],
+      "side": "staged"
+    },
+    {
+      "files": [],
+      "side": "unstaged"
+    },
+    {
+      "files": [],
+      "side": "untracked"
+    }
+  ],
   "split": false,
   "staged": null,
+  "staging": {
+    "busy": false,
+    "canCommit": false,
+    "commits": 0,
+    "committing": false,
+    "staged": false
+  },
   "type": "review",
   "unstaged": null
 },

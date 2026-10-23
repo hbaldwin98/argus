@@ -4,7 +4,7 @@
 //! comment may go, and to whom, is `argus_protocol::review::agent_comment`'s.
 
 use argus_protocol::review::agent_comment::{self, Comment};
-use argus_protocol::{CheckoutInfo, ClientMsg, PaneId, RequestRefusal, ReviewAnchor};
+use argus_protocol::{CheckoutId, CheckoutInfo, ClientMsg, PaneId, RequestRefusal, ReviewAnchor};
 use serde::Serialize;
 
 /// Said when a second comment is sent from a box still waiting on its first.
@@ -78,6 +78,26 @@ impl CommentBox {
             // `open` lights an agent, so an open box always names one.
             Comment::Choose(_) => Err("choose the agent to send it to"),
         }
+    }
+
+    /// The words as a draft of the review, named `request_id`: the box
+    /// keeps them until the daemon's answer names this request, as it keeps
+    /// a sent comment's until its save.
+    pub fn draft(&mut self, anchor: Option<ReviewAnchor>, checkout: CheckoutId, body: &str, request_id: u64) -> Result<ClientMsg, &'static str> {
+        if !self.open {
+            return Err("no comment box is open");
+        }
+        if matches!(self.sending, Some(id) if id != 0) {
+            return Err(WAITING);
+        }
+        let msg = crate::review::drafts::Drafts::add(anchor, checkout, body, request_id)?;
+        self.sending = Some(request_id);
+        Ok(msg)
+    }
+
+    /// The agent the box is lit on, which a review is sent to by default.
+    pub fn lit(&self) -> Option<PaneId> {
+        self.to
     }
 
     /// The daemon saved the comment sent under `request_id`. True when this

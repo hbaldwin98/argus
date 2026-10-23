@@ -14,7 +14,9 @@ use argus_protocol::{
 };
 
 use crate::review::comment_box::CommentBox;
+use crate::review::drafts::{DraftGesture, Drafts};
 use crate::review::file_jump::{FileJump, Jumped};
+use crate::review::staging::{self, Landed, StageGesture, Staging};
 use crate::connection::page::{DiffRow, DiffSide, ReviewFile, ReviewJump, ReviewJumpGesture, ReviewPage};
 use crate::settings::remembered::ReviewLayout;
 
@@ -28,16 +30,32 @@ pub struct ReviewDialog {
     /// side was not chosen.
     chosen: ReviewLayout,
     jump: Option<FileJump>,
+    staging: Staging,
+    drafts: Drafts,
+    abilities: Abilities,
+}
+
+/// What the daemon lets a review do beyond reading: write the index and
+/// commit, and keep the review's comments as drafts until they are sent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Abilities {
+    pub index_writes: bool,
+    pub drafts: bool,
 }
 
 impl ReviewDialog {
     /// A review of `checkout`'s working changes, on the side and in the
     /// layout last chosen.
-    pub fn working(checkout: &CheckoutInfo, layout: ReviewLayout, id: impl FnMut() -> u64) -> (ReviewDialog, Vec<ClientMsg>) {
+    pub fn working(checkout: &CheckoutInfo, layout: ReviewLayout, abilities: Abilities, mut id: impl FnMut() -> u64) -> (ReviewDialog, Vec<ClientMsg>) {
         let base = if layout.staged { ReviewBase::Staged } else { ReviewBase::Unstaged };
-        let (mut session, msgs) = ReviewSession::working(checkout.id, base, layout.split, id);
+        let (mut session, mut msgs) = ReviewSession::working(checkout.id, base, layout.split, &mut id);
         session.follow(checkout.git.as_ref().map(|g| g.changes));
-        (ReviewDialog::new(checkout, session, layout), msgs)
+        let mut dialog = ReviewDialog::new(checkout, session, layout);
+        dialog.abilities = abilities;
+        if abilities.drafts {
+            msgs.push(dialog.drafts.list(checkout.id, id()));
+        }
+        (dialog, msgs)
     }
 
     /// One commit against its first parent, where a comment records the
@@ -61,6 +79,9 @@ impl ReviewDialog {
             comment_box: CommentBox::default(),
             chosen: layout,
             jump: None,
+            staging: Staging::default(),
+            drafts: Drafts::default(),
+            abilities: Abilities::default(),
         }
     }
 
@@ -316,9 +337,75 @@ impl ReviewDialog {
         self.comment_box.refused(refusal)
     }
 
-    /// A new connection: the comment sent on the last is answered on none.
+    /// A new connection: the comment sent on the last is answered on none,
+    /// nor any write or draft.
     pub fn forget_sent_comment(&mut self) {
         self.comment_box.forget_sent();
+        self.staging.forget_sent();
+        self.drafts.forget_sent();
+    }
+
+    /// A file of one of the Changes pane's lists, on the side it was listed on.
+    pub fn open_change(&mut self, staged: bool, path: &str) -> Result<(), String> {
+        self.show_side(staged)?;
+        let file = self.view().and_then(|v| v.review.files.iter().position(|f| f.path == path));
+        match file {
+            Some(file) => {
+                self.open_file(file);
+                Ok(())
+            }
+            None => Err(format!("{path} is no longer {}", if staged { "staged" } else { "changed" })),
+        }
+    }
+
+    pub fn stage(&mut self, gesture: StageGesture, request_id: u64) -> Result<ClientMsg, String> {
+        if !self.abilities.index_writes {
+            return Err("this daemon cannot stage; update Argus".into());
+        }
+        self.staging.stage(gesture, &self.session, request_id)
+    }
+
+    pub fn commit(&mut self, message: &str, request_id: u64) -> Result<ClientMsg, String> {
+        if !self.abilities.index_writes || self.session.base() == ReviewBase::Commit {
+            return Err("this review cannot commit".into());
+        }
+        let staged = self.session.files(ReviewBase::Staged);
+        self.staging.commit(self.session.checkout(), message, staged, request_id)
+    }
+
+    /// The comment box's words, added to the review being written.
+    pub fn draft_comment(&mut self, body: &str, request_id: u64) -> Result<ClientMsg, &'static str> {
+        if !self.abilities.drafts {
+            return Err("this daemon keeps no drafts; update Argus");
+        }
+        self.comment_box.draft(self.session.anchor(), self.session.checkout(), body, request_id)
+    }
+
+    pub fn draft_gesture(&mut self, gesture: DraftGesture, checkout: Option<&CheckoutInfo>, request_id: u64) -> Result<ClientMsg, String> {
+        if !self.abilities.drafts {
+            return Err("this daemon keeps no drafts; update Argus".into());
+        }
+        self.drafts.gesture(gesture, checkout, self.comment_box.lit(), request_id)
+    }
+
+    /// The daemon made a write; what it was, when this review sent it.
+    pub fn written(&mut self, request_id: u64) -> Option<Landed> {
+        self.staging.written(request_id)
+    }
+
+    /// The checkout's drafts as the daemon now has them, and the box that
+    /// added one let go once this answer names its request.
+    pub fn drafted(&mut self, request_id: u64, checkout: CheckoutId, drafts: Vec<argus_protocol::ReviewDraft>) {
+        if checkout != self.session.checkout() {
+            return;
+        }
+        self.drafts.receive(request_id, drafts);
+        self.commented(request_id);
+    }
+
+    /// Whether a refused write or draft change was this review's.
+    pub fn change_refused(&mut self, request_id: u64) -> bool {
+        self.staging.refused(request_id) | self.drafts.refused(request_id)
     }
 
     /// The dialog as the page draws it, given the checkout as the tree has
@@ -352,6 +439,14 @@ impl ReviewDialog {
         let pick =
             view.filter(|v| v.mark.is_some() || self.comment_box.is_open()).and_then(ReviewView::anchor).map(|a| pick_label(&a));
         let comment = self.comment_box.page(checkout, || format!("{} · {base_label}", pick.as_deref().unwrap_or("")));
+        let working = base != ReviewBase::Commit;
+        let on = selected.and_then(|f| files.get(f)).map(|f| f.path.clone());
+        let sections = if working { staging::sections(&self.session, on.as_deref()) } else { Vec::new() };
+        let staging = (working && self.abilities.index_writes).then(|| self.staging.page(&self.session));
+        let drafts = self
+            .abilities
+            .drafts
+            .then(|| self.drafts.page(checkout, self.comment_box.lit(), on.as_deref().map(|p| (p, base)), &rows));
         ReviewPage {
             open: true,
             checkout: self.session.checkout().0,
@@ -375,6 +470,9 @@ impl ReviewDialog {
                 let m = j.matches(&self.paths());
                 ReviewJump { query: j.query().to_owned(), at: m.lit.map(|l| m.found[l]), matches: m.found }
             }),
+            sections,
+            staging,
+            drafts,
         }
     }
 }
@@ -566,7 +664,7 @@ mod tests {
 
     fn remembering(layout: ReviewLayout) -> (ReviewDialog, Vec<ClientMsg>) {
         let mut ids = 0;
-        ReviewDialog::working(&agent_checkout(), layout, || {
+        ReviewDialog::working(&agent_checkout(), layout, Abilities::default(), || {
             ids += 1;
             ids
         })
@@ -715,7 +813,7 @@ mod tests {
     #[test]
     fn a_comment_box_needs_an_agent_to_open() {
         let co = checkout(100, "main", true, Vec::new());
-        let (mut d, _) = ReviewDialog::working(&co, ReviewLayout::default(), || 1);
+        let (mut d, _) = ReviewDialog::working(&co, ReviewLayout::default(), Abilities::default(), || 1);
         d.receive(diff(1, ReviewBase::Unstaged));
         assert_eq!(d.compose(Some(&co)), Err("no agent running in this checkout"));
         assert!(d.page(Some(&co)).comment.is_none());

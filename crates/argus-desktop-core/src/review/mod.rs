@@ -7,8 +7,10 @@
 
 pub mod comment_box;
 pub mod dialog;
+pub mod drafts;
 pub mod file_jump;
 pub mod history;
+pub mod staging;
 
 use argus_protocol::review::session::Answered;
 use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, RequestRefusal, ServerMsg};
@@ -16,7 +18,9 @@ use argus_protocol::{CheckoutId, ClientMsg, HeldTree, PaneId, ProjectInfo, Reque
 use crate::review::history::{HistoryDialog, Then};
 use crate::keys::keymap::Action;
 use crate::connection::page::{Event, HistoryPage, ReviewClick, ReviewJumpGesture, ReviewPage};
-use crate::review::dialog::ReviewDialog;
+use crate::review::dialog::{Abilities, ReviewDialog};
+use crate::review::drafts::DraftGesture;
+use crate::review::staging::{Landed, StageGesture};
 use crate::connection::sent::Sent;
 use crate::settings::remembered::ReviewLayout;
 
@@ -40,6 +44,8 @@ pub struct Dialogs {
     /// The side and layout a review opens on, as last chosen.
     layout: ReviewLayout,
     layout_changed: bool,
+    /// What the daemon on the line lets a review do, for the next to open.
+    abilities: Abilities,
 }
 
 impl Dialogs {
@@ -52,7 +58,13 @@ impl Dialogs {
             history_sent: Sent::default(),
             layout,
             layout_changed: false,
+            abilities: Abilities::default(),
         }
+    }
+
+    /// The daemon just greeted: what a review opened from now on may ask it.
+    pub fn set_abilities(&mut self, abilities: Abilities) {
+        self.abilities = abilities;
     }
 
     /// Hands a daemon message to the dialog that asked for it, giving back
@@ -95,6 +107,24 @@ impl Dialogs {
                     history.receive_files(checkout, &commit, files.clone());
                 }
             }
+            // A write the Changes pane made: what it moved shows when the
+            // diff is read again, so only a commit is said.
+            ServerMsg::Written { request_id } => {
+                let landed = self.reviews().fold(None, |landed, dialog| landed.or(dialog.written(request_id)));
+                if landed == Some(Landed::Committed) {
+                    say.push(Event::Notice { text: "committed".into() });
+                }
+            }
+            ServerMsg::Drafts { request_id, checkout, drafts } => {
+                for dialog in self.reviews() {
+                    dialog.drafted(request_id, checkout, drafts.clone());
+                }
+            }
+            ServerMsg::ReviewSubmitted { comments, delivered, .. } => {
+                let said = if comments == 1 { "1 comment".to_owned() } else { format!("{comments} comments") };
+                let text = if delivered { format!("review sent: {said}") } else { format!("review saved: {said}; the agent was not there to take it") };
+                say.push(Event::Notice { text });
+            }
             ServerMsg::CommitFilesFailed { checkout, commit, message } => {
                 for history in self.histories() {
                     history.files_failed(checkout, &commit);
@@ -120,7 +150,7 @@ impl Dialogs {
         let Some(review) = self.review_mut() else {
             return false;
         };
-        if review.context_failed(id) {
+        if review.context_failed(id) || review.change_refused(id) {
             say.push(Event::Notice { text: reason.clone() });
             return true;
         }
@@ -177,7 +207,7 @@ impl Dialogs {
         let Some(info) = tree.checkout(checkout) else {
             return;
         };
-        let (dialog, msgs) = ReviewDialog::working(info, self.layout, id);
+        let (dialog, msgs) = ReviewDialog::working(info, self.layout, self.abilities, id);
         self.review = Some(dialog);
         out.extend(msgs);
     }
@@ -326,6 +356,53 @@ impl Dialogs {
                 Ok(msg) => out.push(msg),
                 Err(text) => say.push(Event::Notice { text: text.into() }),
             },
+        }
+    }
+
+    /// A file of a Changes list opened on its side.
+    pub fn open_change(&mut self, staged: bool, path: &str, say: &mut Vec<Event>) {
+        if let Some(Err(text)) = self.review.as_mut().map(|d| d.open_change(staged, path)) {
+            say.push(Event::Notice { text });
+        }
+        self.remember_layout();
+    }
+
+    /// A box ticked, files moved or a hunk taken, sent to the daemon.
+    pub fn stage(&mut self, gesture: StageGesture, id: impl FnOnce() -> u64, out: &mut Vec<ClientMsg>, say: &mut Vec<Event>) {
+        if let Some(sent) = self.review.as_mut().map(|d| d.stage(gesture, id())) {
+            match sent {
+                Ok(msg) => out.push(msg),
+                Err(text) => say.push(Event::Notice { text }),
+            }
+        }
+    }
+
+    pub fn commit(&mut self, message: &str, id: impl FnOnce() -> u64, out: &mut Vec<ClientMsg>, say: &mut Vec<Event>) {
+        if let Some(sent) = self.review.as_mut().map(|d| d.commit(message, id())) {
+            match sent {
+                Ok(msg) => out.push(msg),
+                Err(text) => say.push(Event::Notice { text }),
+            }
+        }
+    }
+
+    /// The comment box's words, as a draft of the review.
+    pub fn draft_comment(&mut self, body: &str, id: impl FnOnce() -> u64, out: &mut Vec<ClientMsg>, say: &mut Vec<Event>) {
+        if let Some(sent) = self.review.as_mut().map(|d| d.draft_comment(body, id())) {
+            match sent {
+                Ok(msg) => out.push(msg),
+                Err(text) => say.push(Event::Notice { text: text.into() }),
+            }
+        }
+    }
+
+    pub fn drafts(&mut self, gesture: DraftGesture, tree: &[ProjectInfo], id: impl FnOnce() -> u64, out: &mut Vec<ClientMsg>, say: &mut Vec<Event>) {
+        let Some(dialog) = self.review.as_mut() else {
+            return;
+        };
+        match dialog.draft_gesture(gesture, tree.checkout(dialog.checkout()), id()) {
+            Ok(msg) => out.push(msg),
+            Err(text) => say.push(Event::Notice { text }),
         }
     }
 
