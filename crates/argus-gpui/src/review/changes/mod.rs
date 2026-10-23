@@ -358,7 +358,7 @@ impl Render for Changes {
             .size_full()
             .child(self.narrow.measure())
             .child(body)
-            .when(!narrow, |pane| pane.child(hints::bar("review-hints", &HINTS, &tokens)))
+            .when(!narrow, |pane| pane.child(hints::bar("review-hints", &HINTS, &[], None, &tokens)))
             .into_any_element()
     }
 }

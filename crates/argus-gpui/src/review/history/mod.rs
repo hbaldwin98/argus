@@ -156,7 +156,7 @@ impl Render for History {
                     .child(split::side(&self.split, "history-column", commits, &tokens, cx))
                     .child(div().flex_1().min_w_0().h_full().child(diff)),
             )
-            .child(hints::bar("history-hints", &HINTS, &tokens))
+            .child(hints::bar("history-hints", &HINTS, &[], None, &tokens))
             .into_any_element()
     }
 }

@@ -3,12 +3,9 @@
 //! its bar names the rarer ones.
 
 use argus_desktop_core::connection::page::Lens;
-use gpui_kit::component::h_flex;
-use gpui_kit::{div, prelude::*, SharedString, TestSupportExt as _};
+use gpui_kit::prelude::*;
 
-use crate::kit::keycap::keycap;
-use crate::style::Typed as _;
-use crate::theme::scale::rem;
+use crate::kit::hints::{self, Hint};
 use crate::theme::Tokens;
 
 /// The keys of `lens`, each with what it does.
@@ -20,30 +17,10 @@ pub fn keys(lens: Lens) -> &'static [(&'static str, &'static str)] {
     }
 }
 
-/// `.kbar`: a row `--kbar-h` tall under a hairline, the lens's keys and then Esc at the far end.
+/// The lens's keys and then Esc at the far end, in the one key bar.
 pub fn key_bar(lens: Lens, tokens: &Tokens) -> impl IntoElement {
-    let mono = SharedString::from(tokens.font_mono);
-    let hint = |key: &'static str, what: &'static str| {
-        let mono = mono.clone();
-        h_flex().gap(rem(tokens.sp_6)).items_center().whitespace_nowrap().child(keycap(key, mono, tokens)).child(what)
-    };
-    let said: Vec<String> = keys(lens).iter().map(|(key, what)| format!("{key} {what}")).chain(std::iter::once("Esc back to features".to_owned())).collect();
-    h_flex()
-        .id("feature-keys")
-        .test_support()
-        .aria_label(SharedString::from(said.join(", ")))
-        .flex_shrink_0()
-        .h(rem(tokens.kbar_h))
-        .px(rem(tokens.sp_20))
-        .gap(rem(tokens.sp_16))
-        .items_center()
-        .border_t_1()
-        .border_color(tokens.line)
-        .typed(tokens.type_small)
-        .text_color(tokens.fg_faint)
-        .children(keys(lens).iter().map(|(key, what)| hint(key, what)))
-        .child(div().flex_1())
-        .child(hint("Esc", "back to features"))
+    let said: Vec<Hint> = keys(lens).iter().map(|(key, what)| (std::slice::from_ref(key), *what)).collect();
+    hints::bar("feature-keys", &said, &[(&["Esc"], "back to features")], None, tokens)
 }
 
 #[cfg(test)]

@@ -74,6 +74,8 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
     let (needs_you, working, chime) = (*needs_you, *working, *chime);
     let connected = matches!(link, Link::Connected { .. });
     let mut rows = v_flex()
+        .id("foot")
+        .test_support()
         .flex_shrink_0()
         .gap(rem(tokens.sp_4))
         .px(rem(if icons { 0.0 } else { tokens.sp_16 }))

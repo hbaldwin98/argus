@@ -41,14 +41,14 @@ fn a_repository_with_none_says_how_to_make_one_and_its_button_opens_the_note(cx:
 fn the_layout_rust_says_is_drawn_with_the_key_bar_naming_the_other(cx: &mut TestAppContext) {
     let opened = on(cx, list());
     assert!(present(cx, &opened, "feature-list") && !present(cx, &opened, "feature-board"));
-    assert_eq!(label(cx, &opened, "feature-key-V").as_deref(), Some("V board"));
+    assert_eq!(label(cx, &opened, "feature-keys-V").as_deref(), Some("V board"));
     assert!(!present(cx, &opened, "feature-board-hint"), "the hint is the board's");
     hear(cx, &opened, vec![heard(board())]);
     assert!(present(cx, &opened, "feature-board") && !present(cx, &opened, "feature-list"));
-    assert_eq!(label(cx, &opened, "feature-key-V").as_deref(), Some("V list"));
+    assert_eq!(label(cx, &opened, "feature-keys-V").as_deref(), Some("V list"));
     assert_eq!(label(cx, &opened, "feature-board-hint").as_deref(), Some("Drag a card to Held to set it aside"));
     for key in ["N", "Enter", "M", "G"] {
-        assert!(present(cx, &opened, format!("feature-key-{key}")), "{key}");
+        assert!(present(cx, &opened, format!("feature-keys-{key}")), "{key}");
     }
 }
 

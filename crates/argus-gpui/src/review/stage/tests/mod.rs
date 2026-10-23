@@ -1504,3 +1504,16 @@ fn a_question_mark_in_the_review_opens_the_shortcuts_sheet_and_sends_nothing(cx:
 mod beside;
 mod changes;
 mod files;
+
+/// A stage's key bar is the sidebar foot's height and stands on the same line, so the two feet
+/// read as one across the window.
+#[gpui_kit::test]
+fn the_key_bar_lines_up_with_the_sidebar_foot(cx: &mut TestAppContext) {
+    let opened = reviewed(cx);
+    let at = |cx: &mut TestAppContext, id: &str| {
+        let id = ElementId::from(SharedString::from(id.to_owned()));
+        cx.update_window(opened.handle, |_, window, _| window.find(id).bounds()).unwrap()
+    };
+    let (bar, foot) = (at(cx, "review-hints"), at(cx, "foot"));
+    assert_eq!((bar.top(), bar.size.height), (foot.top(), foot.size.height));
+}
