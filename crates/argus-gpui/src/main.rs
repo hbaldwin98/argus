@@ -66,6 +66,7 @@ fn main() {
         let heard = cx.new(|_| Heard::fed_by(std::sync::Arc::new(move |pane| pictures.picture(pane))));
         heard.update(cx, |heard, cx| heard.listen(events, cx));
         let fonts = calls.clone();
+        let hosts_found = calls.clone();
         let queued = calls.clone();
         let asking = calls.clone();
         let caller = Caller::new(move |call| calls.call(call)).asking_viewport(move || asking.next_browser_viewport());
@@ -83,6 +84,16 @@ fn main() {
         }
         // The Settings dialog's font fields offer the machine's families once they are read.
         settings::installed_fonts::read(cx, move |families| fonts.act(|session| session.found_fonts(families)));
+        // The host switcher offers what the ssh config names; reading it touches the disk, so off the UI thread.
+        let reading = cx.background_spawn(async move { argus_protocol::connection::ssh_hosts::hosts() });
+        cx.spawn(async move |_: &mut gpui_kit::AsyncApp| {
+            let hosts = reading.await;
+            hosts_found.act(|session| {
+                session.found_hosts(hosts);
+                Vec::new()
+            });
+        })
+        .detach();
         cx.activate(true);
         if let Some(pane) = std::env::var("ARGUS_GPUI_PROBE_SHELL").ok().and_then(|pane| pane.parse().ok()) {
             probe::shell(heard.clone(), probing.clone(), pane, cx);
