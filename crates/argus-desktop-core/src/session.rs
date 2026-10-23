@@ -2024,9 +2024,17 @@ impl Session {
     }
 
     fn dock_gesture(&mut self, gesture: DockGesture) -> Vec<ClientMsg> {
+        // A panel shown where it sits in the grid stays there, and the Workspace comes back to show
+        // it: Git pressed for the changes beside an agent's pane is not a request to take them away.
+        if let DockGesture::Show { panel } = &gesture {
+            if self.shown.grid().holds_panel(panel) {
+                self.leave_stages();
+                return self.finish();
+            }
+        }
         // A panel the docks are told to put somewhere leaves the grid first:
         // a panel is in one place at a time.
-        if let DockGesture::Move { panel, .. } | DockGesture::Show { panel } | DockGesture::Float { panel } | DockGesture::Stage { panel } = &gesture {
+        if let DockGesture::Move { panel, .. } | DockGesture::Float { panel } | DockGesture::Stage { panel } = &gesture {
             self.shown.release_panel(panel, &mut self.out);
         }
         match gesture {
@@ -7269,6 +7277,11 @@ mod tests {
         docks(&mut s, into_grid());
         assert_eq!(s.rail(0).row.panels, [Some(Panel::Changes)]);
         assert_eq!(s.shown.pane(), Some(PaneId(2)), "the keys stay with the pane");
+        s.call(Call::ShowCode { open: true });
+        assert_eq!(s.stages.now(), Stage::Code);
+        docks(&mut s, DockGesture::Show { panel: Panel::Changes });
+        assert!(s.shown.grid().holds_panel(&Panel::Changes), "Git pressed elsewhere keeps the changes in their cell");
+        assert_eq!(s.stages.now(), Stage::Workspace, "and comes back to show them");
         docks(&mut s, DockGesture::Close { panel: Panel::Changes });
         assert!(!s.shown.grid().holds_panel(&Panel::Changes), "the review closed empties its cell");
     }
