@@ -48,7 +48,8 @@ fn folded(split: bool) -> Vec<MenuItem<Call>> {
         MenuItem::choice(if split { "Unified diff" } else { "Split diff" }, review(Action::Split)),
         MenuItem::choice("Whole file", review(Action::UnfoldAll)),
         MenuItem::Rule,
-        MenuItem::choice("Open in editor", review(Action::OpenEditor)),
+        MenuItem::choice("Open in Code", review(Action::OpenCode)),
+        MenuItem::choice("Open in your editor", review(Action::OpenEditor)),
     ]
 }
 
@@ -157,7 +158,7 @@ impl Changes {
                                     .child(layout("review-view-split", "Split", page.split, true, cx)),
                             )
                             .child(tool("review-whole", "Whole file", Action::UnfoldAll, cx).child("Whole file"))
-                            .child(tool("review-editor", "Open in your editor", Action::OpenEditor, cx).child(Glyph::Edit.at(14.0)).child("Open"))
+                            .child(tool("review-open", "Read it in Code, at this line", Action::OpenCode, cx).child(Glyph::Code.at(14.0)).child("Open"))
                     })
                     .when(fold, |tools| {
                         let tokens = *tokens;

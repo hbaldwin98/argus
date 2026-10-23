@@ -522,6 +522,12 @@ impl Dialogs {
         Some(target)
     }
 
+    /// The file and line the review's cursor is on, to read in the Code stage while the review stays
+    /// open beside it.
+    pub fn review_code_target(&self) -> Option<(CheckoutId, String, u32, argus_protocol::CodeVersion)> {
+        self.review.as_ref()?.code_target()
+    }
+
     /// `c` in the history: it is put away, and the commit under its cursor
     /// comes back, with the file when the cursor is on one.
     pub fn park_history(&mut self) -> Option<(CheckoutId, String, Option<String>)> {

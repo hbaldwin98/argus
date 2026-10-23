@@ -2932,6 +2932,12 @@ impl Session {
         if action == Action::OpenCode {
             if !self.status.daemon_can(CODE) {
                 self.say(TOO_OLD_FOR_CODE);
+            } else if self.changes_beside() {
+                // The changes stay where they were put, beside the file they opened; the stage is
+                // Code's, with no review to come back to under it.
+                if let Some((checkout, path, line, version)) = self.dialogs.review_code_target() {
+                    self.open_code_at(checkout, version, Some(path), Some(line), None);
+                }
             } else if let Some((checkout, path, line, version)) = self.dialogs.park_review() {
                 let name = path.rsplit('/').next().unwrap_or(&path);
                 let back = Back { label: format!("review · {name}:{line}") };
@@ -2947,6 +2953,12 @@ impl Session {
             self.open_in_editor(checkout, path, line);
         }
         self.finish()
+    }
+
+    /// Whether the changes' panel is beside the work, in a dock, a dialog or a cell, rather than
+    /// the stage.
+    fn changes_beside(&self) -> bool {
+        matches!(self.docks.place_of(&Panel::Changes), Some(Place::Dock(_) | Place::Float)) || self.shown.grid().holds_panel(&Panel::Changes)
     }
 
     fn review_jump(&mut self, gesture: ReviewJumpGesture) -> Vec<ClientMsg> {
@@ -4199,6 +4211,25 @@ mod tests {
         assert!(sent.is_empty(), "the review comes back as it was, not read again");
         assert!(s.dialogs.review().is_some());
         assert!(s.stages.now() == Stage::Checkouts, "over the stage it was opened over");
+    }
+
+    /// The changes put beside the work are not the stage's to give back:
+    /// Open reads the cursor's file in Code and leaves them where they are.
+    #[test]
+    fn open_from_the_changes_beside_the_work_reads_the_file_in_code_and_keeps_the_review() {
+        let mut s = session(Hello::this_build());
+        let sent = s.open_review(CheckoutId(100));
+        let [ClientMsg::Review { request_id: unstaged, .. }, ..] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        s.receive(reviewed(argus_protocol::ReviewBase::Unstaged, *unstaged));
+        docks(&mut s, DockGesture::Move { panel: Panel::Changes, dock: Dock::Right });
+        s.review_action(Action::Next);
+        let sent = code_asks(s.review_action(Action::OpenCode));
+        assert!(matches!(sent.as_slice(), [ClientMsg::ListCode { .. }, ClientMsg::ReadCode { path, .. }] if path == "src/brief.rs"));
+        assert!(s.stages.now() == Stage::Code);
+        assert!(s.dialogs.review().is_some(), "still open in its dock");
+        assert_eq!(code_page(&mut s).back, None, "nothing put away to come back to");
     }
 
     /// Following the checkout is wired to the window's trees and to the
