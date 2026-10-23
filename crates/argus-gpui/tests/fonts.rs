@@ -15,6 +15,11 @@ use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{font, px};
 
 fn main() {
+    // A Linux machine with no display never starts the platform: the run would hang, as CI's did.
+    if cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
+        println!("test the_pages_families_load_and_the_theme_names_them ... ignored, no display");
+        return;
+    }
     let outcome: Rc<RefCell<Option<Result<(), String>>>> = Rc::new(RefCell::new(None));
     let sink = outcome.clone();
     argus_gpui::window::application().run(move |cx| {
