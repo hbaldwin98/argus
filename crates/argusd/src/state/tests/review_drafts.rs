@@ -78,3 +78,16 @@ async fn a_draft_is_edited_deleted_and_discarded_by_id() {
     assert!(d.review_draft(checkout, DraftAction::Discard).unwrap().drafts.is_empty());
     close_all(&d);
 }
+
+/// `MAX_REVIEW_COMMENT_BYTES` is the most a comment may be, as both clients
+/// hold it before sending: that many bytes are kept, one more is refused.
+#[tokio::test]
+async fn a_draft_may_be_as_long_as_a_comment_and_no_longer() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let checkout = only_checkout(&d);
+    let most = "x".repeat(argus_protocol::MAX_REVIEW_COMMENT_BYTES);
+    assert!(d.review_draft(checkout, add(1, &most)).is_ok());
+    assert!(d.review_draft(checkout, add(2, &format!("{most}x"))).is_err());
+    close_all(&d);
+}

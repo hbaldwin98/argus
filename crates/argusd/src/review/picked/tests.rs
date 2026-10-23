@@ -208,3 +208,15 @@ mod properties {
         }
     }
 }
+
+/// Git records an executable file's index entry as 100755, so part of a new
+/// one staged keeps that mode, as `git add` would give it.
+#[cfg(unix)]
+#[test]
+fn part_of_an_untracked_executable_enters_the_index_executable() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_dir, root) = repo(None, None, Some("x\ny\n"));
+    std::fs::set_permissions(root.join("f.txt"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let picked = pick(&root, ReviewBase::Unstaged, "f.txt", &[added(1, "x")]).unwrap();
+    assert_eq!(picked.entry.map(|(mode, _)| mode), Some(0o100755));
+}
