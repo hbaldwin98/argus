@@ -3,6 +3,7 @@ import type { BrowserCursor } from "./BrowserCursor";
 import type { BrowserDialog } from "./BrowserDialog";
 import type { BrowserDriver } from "./BrowserDriver";
 import type { BrowserSelect } from "./BrowserSelect";
+import type { BrowserSize } from "./BrowserSize";
 import type { BrowserTab } from "./BrowserTab";
 
 export type PageBrowser = { 
@@ -42,4 +43,8 @@ dialog: BrowserDialog | null,
 /**
  * A `<select>` whose list is open, which the window draws.
  */
-select: BrowserSelect | null, };
+select: BrowserSelect | null, 
+/**
+ * The size an agent laid the page out at, over the view's own.
+ */
+sized: BrowserSize | null, };

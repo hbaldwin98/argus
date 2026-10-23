@@ -106,6 +106,19 @@ pub struct BrowserPage {
     /// place of the one headless Chrome draws nowhere.
     #[serde(default)]
     pub select: Option<BrowserSelect>,
+    /// The size an agent laid the shown tab out at, which holds over the
+    /// size the person's view has until the agent clears it or the person
+    /// fits it to their view again.
+    #[serde(default)]
+    pub sized: Option<BrowserSize>,
+}
+
+/// A page's layout size, in CSS pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct BrowserSize {
+    pub width: u32,
+    pub height: u32,
 }
 
 /// An `alert`, `confirm`, `prompt` or leave-this-page question the page
@@ -221,6 +234,9 @@ pub enum BrowserInput {
     /// The option picked from an open `<select>`'s list, by its index, or
     /// none when the list was put away.
     Choose { index: Option<u32> },
+    /// Lay the shown tab out at the person's view again, in place of the
+    /// size an agent gave it.
+    FitView,
     Wheel { x: f64, y: f64, dx: f64, dy: f64 },
     /// Text typed into whatever has the page's focus.
     Text { text: String },
@@ -272,6 +288,7 @@ impl BrowserInput {
                 | BrowserInput::Leave
                 | BrowserInput::Answer { .. }
                 | BrowserInput::Choose { .. }
+                | BrowserInput::FitView
         )
     }
 

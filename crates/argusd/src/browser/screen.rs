@@ -20,6 +20,7 @@ use super::cdp::{Cdp, Event};
 use super::input::{browser_command, commands};
 use super::act::{self, Reply};
 use super::cursor::{self, At};
+use super::sizing::Sizing;
 use super::widgets::Widgets;
 use super::mux::{AGENT_ACTED, HELD, HOLD};
 use super::{Report, Seen};
@@ -28,12 +29,6 @@ use super::{Report, Seen};
 /// driving it.
 const DRIVING: Duration = Duration::from_secs(3);
 
-/// The pictures asked for when no one has said how big they look: the
-/// window's size the browser starts at.
-const UNSIZED: (u32, u32, f64) = (1280, 800, 1.0);
-/// Each picture's JPEG quality: high enough that text drawn one to one
-/// reads as sharp as the page's own.
-const QUALITY: u32 = 85;
 
 /// The browser's tabs in the order they opened, the one the agent works
 /// in, the one the person picked, and the blank one it started with.
@@ -148,7 +143,7 @@ pub(super) async fn follow(
 ) {
     let mut tabs = Tabs::default();
     let mut shown: Option<Shown> = None;
-    let mut viewport: Option<(u32, u32, f64)> = None;
+    let mut sizing = Sizing::default();
     let mut held = false;
     let mut driver: Option<(BrowserDriver, Instant)> = None;
     let mut told: Option<Seen> = None;
@@ -169,6 +164,11 @@ pub(super) async fn follow(
                 let on_shown = shown.as_ref().is_some_and(|s| event.session.as_deref() == Some(&*s.session));
                 if on_shown {
                     widgets.heard(&event);
+                }
+                if sizing.heard(&event, shown.as_ref().map(|s| &*s.target)) {
+                    if let Some(shown) = &shown {
+                        sizing.apply(&cdp, &shown.session, &shown.target).await;
+                    }
                 }
                 match event.method.as_str() {
                     "Page.screencastFrame" if on_shown => {
@@ -239,11 +239,16 @@ pub(super) async fn follow(
                         }
                     }
                     BrowserInput::Viewport { width, height, scale } => {
-                        let held = BrowserInput::held_viewport(*width, *height, *scale);
-                        if viewport != Some(held) {
-                            viewport = Some(held);
+                        if sizing.person((*width, *height, *scale), shown.as_ref().map(|s| &*s.target)) {
                             if let Some(shown) = &shown {
-                                size(&cdp, &shown.session, held).await;
+                                sizing.apply(&cdp, &shown.session, &shown.target).await;
+                            }
+                        }
+                    }
+                    BrowserInput::FitView => {
+                        if let Some(shown) = &shown {
+                            if sizing.fit(&cdp, Some(&shown.target)) {
+                                sizing.apply(&cdp, &shown.session, &shown.target).await;
                             }
                         }
                     }
@@ -282,7 +287,7 @@ pub(super) async fn follow(
         let want = tabs.to_show().map(|tab| tab.id.clone());
         if want != shown.as_ref().map(|s| s.target.clone()) {
             widgets.shown_changed();
-            shown = show(&cdp, shown.take(), want, viewport).await;
+            shown = show(&cdp, shown.take(), want, &sizing).await;
         }
         let now = Seen {
             tabs: tabs.open.clone(),
@@ -292,6 +297,7 @@ pub(super) async fn follow(
             driver: driver.map(|(who, _)| who),
             dialog: widgets.dialog.clone(),
             select: widgets.select().cloned(),
+            sized: sizing.sized(shown.as_ref().map(|s| &*s.target)),
         };
         if told.as_ref() != Some(&now) {
             let _ = reports.send(Report::Page(now.clone()));
@@ -315,10 +321,10 @@ fn listed(tabs: &Tabs, shown: Option<&Shown>) -> String {
     lines.join("\n")
 }
 
-/// Stops showing `old` and starts showing `target`, laid out at `viewport`;
+/// Stops showing `old` and starts showing `target`, laid out as `sizing` says;
 /// what is shown after, which is nothing when the tab could not be attached
 /// to — it may have closed in the moment between.
-async fn show(cdp: &Cdp, old: Option<Shown>, target: Option<String>, viewport: Option<(u32, u32, f64)>) -> Option<Shown> {
+async fn show(cdp: &Cdp, old: Option<Shown>, target: Option<String>, sizing: &Sizing) -> Option<Shown> {
     if let Some(old) = old {
         cdp.tell("Page.stopScreencast", json!({}), Some(&old.session));
         cdp.tell("Target.detachFromTarget", json!({ "sessionId": old.session }), None);
@@ -333,37 +339,8 @@ async fn show(cdp: &Cdp, old: Option<Shown>, target: Option<String>, viewport: O
         }
     };
     let _ = cdp.call("Page.enable", json!({}), Some(&session)).await;
-    match viewport {
-        Some(viewport) => size(cdp, &session, viewport).await,
-        None => screencast(cdp, &session, UNSIZED).await,
-    }
+    sizing.apply(cdp, &session, &target).await;
     Some(Shown { target, session })
-}
-
-/// Lays the shown tab out at `viewport` and asks for its pictures at that
-/// many device pixels, so the person's view draws them one to one.
-async fn size(cdp: &Cdp, session: &str, viewport: (u32, u32, f64)) {
-    let (width, height, scale) = viewport;
-    let metrics = json!({ "width": width, "height": height, "deviceScaleFactor": scale, "mobile": false });
-    if let Err(error) = cdp.call("Emulation.setDeviceMetricsOverride", metrics, Some(session)).await {
-        tracing::debug!("browser: sizing a tab: {error:#}");
-    }
-    let _ = cdp.call("Page.stopScreencast", json!({}), Some(session)).await;
-    screencast(cdp, session, viewport).await;
-}
-
-async fn screencast(cdp: &Cdp, session: &str, (width, height, scale): (u32, u32, f64)) {
-    let pixels = |css: u32| (css as f64 * scale).round() as u32;
-    let asked = json!({
-        "format": "jpeg",
-        "quality": QUALITY,
-        "maxWidth": pixels(width),
-        "maxHeight": pixels(height),
-        "everyNthFrame": 1,
-    });
-    if let Err(error) = cdp.call("Page.startScreencast", asked, Some(session)).await {
-        tracing::debug!("browser: starting its pictures: {error:#}");
-    }
 }
 
 /// Passes one picture on, and acknowledges it: the browser sends the next

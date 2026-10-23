@@ -26,6 +26,7 @@ fn browser(pane: u64, agent: &str, tab: bool) -> PageBrowser {
         cursor: argus_protocol::BrowserCursor::Default,
         dialog: None,
         select: None,
+        sized: None,
     }
 }
 

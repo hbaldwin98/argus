@@ -4517,6 +4517,7 @@ mod tests {
             driver: None,
             dialog: None,
             select: None,
+            sized: None,
         })
     }
 

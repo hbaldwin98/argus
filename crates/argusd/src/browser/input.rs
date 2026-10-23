@@ -68,7 +68,8 @@ pub(crate) fn commands(input: &BrowserInput) -> Vec<(&'static str, Value)> {
         | BrowserInput::CloseTab { .. }
         | BrowserInput::Viewport { .. }
         | BrowserInput::Answer { .. }
-        | BrowserInput::Choose { .. } => {
+        | BrowserInput::Choose { .. }
+        | BrowserInput::FitView => {
             Vec::new()
         }
     }

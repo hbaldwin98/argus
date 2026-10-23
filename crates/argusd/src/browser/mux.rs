@@ -28,6 +28,10 @@ pub(crate) const AGENT_ACTED: &str = "Argus.agentActed";
 /// The command the daemon's view sends to say whether the person holds the
 /// browser: `held`. Answered here, never sent to the browser.
 pub(crate) const HOLD: &str = "Argus.hold";
+/// The event the daemon's view is sent when an agent sizes a tab or clears
+/// its size: `targetId`, the agent's `session`, and the `metrics` it sent
+/// (null when cleared).
+pub(crate) const AGENT_SIZED: &str = "Argus.agentSized";
 
 /// What an agent is refused while the person holds the browser: the input
 /// and navigation that would move the page from under them. Reading it —
@@ -36,7 +40,13 @@ fn drives(method: &str) -> bool {
     method.starts_with("Input.")
         || matches!(
             method,
-            "Page.navigate" | "Page.reload" | "Page.navigateToHistoryEntry" | "Target.createTarget" | "Target.closeTarget"
+            "Page.navigate"
+                | "Page.reload"
+                | "Page.navigateToHistoryEntry"
+                | "Target.createTarget"
+                | "Target.closeTarget"
+                | "Emulation.setDeviceMetricsOverride"
+                | "Emulation.clearDeviceMetricsOverride"
         )
 }
 
@@ -166,6 +176,7 @@ impl State {
                 return None;
             }
             self.agent_acted(message, &method);
+            self.agent_sized(message, &method);
         }
         self.next_id += 1;
         let global = self.next_id;
@@ -186,6 +197,20 @@ impl State {
             .flatten();
         let Some(target) = on_session.or(activated) else { return };
         let event = json!({ "method": AGENT_ACTED, "params": { "targetId": target, "drives": drives(method) } });
+        self.tell_all(Some(Who::Screen), &event.to_string());
+    }
+
+    /// Tells the daemon's view when an agent sizes a tab or clears its size,
+    /// so the person's view does not undo it.
+    fn agent_sized(&self, message: &Value, method: &str) {
+        let metrics = match method {
+            "Emulation.setDeviceMetricsOverride" => message["params"].clone(),
+            "Emulation.clearDeviceMetricsOverride" => Value::Null,
+            _ => return,
+        };
+        let Some(session) = message["sessionId"].as_str() else { return };
+        let Some(target) = self.sessions.get(session).map(|s| s.target.clone()) else { return };
+        let event = json!({ "method": AGENT_SIZED, "params": { "targetId": target, "session": session, "metrics": metrics } });
         self.tell_all(Some(Who::Screen), &event.to_string());
     }
 

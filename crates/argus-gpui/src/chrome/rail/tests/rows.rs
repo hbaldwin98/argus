@@ -190,6 +190,7 @@ fn a_browsers_row_wears_a_globe_and_says_browser_not_shell_and_a_press_shows_its
             cursor: argus_protocol::BrowserCursor::Default,
             dialog: None,
             select: None,
+            sized: None,
         }],
     };
     hear(cx, &opened, vec![Event::Browsers(Box::new(page))]);

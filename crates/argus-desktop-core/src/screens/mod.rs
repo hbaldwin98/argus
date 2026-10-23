@@ -1900,7 +1900,7 @@ fn browsing_with(agent: u64, tabless: bool) -> Window {
     ];
     for (pane, owner, url, title, accent) in open {
         if tabless && pane == B_TRIM {
-            let page = BrowserPage { pane: PaneId(pane), owner: PaneId(owner), url: String::new(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None, dialog: None, select: None };
+            let page = BrowserPage { pane: PaneId(pane), owner: PaneId(owner), url: String::new(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None, dialog: None, select: None, sized: None };
             w.receive(ServerMsg::BrowserPage(page));
             continue;
         }
@@ -1914,7 +1914,7 @@ fn browsing_with(agent: u64, tabless: bool) -> Window {
         let driver = (owner == P_TRIM).then_some(BrowserDriver::Agent);
         let held = owner == P_FAULTS;
         let following = owner != P_SCREENS;
-        w.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(pane), owner: PaneId(owner), url: url.into(), title: title.into(), tabs, shown, following, held, driver, dialog: None, select: None }));
+        w.receive(ServerMsg::BrowserPage(BrowserPage { pane: PaneId(pane), owner: PaneId(owner), url: url.into(), title: title.into(), tabs, shown, following, held, driver, dialog: None, select: None, sized: None }));
         w.receive(ServerMsg::BrowserFrame(Box::new(BrowserFrame { pane: PaneId(pane), jpeg: page_shot(accent), width: 1280, height: 800 })));
     }
     w
@@ -2224,6 +2224,7 @@ fn main_scenes() -> Vec<Scene> {
                 driver: Some(BrowserDriver::Person),
                 dialog: None,
                 select: None,
+                sized: None,
             };
             w.receive(ServerMsg::BrowserPage(page));
             w.call(Call::Resize { side: Side::Workspace, rows: ROWS, cols: COLS / 2 - 1 })
@@ -2247,6 +2248,7 @@ fn main_scenes() -> Vec<Scene> {
                 driver: None,
                 dialog: None,
                 select: None,
+                sized: None,
             };
             w.receive(ServerMsg::BrowserPage(page));
             w.call(Call::Resize { side: Side::Workspace, rows: ROWS, cols: COLS / 2 - 1 })

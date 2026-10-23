@@ -1,11 +1,12 @@
-//! A cell's toolbar (SHELL-BROWSER-7): Back, Forward, Reload, the address, Copy (`shot`) and Close; and the text
+//! A cell's toolbar (SHELL-BROWSER-7): Back, Forward, Reload, the address, the size an agent gave the page with
+//! Fit to view while it holds, Copy (`shot`) and Close; and the text
 //! button every control of the cell is drawn with.
 //!
 //! The three moves are always enabled and show no state; Close closes the browser for every
 //! client with no confirmation, and the cell goes when the daemon's tree says so.
 
 use argus_desktop_core::connection::page::Call;
-use argus_protocol::BrowserInput;
+use argus_protocol::{BrowserInput, BrowserSize};
 use gpui_kit::component::h_flex;
 use gpui_kit::{prelude::*, App, SharedString, TestSupportExt as _, Window};
 
@@ -33,8 +34,31 @@ pub fn text_button(
         .on_click(move |_, window, cx| press(window, cx))
 }
 
+pub const FIT: &str = "Fit to view";
+pub const FIT_TIP: &str = "An agent laid the page out at this size; lay it out at your view's again";
+
+/// The agent's size and the way back to the view's, shown only while an agent's size holds.
+fn fit(pane: u64, sized: BrowserSize, caller: &Caller, tokens: &Tokens) -> impl IntoElement {
+    let caller = caller.clone();
+    h_flex()
+        .flex_none()
+        .items_center()
+        .gap(rem(tokens.sp_6))
+        .child(
+            gpui_kit::div()
+                .id(SharedString::from(format!("browser-sized-{pane}")))
+                .test_support()
+                .text_size(rem(tokens.fs_sm))
+                .text_color(tokens.fg_muted)
+                .child(SharedString::from(format!("{} × {}", sized.width, sized.height))),
+        )
+        .child(text_button(format!("browser-fit-{pane}"), FIT, FIT_TIP, tokens, move |_, _| {
+            caller.call(Call::BrowserInput { pane, input: BrowserInput::FitView })
+        }))
+}
+
 /// `.bbar`.
-pub fn bar(pane: u64, address: &Address, copy: Node, caller: &Caller, tokens: &Tokens) -> impl IntoElement {
+pub fn bar(pane: u64, address: &Address, sized: Option<BrowserSize>, copy: Node, caller: &Caller, tokens: &Tokens) -> impl IntoElement {
     let go = |name: &'static str, glyph: &'static str, input: BrowserInput| {
         let caller = caller.clone();
         text_button(format!("browser-{}-{pane}", name.to_lowercase()), glyph, name, tokens, move |_, _| {
@@ -59,6 +83,7 @@ pub fn bar(pane: u64, address: &Address, copy: Node, caller: &Caller, tokens: &T
         .child(go("Forward", "→", BrowserInput::Forward))
         .child(go("Reload", "⟳", BrowserInput::Reload))
         .child(address.view(tokens))
+        .when_some(sized, |bar, sized| bar.child(fit(pane, sized, caller, tokens)))
         .child(copy)
         .child(text_button(format!("browser-close-{pane}"), "Close", CLOSE_TIP, tokens, move |_, _| close.call(Call::CloseBrowser { pane })))
 }

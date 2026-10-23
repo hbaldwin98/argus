@@ -108,3 +108,16 @@ fn escape_puts_the_list_away_and_says_none_was_picked(cx: &mut TestAppContext) {
     settle(cx, &opened);
     assert_eq!(said(&opened), ["BrowserInput { pane: 105, input: Choose { index: None } }"]);
 }
+
+#[gpui_kit::test]
+fn an_agents_size_is_said_in_the_toolbar_with_a_way_back_to_the_views(cx: &mut TestAppContext) {
+    let opened = opened(cx, 1, browser());
+    assert!(!has(cx, &opened, "browser-fit-105"), "nothing to fit while the view's size holds");
+    let mut sized = browser();
+    sized.sized = Some(argus_protocol::BrowserSize { width: 390, height: 844 });
+    hear(cx, &opened, vec![page(sized)]);
+    assert!(has(cx, &opened, "browser-sized-105"));
+    opened.calls.borrow_mut().clear();
+    click(cx, &opened, "browser-fit-105");
+    assert_eq!(said(&opened), ["BrowserInput { pane: 105, input: FitView }"]);
+}

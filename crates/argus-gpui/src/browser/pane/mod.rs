@@ -142,7 +142,7 @@ impl Render for BrowserPane {
             .min_h_0()
             .capture_any_mouse_down(cx.listener(|this, _, _, cx| this.claim(cx)))
             .child(tabs::strip(&browser, &self.tabs, &self.caller, &tokens))
-            .child(bar::bar(self.pane, &self.address, shot::button(self.pane, &self.heard, &tokens), &self.caller, &tokens))
+            .child(bar::bar(self.pane, &self.address, browser.sized, shot::button(self.pane, &self.heard, &tokens), &self.caller, &tokens))
             .child(self.screen(&browser, keyed, window, &tokens, cx))
             .children(self.list.element(window))
             .into_any_element()

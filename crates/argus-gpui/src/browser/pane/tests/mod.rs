@@ -62,6 +62,7 @@ pub(super) fn browser() -> PageBrowser {
         cursor: argus_protocol::BrowserCursor::Default,
         dialog: None,
         select: None,
+        sized: None,
     }
 }
 

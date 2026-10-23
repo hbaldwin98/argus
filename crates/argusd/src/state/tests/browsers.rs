@@ -227,7 +227,7 @@ async fn a_browser_pane_is_named_for_the_page_it_shows() {
     let (d, _, _, reports) = with_browser(dir.path());
     let tab = |title: &str| argus_protocol::BrowserTab { id: "t1".into(), url: "http://x.test/".into(), title: title.into() };
     let said = |tabs: Vec<argus_protocol::BrowserTab>| {
-        Report::Page(Seen { shown: tabs.first().map(|t| t.id.clone()), tabs, following: true, held: false, driver: None, dialog: None, select: None })
+        Report::Page(Seen { shown: tabs.first().map(|t| t.id.clone()), tabs, following: true, held: false, driver: None, dialog: None, select: None, sized: None })
     };
     let title_is = |want: &str| {
         let want = want.to_string();
@@ -253,7 +253,7 @@ async fn a_browser_whose_last_tab_closed_shows_a_joining_client_no_picture() {
     let (d, _, pane, reports) = with_browser(dir.path());
     let tab = argus_protocol::BrowserTab { id: "t1".into(), url: "http://x.test/".into(), title: "X".into() };
     let page = |tabs: Vec<argus_protocol::BrowserTab>| {
-        Report::Page(Seen { shown: tabs.first().map(|t| t.id.clone()), tabs, following: true, held: false, driver: None, dialog: None, select: None })
+        Report::Page(Seen { shown: tabs.first().map(|t| t.id.clone()), tabs, following: true, held: false, driver: None, dialog: None, select: None, sized: None })
     };
     let pictures = |d: &Daemon| d.watch_browsers().0.into_iter().filter(|n| matches!(n, BrowserNews::Frame(_))).count();
     let settle = || tokio::time::sleep(std::time::Duration::from_millis(50));

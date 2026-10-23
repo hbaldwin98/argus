@@ -14,11 +14,12 @@ pub(crate) mod mux;
 mod pipe;
 pub(crate) mod process;
 mod screen;
+mod sizing;
 mod widgets;
 
 use std::time::Duration;
 
-use argus_protocol::{BrowserAct, BrowserCursor, BrowserDialog, BrowserDriver, BrowserInput, BrowserSelect, BrowserTab};
+use argus_protocol::{BrowserAct, BrowserCursor, BrowserDialog, BrowserDriver, BrowserInput, BrowserSelect, BrowserSize, BrowserTab};
 use serde_json::json;
 use tokio::sync::mpsc;
 
@@ -49,6 +50,7 @@ pub(crate) struct Seen {
     pub(crate) driver: Option<BrowserDriver>,
     pub(crate) dialog: Option<BrowserDialog>,
     pub(crate) select: Option<BrowserSelect>,
+    pub(crate) sized: Option<BrowserSize>,
 }
 
 /// A running browser. Dropping it kills the browser.
@@ -343,6 +345,55 @@ mod tests {
         browser.input(BrowserInput::Answer { accept: true, text: Some("Grace".into()) });
         assert!(seen_until(&mut heard, |s| s.dialog.is_none()).await);
         assert_eq!(eval("window.named").await, Ok("\"Grace\"".into()));
+    }
+
+    /// Needs a Chrome, Chromium or Edge installed, or `ARGUS_BROWSER`:
+    /// `cargo test -p argusd a_real_browser -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn a_real_browser_keeps_the_size_an_agent_gives_it_until_the_person_fits_it_again() {
+        let (reports, mut heard) = mpsc::unbounded_channel();
+        let browser = Browser::start(reports).await.unwrap();
+        assert!(seen_until(&mut heard, |s| s.shown.is_some()).await, "Chrome starts with a tab shown");
+        let width = || {
+            let answer = browser.act(BrowserAct::Eval { expression: "innerWidth".into() });
+            async move { tokio::time::timeout(Duration::from_secs(30), answer).await.expect("no answer").expect("dropped").unwrap() }
+        };
+        let width_becomes = |want: &'static str| {
+            let width = &width;
+            async move {
+                for _ in 0..30 {
+                    if width().await == want {
+                        return true;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                false
+            }
+        };
+        browser.input(BrowserInput::Viewport { width: 1000, height: 700, scale: 1.0 });
+        assert!(width_becomes("1000").await, "the person's view lays the page out");
+
+        // An agent's tool sizes the tab on a session of its own, as agent-browser's `set viewport` does.
+        let (line, mut told) = browser.attach();
+        line.send(&serde_json::json!({ "id": 1, "method": "Target.getTargets" }).to_string());
+        let targets = answer(&mut told, 1).await;
+        let tab = targets["result"]["targetInfos"].as_array().unwrap().iter().find(|t| t["type"] == "page").unwrap()["targetId"].clone();
+        line.send(&serde_json::json!({ "id": 2, "method": "Target.attachToTarget", "params": { "targetId": tab, "flatten": true } }).to_string());
+        let session = answer(&mut told, 2).await["result"]["sessionId"].as_str().unwrap().to_string();
+        let phone = serde_json::json!({ "width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": false });
+        line.send(&serde_json::json!({ "id": 3, "sessionId": session, "method": "Emulation.setDeviceMetricsOverride", "params": phone }).to_string());
+        assert!(answer(&mut told, 3).await.get("error").is_none());
+        assert!(seen_until(&mut heard, |s| s.sized == Some(argus_protocol::BrowserSize { width: 390, height: 844 })).await, "the person is told the agent's size");
+        assert!(width_becomes("390").await);
+
+        browser.input(BrowserInput::Viewport { width: 1100, height: 650, scale: 1.0 });
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(width().await, "390", "the person's view shifting does not undo the agent's size");
+
+        browser.input(BrowserInput::FitView);
+        assert!(seen_until(&mut heard, |s| s.sized.is_none()).await);
+        assert!(width_becomes("1100").await, "fitting it lays it out at the person's latest view");
     }
 
     /// Needs a Chrome, Chromium or Edge installed, or `ARGUS_BROWSER`:

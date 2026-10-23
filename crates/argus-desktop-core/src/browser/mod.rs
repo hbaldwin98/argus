@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use argus_protocol::{BrowserButton, BrowserCursor, BrowserDialog, BrowserDriver, BrowserFrame, BrowserInput, BrowserPage, BrowserSelect, BrowserTab, ClientMsg, PaneId};
+use argus_protocol::{BrowserButton, BrowserCursor, BrowserDialog, BrowserDriver, BrowserFrame, BrowserInput, BrowserPage, BrowserSelect, BrowserSize, BrowserTab, ClientMsg, PaneId};
 use serde::Serialize;
 
 use crate::connection::sent::Sent;
@@ -64,6 +64,8 @@ pub struct PageBrowser {
     pub dialog: Option<BrowserDialog>,
     /// A `<select>` whose list is open, which the window draws.
     pub select: Option<BrowserSelect>,
+    /// The size an agent laid the page out at, over the view's own.
+    pub sized: Option<BrowserSize>,
 }
 
 /// One picture of a pane's browser, as the daemon sent it.
@@ -264,6 +266,7 @@ impl Browsers {
                     cursor: self.cursors.get(&page.pane).copied().unwrap_or_default(),
                     dialog: page.dialog.clone(),
                     select: page.select.clone(),
+                    sized: page.sized,
                 })
                 .collect(),
         });
@@ -282,7 +285,7 @@ mod tests {
     use super::*;
 
     fn page(pane: u64, url: &str) -> BrowserPage {
-        BrowserPage { pane: PaneId(pane), owner: PaneId(pane), url: url.into(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None, dialog: None, select: None }
+        BrowserPage { pane: PaneId(pane), owner: PaneId(pane), url: url.into(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None, dialog: None, select: None, sized: None }
     }
 
     #[test]
