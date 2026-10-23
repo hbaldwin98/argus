@@ -4,14 +4,23 @@
 //! failure is an error, never a panic.
 //!
 //! The rule is the store's own (`store/mod.rs`): "a write is a transaction
-//! rather than a rewrite of everything". DESIGN.md names the writes where a
+//! rather than a rewrite of everything". These are the writes where a
 //! half would show: the pane table replaced "in one transaction" (Session
 //! restore), a feature's slug "made unique by suffix inside the
 //! transaction" and a capture written "in one transaction" (Features and
 //! the decision board), a removed feature dropping its views "in the same
 //! transaction" (saved views), and a transfer written "in one store
-//! transaction". `WRITES` is every write; DESIGN.md's "Store writes under
-//! faults" says what is left out and why.
+//! transaction". `WRITES` is every write but two, each of which finishes
+//! when run again: a migration runs in one transaction with the
+//! `user_version` it reaches, and the one-time import of legacy files
+//! inserts with `OR IGNORE` and retires a file only once it is in.
+//!
+//! A known gap, allowed here: a write whose commit landed can still return
+//! an error when a read it makes afterwards fails, such as the board it
+//! reads back for its answer. Nothing is left half done, but the daemon
+//! refuses a request whose write was saved, and a client that retries
+//! writes it twice. The intended fix is that a write answers from what it
+//! committed and logs the failed read.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -402,7 +411,7 @@ fn every_write_is_whole_or_absent_when_failed_at_any_step_or_its_commit() {
 /// that checkout points at it: stopped at any step or at its commit, the
 /// open leaves no feature, or the feature with its checkout on it, never a
 /// feature its own checkout is not on. The owner's decision of 2026-10-18,
-/// recorded in DESIGN.md's "Store writes under faults".
+/// recorded here.
 #[test]
 fn an_agents_feature_is_never_left_without_its_checkout() {
     let open = |s: &Store| {

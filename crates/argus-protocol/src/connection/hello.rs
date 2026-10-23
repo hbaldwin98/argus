@@ -5,8 +5,7 @@
 //! know, so the exchange is shaped around never sending it one. The client
 //! greets first; a daemon that greets back can take what it listed. A
 //! daemon that sends its tree instead predates the handshake, and a client
-//! that sends nothing is taken to predate it too. See DESIGN.md, "Process
-//! model".
+//! that sends nothing is taken to predate it too.
 
 use std::time::Duration;
 

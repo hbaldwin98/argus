@@ -3,8 +3,7 @@
 
 use crate::ui::*;
 
-/// Drawn in the column the live pane uses, so the nav columns stay put
-/// (DESIGN.md §9 M4).
+/// Drawn in the column the live pane uses, so the nav columns stay put.
 /// The diff itself. The window around it is drawn by `render_overlay`,
 /// which owns the border and the title.
 pub(in crate::ui) fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {

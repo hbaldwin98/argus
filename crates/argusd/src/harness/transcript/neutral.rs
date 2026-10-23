@@ -1,6 +1,6 @@
 //! The neutral transcript format: what a harness Argus has no reader for
 //! writes so its sessions can be previewed. Its lines are spelled out in
-//! DESIGN.md, "Transcripts"; each is the protocol's [`Entry`] as JSON, so
+//! docs/agents.md, "Transcripts"; each is the protocol's [`Entry`] as JSON, so
 //! what is read here is what a client is sent.
 
 use argus_protocol::agents::transcript::{Entry, TITLE_KIND};

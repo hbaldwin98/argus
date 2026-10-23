@@ -24,7 +24,7 @@ pub struct ConfigFile {
     pub harnesses: Vec<HarnessConfig>,
 }
 
-/// A named group of projects (DESIGN.md §11). Declaring one is optional —
+/// A named group of projects. Declaring one is optional —
 /// a project's `workspace` key creates it implicitly, and projects with no
 /// key at all land in [`DEFAULT_WORKSPACE`].
 #[derive(Debug, Deserialize)]
@@ -224,7 +224,7 @@ pub struct HarnessConfig {
 }
 
 /// The string form is what older configs wrote, so it stays a format kept
-/// where its own harness keeps it (DESIGN.md, "Transcripts").
+/// where its own harness keeps it (docs/agents.md, "Transcripts").
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum TranscriptConfig {

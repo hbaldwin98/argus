@@ -109,7 +109,8 @@ jobs:
           cp "target/$TARGET/release/argus-hook" "dist/$package/"
           cp "target/$TARGET/release/argus-desktop" "dist/$package/"
           cp "target/$TARGET/release/argus-desktop-next" "dist/$package/"
-          cp README.md DESIGN.md TARGET.md ROADMAP.md LICENSE-MIT LICENSE-APACHE "dist/$package/"
+          cp README.md ARCHITECTURE.md TARGET.md ROADMAP.md LICENSE-MIT LICENSE-APACHE "dist/$package/"
+          cp -R docs "dist/$package/"
           tar -C dist -czf "dist/$package.tar.gz" "$package"
           cd dist
           shasum -a 256 "$package.tar.gz" > "$package.tar.gz.sha256"
@@ -129,7 +130,8 @@ jobs:
           Copy-Item "target/$env:TARGET/release/argus-hook.exe" $packageDir
           Copy-Item "target/$env:TARGET/release/argus-desktop.exe" $packageDir
           Copy-Item "target/$env:TARGET/release/argus-desktop-next.exe" $packageDir
-          Copy-Item README.md, DESIGN.md, TARGET.md, ROADMAP.md, LICENSE-MIT, LICENSE-APACHE $packageDir
+          Copy-Item README.md, ARCHITECTURE.md, TARGET.md, ROADMAP.md, LICENSE-MIT, LICENSE-APACHE $packageDir
+          Copy-Item docs -Destination $packageDir -Recurse
           $archive = Join-Path "dist" "$package.zip"
           Compress-Archive -Path $packageDir -DestinationPath $archive
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()

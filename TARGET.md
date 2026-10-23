@@ -1,179 +1,66 @@
-# Argus: Target Design
+# Argus: Target
 
-This document defines the intended product. It does not claim these systems are implemented;
-[`DESIGN.md`](DESIGN.md) is the current behavior and [`ROADMAP.md`](ROADMAP.md) orders the gap.
+What Argus is for and the lines it holds. [`ARCHITECTURE.md`](ARCHITECTURE.md) maps how it is
+built; [`ROADMAP.md`](ROADMAP.md) is what is left.
 
-## Product boundary
+## What Argus is
 
-Argus is a terminal workspace built around one navigation spine:
+A workspace for running, reviewing and remembering the work of command-line coding agents. It runs
+the harnesses a person already uses across their Git checkouts, shows what each is doing, lets them
+review the result, and carries what agents learned into the next conversation.
 
-```text
-Project -> Repository -> Checkout -> Agent, shell, or editor
-```
+Its spine is `Project → Repository → Checkout → Agent, shell or editor`. A workspace scopes which
+projects are visible. Views (features, checkouts, review, code) replace the screen, never the running
+work, and the spine is always one key away.
 
-A workspace scopes the visible projects without adding another column. Argus is terminal-first. The
-desktop window is another renderer of the same daemon and never holds state the terminal client
-lacks. Argus is not a general tmux replacement, an agent host, a Git porcelain, or a project tracker. Teams may already
-plan work in Jira, Linear, GitHub Issues, or somewhere else; Argus runs existing command-line
-harnesses and makes their checkouts, state, review work, and accumulated understanding visible.
+## What it is not
 
-The spine is the default *view*, not the only one. A view owns the whole content area and is
-switched between as a tab. Review and durable work context need the full area rather than another
-narrow navigation column beside a pane. Switching views never stops a pane, and the spine is always
-one keystroke away — what a view replaces is the screen, never the running work.
+- **Not an agent.** It runs existing CLIs and never chooses how an agent works or browses.
+- **Not a Git client.** It shows Git state, makes worktrees and switches branches. Staging,
+  reverting, and comparing against a fork point belong to a Git client. It never pushes or merges.
+- **Not a tracker.** It links to the team's tracker and may help reconcile with it, but never
+  synchronizes or replaces it, and never asks a person to maintain a second board.
+- **Not a general multiplexer.** Panes exist to hold agents and the shells beside them.
 
-The target budgets, for the terminal client, are sub-16 ms client frames, less than 50 MiB client RSS with twelve active
-panes, about 1.5 MiB resident per idle pane, and less than 30 ms to first paint against a warm
-daemon.
+## Principles
 
-## Ownership and persistence
-
-The daemon owns PTYs, scrollback, runtime state, Git observation, and agent integration. Clients
-are replaceable renderers. Closing a client never stops a pane.
-
-Runtime persistence must be atomic and recoverable. It must distinguish:
-
-- an open pane from a running child;
-- a process that exited from one that should restart;
-- a fresh relaunch from a resumable harness session;
-- display title from template and harness identity.
-
-Argus must choose and document one crash policy: reattach surviving processes, or guarantee that
-daemon children cannot survive and relaunch/resume them. It must never duplicate an untracked
-surviving child.
-
-## Repository and checkout model
-
-A project groups repositories. A repository owns its primary checkout, linked worktrees, and
-branches without a checkout. The UI may show, for example:
-
-```text
-acme-api
-  main              primary     clean
-  feat/rate-limit   worktree    +142 -18   needs review
-  hotfix/tls-expiry no checkout
-```
-
-Selecting a branch without a checkout asks Git to switch the primary checkout or create a worktree.
-Git carries non-conflicting changes across the switch and refuses conflicting changes with its
-reason shown to the user. Worktree roots and setup hooks are configurable.
-
-One agent per checkout is the default, not a hidden assumption. Multiple agents are allowed but
-shown as shared; optional project exclusivity can make that a hard block.
-
-## Agent templates and state
-
-Templates may define command arguments, environment, prompt interpolation,
-permissions, one-shot behavior, sandboxing, redaction, and harness-specific resume behavior.
-Template identity and display title are separate persisted fields. The daemon
-names a pane from the latest user prompt a harness reports; an agent may refine
-that name with an explicit title command.
-
-The target state model is:
-
-| State | Meaning |
-| --- | --- |
-| `idle` | Running without current work |
-| `working` | Producing or processing work |
-| `waiting` | Requires operator input |
-| `needs-review` | Changed files have not been acknowledged |
-| `done` | Finished and reviewed |
-| `failed` | Non-zero exit or explicit block/failure |
-
-Explicit harness events are the only source of state. A harness that reports nothing sits at
-`idle` until it exits — coarse, but honest: process activity cannot separate an agent thinking
-from one stopped at a prompt, and output matching reads an agent's own prose as its status.
-Events must identify a pane even when several harnesses share a checkout. Parent rows show the
-highest-severity descendant with distinct glyphs as well as color.
-
-What Argus says to an agent on its own account, such as a review comment, goes in through the
-harness where something of Argus's runs inside the session — opencode's plugin, pi's extension,
-Claude Code's mod from 2.1.287, kept outside the checkout — rather than as typing, since typing
-into a dialog can answer it. A harness without one is typed into.
-
-## Review contract
-
-Review covers uncommitted work split into the two sides Git keeps apart: `HEAD` against the
-index, and the index against the working tree. Each side captures its own endpoint, so a file
-staged and then edited again shows the correct, different diff on each. The working-tree endpoint
-includes deleted, renamed, and non-ignored untracked content. A checkout's recent commits are
-reviewable one at a time against their first parent.
-
-Comparing a branch against a fork point, an upstream, or a remembered snapshot belongs to a Git
-client, not here.
-
-Review supports durable line or range comments and live-agent selection. The daemon stores a
-comment before sending its terminal notification, and agents can read checkout-scoped feedback.
-Syntax highlighting is produced in the daemon as token-role spans; the client theme supplies
-colour. The same diff reads unified or split side by side, chosen in the client over data the wire
-already carries; a comment means the same thing in either, because it anchors by both line
-numbers. Staging, unstaging, and reverting are deliberately not Argus's job.
+1. **The daemon owns the work; clients are renderers.** Closing a client never stops a pane. The
+   terminal client and the desktop window show the same daemon, and neither holds state the daemon
+   lacks.
+2. **The client never predicts.** A screen changes when the daemon says it did, so a refusal leaves
+   the truth on screen.
+3. **State comes from what is observed, never asserted.** An agent's status comes from its harness's
+   events, a feature's standing from the agents and tasks working on it. The only thing a person sets
+   by hand is accepting the work.
+4. **Nothing is silently lost.** No auto-push, no auto-merge, no silent deletion. Destructive actions
+   name what they affect first. A reversed decision is superseded, not erased.
+5. **Agents write the durable context; people correct it.** Corrections take precedence and keep
+   their provenance.
+6. **Remote is the same product.** Everything happens beside the code, on the daemon's machine, and
+   connecting to another machine never installs software there.
 
 ## Agent context and memory
 
-The daemon exposes the same scoped context through MCP, HTTP, and `argus ctx`. A per-checkout token
-limits every agent to approved read and write calls. Write operations such as
-review requests, and worktree creation are audited and template-policy gated.
+This is the part not yet reached. Today context hangs off whichever feature a checkout is on. The
+target is:
 
-Argus's durable context is written primarily by agents and corrected by humans. Its purpose is to
-carry useful understanding between conversations, not to duplicate the team's work tracker. The
-normal loop is:
+- A **work context** is a durable topic understanding accumulates around. A checkout may suggest one
+  but never silently assigns it; the agent's current request decides what is relevant.
+- Agents write typed **artifacts** into it: decisions, tasks, findings, assumptions, open questions
+  and summaries, each with its source, session, checkout and time. Routine progress is not memory.
+- An agent starts from a bounded **context packet**: what the person forwarded plus the applicable
+  artifacts, each with why it was included, and a revision the agent refreshes on. Stale, superseded
+  and unrelated material is left out unless asked for.
+- The same context is readable through `argus-hook`, `argus ctx` and MCP, limited per checkout by
+  token.
+- The interface is where a person inspects and corrects that context. A tree, list or timeline is a
+  view of it, never its source of truth.
 
-1. A person sends an agent the sources and instructions relevant to the current work.
-2. The agent uses them and records the durable results of its work.
-3. Later agents receive a bounded, relevant subset of those results.
-4. A person corrects, removes, or supersedes anything that should not guide future work.
+## Bounds
 
-A **work context** is a durable topic around which that understanding accumulates. It may have a
-short brief and links to external work, but it is not a feature card, assignment, or lifecycle. A
-checkout may suggest a context, but sharing a checkout or being its only context never proves that
-the context applies to a new request. The pane's current work and the user's request determine what
-is relevant.
-
-Agents write typed **artifacts** into a work context: decisions, tasks, findings, assumptions, open
-questions, and compact summaries. Each artifact carries its source, authoring session, checkout,
-and time. A task may retain an opaque Jira, Linear, or GitHub key, but Argus neither synchronizes
-nor replaces that tracker. Tasks may nest newly discovered work beneath the artifact that
-exposed it, while routine transcript and progress chatter are not durable artifacts.
-
-Artifacts have correction semantics suited to their type. A decision records what was chosen, the
-real alternative, and the reason; a later decision supersedes it without erasing the old reasoning.
-A false finding or assumption can be corrected or withdrawn. Tasks can be completed or discarded.
-Human corrections take precedence in future reads, but retain provenance so an agent can explain
-where its context came from.
-
-An agent starts from a **context packet**, not a whole project database. The packet combines what
-the person explicitly forwarded with a bounded selection of applicable artifacts. It states why
-each durable item was included and omits stale, superseded, completed, or unrelated material unless
-the current request calls for history. Agents refresh the packet when its revision changes and
-write newly learned artifacts back as part of finishing work.
-
-The primary UI lets a person inspect and correct the context agents have built. A decision tree,
-task list, timeline, or board may be a useful projection of artifacts, but no projection is the
-source of truth and none requires the person to maintain a second planning system.
-
-## Terminal and memory model
-
-The live screen is a dense grid. Scrollback uses packed text and style runs with a byte budget,
-oldest-first eviction, cold-pane decoding, and optional memory-mapped spill. Spill files are
-private and template redaction runs before persistence.
-
-The terminal path supports child-negotiated mouse reporting, bracketed paste, focus events, OSC
-52 forwarding, extended keys, and usable scrollback navigation. Output queues and parsing work are
-bounded under a noisy child.
-
-A pane can be toggled fullscreen, hiding the navigation columns and giving the terminal the full
-client window. The navigation columns remain accessible via a keybinding or mouse gesture.
-
-With several clients, PTY size has deterministic ownership or arbitration. A smaller background
-view cannot continuously resize a pane away from the active owner.
-
-## Protocol and safety
-
-The protocol remains host-agnostic and gains version/capability negotiation before remote use.
-Socket or pipe access is restricted to the user. Slow or lagged clients recover with a full
-snapshot rather than retaining silently corrupted grids.
-
-Argus never auto-pushes, auto-merges, or silently deletes work. Destructive actions name the
-affected checkout, branch, panes, and dirty files before confirmation. Optional per-template
-sandboxing limits writes outside the checkout.
+- Terminal client: frames under 16 ms, under 50 MiB resident with twelve active panes, about
+  1.5 MiB per idle pane, first paint under 30 ms against a warm daemon.
+- Scrollback is byte-bounded, evicts oldest first, and spills privately with redaction applied
+  before anything is persisted.
+- The endpoint is restricted to its user; the protocol negotiates capabilities and authenticates
+  before it is exposed beyond the machine; templates can sandbox writes outside their checkout.

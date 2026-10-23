@@ -1,5 +1,5 @@
 //! A checkout's uncommitted work, and a single commit against its first
-//! parent, as the review viewer shows them (DESIGN.md §9 M4). A rendered
+//! parent, as the review viewer shows them. A rendered
 //! diff rather than a raw patch, so the client doesn't re-parse what the
 //! daemon already knows.
 

@@ -1,7 +1,7 @@
 //! What Argus knows about an agent CLI, beyond the command that starts it.
 //!
-//! Status used to come from Claude Code's hook dialect and nothing else
-//! (DESIGN.md §8b, §11), which meant every other harness — herdr, codex,
+//! Status used to come from Claude Code's hook dialect and nothing else,
+//! which meant every other harness — herdr, codex,
 //! opencode, anything a user writes — sat at `Idle` until it exited. A
 //! harness here is a description of *how a particular CLI can be asked to
 //! report*, so adding one is a config block rather than a code change.

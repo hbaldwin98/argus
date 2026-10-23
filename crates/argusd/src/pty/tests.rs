@@ -518,8 +518,8 @@ fn echo(text: &str) -> Spawn {
     }
 }
 
-/// DESIGN.md, "Neither kind of job caps memory or processes": a cap ended
-/// agents mid-task. What the agent's job still does is end everything it
+/// Neither kind of job caps memory or processes: a cap of 32 GiB and 256
+/// processes ended agents mid-task. What the agent's job still does is end everything it
 /// holds, and keep it, since an agent's job does not let breakaway go.
 #[cfg(windows)]
 #[test]
@@ -717,8 +717,8 @@ fn what_a_test_process_starts_is_held_in_its_job() {
 /// The rest of `hold_test_process`'s promise, which no test can watch
 /// happen from inside the process it is about: its job ends everything in
 /// it when the test binary ends, and lets a process that asks to leave it
-/// go. DESIGN.md states the first under "Testing"; the second is a shell
-/// job's rule there, which `argus` relies on to start its daemon from a
+/// go. The first keeps a broken run from leaving shells behind; the second
+/// is a shell job's rule, which `argus` relies on to start its daemon from a
 /// pane, so code under test sees the job it would under the daemon.
 #[cfg(windows)]
 #[test]
@@ -1624,7 +1624,8 @@ fn paste_is_delimited_only_when_the_child_requested_it() {
 }
 
 /// The user's request (strip the paste markers out of pasted text before
-/// wrapping it, as xterm and kitty do) and DESIGN.md's paste rule.
+/// wrapping it, as xterm and kitty do): a pasted end marker must not turn
+/// the rest of the paste into typed commands.
 #[test]
 fn a_pasted_end_marker_cannot_end_the_paste_early() {
     assert_eq!(
@@ -1637,7 +1638,7 @@ fn a_pasted_end_marker_cannot_end_the_paste_early() {
     );
 }
 
-/// DESIGN.md: the daemon wraps a paste, and so strips its markers, only
+/// The daemon wraps a paste, and so strips its markers, only
 /// when the child has requested bracketed paste.
 #[test]
 fn an_unbracketed_paste_is_passed_through_untouched() {
@@ -1691,7 +1692,7 @@ mod properties {
 
     proptest! {
         /// The user's request (strip the paste markers out of pasted text
-        /// before wrapping it, as xterm and kitty do) and DESIGN.md's rule
+        /// before wrapping it, as xterm and kitty do) and the rule
         /// that a paste reaches the child whole: between the delimiters the
         /// daemon adds, no marker of either kind survives.
         #[test]

@@ -140,8 +140,8 @@ and pane headers.
   `render_to_image`, and the audit is rebuilt on `simulate_*`.
 - **Build and CI.** The `page` job, the bindings check and the WebKitGTK
   apt lines go (`ci.yml`, `release.yml`, `reliab.yml`); GPUI's Linux
-  packages and a headless renderer come in. README, AGENTS.md and DESIGN.md
-  rows change with them.
+  packages and a headless renderer come in. README, AGENTS.md and CONTRIBUTING.md
+  change with them.
 
 ## Decided
 

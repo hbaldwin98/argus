@@ -4,7 +4,7 @@
 //! `SCHEMA_Vn` constants, so they cannot see a constant edited after it
 //! shipped, or rows an old build wrote differently from how today's code
 //! would. Each fixture here was written by its release's own `Store`;
-//! `README.md` §"Publishing a Release" says when one is added. Paths the
+//! `CONTRIBUTING.md` §"Publishing a release" says when one is added. Paths the
 //! migrations read off the disk are placeholders, filled in with a real
 //! repository before the store is opened.
 
