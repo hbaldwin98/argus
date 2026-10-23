@@ -111,6 +111,43 @@ pub struct BrowserPage {
     /// fits it to their view again.
     #[serde(default)]
     pub sized: Option<BrowserSize>,
+    /// Chrome's own menu, opened by a right-click the page did not handle.
+    #[serde(default)]
+    pub context: Option<BrowserContext>,
+}
+
+/// What a right-click landed on, for the menu Chrome would open there.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct BrowserContext {
+    /// Where it was, in the page's CSS pixels: the menu opens there.
+    pub x: f64,
+    pub y: f64,
+    /// The address of the link it was on.
+    pub link: Option<String>,
+    /// The address of the image it was on.
+    pub image: Option<String>,
+    /// The text selected, in the page or the field it was in.
+    pub selection: Option<String>,
+    /// Whether it was in a field the person can type in.
+    pub editable: bool,
+}
+
+/// What a choice in Chrome's menu asks of the page. Copying is the
+/// window's own, to the person's clipboard, and asks nothing of it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserMenuAction {
+    OpenLink,
+    Back,
+    Forward,
+    Reload,
+    /// Deletes the field's selection, which the window has copied.
+    Cut,
+    /// Types the person's clipboard into the field.
+    Paste { text: String },
+    SelectAll,
 }
 
 /// A page's layout size, in CSS pixels.
@@ -237,6 +274,8 @@ pub enum BrowserInput {
     /// Lay the shown tab out at the person's view again, in place of the
     /// size an agent gave it.
     FitView,
+    /// A choice from Chrome's menu, or none when it was put away.
+    Context { action: Option<BrowserMenuAction> },
     Wheel { x: f64, y: f64, dx: f64, dy: f64 },
     /// Text typed into whatever has the page's focus.
     Text { text: String },
@@ -269,7 +308,10 @@ impl BrowserInput {
     pub fn drives(&self) -> bool {
         // A pointer passing over the page is not moving it: hover alone
         // does not take the chip from the agent.
-        let looking = matches!(self, BrowserInput::Move { held: None, .. } | BrowserInput::Leave | BrowserInput::Choose { index: None });
+        let looking = matches!(
+            self,
+            BrowserInput::Move { held: None, .. } | BrowserInput::Leave | BrowserInput::Choose { index: None } | BrowserInput::Context { action: None }
+        );
         !looking
             && !matches!(
                 self,
@@ -289,6 +331,7 @@ impl BrowserInput {
                 | BrowserInput::Answer { .. }
                 | BrowserInput::Choose { .. }
                 | BrowserInput::FitView
+                | BrowserInput::Context { .. }
         )
     }
 

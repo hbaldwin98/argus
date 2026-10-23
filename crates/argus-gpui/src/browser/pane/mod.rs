@@ -11,11 +11,12 @@
 //! toolbar `bar`, the address `address`, who has the browser `chip`, the screen `screen`, its
 //! keys `keys`, its pointer `pointer`, an input method's text `ime`, the room it reports `viewport`,
 //! the toolbar's Copy `shot`, and the widgets headless Chrome draws nowhere: a `<select>`'s list
-//! `select` and a script's dialog `dialog`.
+//! `select`, a script's dialog `dialog` and Chrome's own menu `context`.
 
 pub mod address;
 pub mod bar;
 pub mod chip;
+pub mod context;
 pub mod dialog;
 pub mod ime;
 pub mod keys;
@@ -62,6 +63,8 @@ pub struct BrowserPane {
     pointer: pointer::Pointer,
     /// The open `<select>`'s list (`select`).
     list: select::List,
+    /// Chrome's menu (`context`).
+    context: context::Menu,
     /// The dialog last asked, and the field a `prompt` is answered in (`dialog`).
     asked: Option<argus_protocol::BrowserDialog>,
     prompt: Field,
@@ -82,6 +85,7 @@ impl BrowserPane {
                 arming.arm(cx);
                 let browser = heard.read(cx).browsers.browsers.iter().find(|browser| browser.pane == this.pane).cloned();
                 this.follow_select(browser.as_ref(), window, cx);
+                this.follow_context(browser.as_ref(), window, cx);
                 cx.notify();
             }),
             _keys: keys::register(pane, caller.clone(), focus.clone(), window, cx),
@@ -89,6 +93,7 @@ impl BrowserPane {
             marked: ime::Marked::default(),
             pointer: pointer::Pointer::default(),
             list: select::List::default(),
+            context: context::Menu::default(),
             asked: None,
             prompt: Field::new("", window, cx),
             heard,
@@ -145,6 +150,7 @@ impl Render for BrowserPane {
             .child(bar::bar(self.pane, &self.address, browser.sized, shot::button(self.pane, &self.heard, &tokens), &self.caller, &tokens))
             .child(self.screen(&browser, keyed, window, &tokens, cx))
             .children(self.list.element(window))
+            .children(self.context.element(window))
             .into_any_element()
     }
 }

@@ -63,6 +63,7 @@ pub(super) fn browser() -> PageBrowser {
         dialog: None,
         select: None,
         sized: None,
+        context: None,
     }
 }
 

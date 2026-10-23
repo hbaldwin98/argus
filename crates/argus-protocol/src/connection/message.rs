@@ -933,7 +933,7 @@ pub enum ServerMsg {
     /// Where a browser pane's browser is, to a client that sent
     /// [`ClientMsg::WatchBrowsers`]: as it opens, and whenever its page
     /// changes address or title.
-    BrowserPage(crate::browser::BrowserPage),
+    BrowserPage(Box<crate::browser::BrowserPage>),
     /// The latest picture of a browser pane, sent as the page changes.
     /// A client that falls behind is sent the latest, never the backlog.
     BrowserFrame(Box<crate::browser::BrowserFrame>),

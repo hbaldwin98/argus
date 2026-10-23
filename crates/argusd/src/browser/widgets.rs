@@ -1,5 +1,5 @@
 //! The widgets headless Chrome draws nowhere, shown to the person to answer
-//! instead: a script's dialog, and a `<select>`'s list.
+//! instead: a script's dialog, a `<select>`'s list, and Chrome's own menu.
 //!
 //! A dialog stops the page until it is answered, so it is held from the
 //! moment the shown tab opens one until anyone answers it, the person or an
@@ -10,11 +10,18 @@
 //! with the `input` and `change` events a page listens for. A `<select>`
 //! drawn as a list box (`multiple`, or a `size` above 1) is in the page and
 //! left to it, as is any dropdown a page builds of its own elements.
+//!
+//! Chrome's menu opens on a right-click the page does not handle. Nothing
+//! in DevTools says when that is, so each shown tab is given a listener
+//! that notes what the click landed on and, once every handler has run,
+//! whether one prevented it; after the person's right button comes up the
+//! note is read, and the menu is put up only when the page left it alone.
 
-use argus_protocol::{BrowserDialog, BrowserDialogKind, BrowserSelect};
+use argus_protocol::{navigable, BrowserContext, BrowserDialog, BrowserDialogKind, BrowserInput, BrowserKey, BrowserMenuAction, BrowserSelect};
 use serde_json::{json, Value};
 
 use super::cdp::{Cdp, Event};
+use super::input::commands;
 
 /// What is open on the shown tab, waiting on the person.
 #[derive(Debug, Default)]
@@ -23,6 +30,8 @@ pub(super) struct Widgets {
     /// The select whose list is open: the page's handle on it, and what the
     /// person is shown of it.
     select: Option<(String, BrowserSelect)>,
+    /// Chrome's menu, open where a right-click the page left alone landed.
+    pub(super) context: Option<BrowserContext>,
 }
 
 impl Widgets {
@@ -40,7 +49,10 @@ impl Widgets {
                 self.dialog = Some(BrowserDialog { kind, message: text("message"), default_prompt: text("defaultPrompt") });
             }
             "Page.javascriptDialogClosed" => self.dialog = None,
-            "Page.frameNavigated" if event.params["frame"]["parentId"].is_null() => self.select = None,
+            "Page.frameNavigated" if event.params["frame"]["parentId"].is_null() => {
+                self.select = None;
+                self.context = None;
+            }
             _ => {}
         }
     }
@@ -79,6 +91,55 @@ impl Widgets {
         cdp.tell("Runtime.releaseObject", json!({ "objectId": object }), Some(session));
     }
 
+    /// Starts noting right-clicks on the tab `session` shows, on this
+    /// document and every one it loads after.
+    pub(super) async fn watch(cdp: &Cdp, session: &str) {
+        let _ = cdp.call("Page.addScriptToEvaluateOnNewDocument", json!({ "source": NOTE }), Some(session)).await;
+        let _ = cdp.call("Runtime.evaluate", json!({ "expression": NOTE }), Some(session)).await;
+    }
+
+    /// The person's right button came up: Chrome's menu opens where it was,
+    /// if the page left the click alone.
+    pub(super) async fn right_released(&mut self, cdp: &Cdp, session: &str) {
+        let read = json!({ "expression": TAKE, "awaitPromise": true, "returnByValue": true });
+        let noted = tokio::time::timeout(std::time::Duration::from_secs(1), cdp.call("Runtime.evaluate", read, Some(session))).await;
+        let Ok(Ok(answer)) = noted else { return };
+        self.context = noted_menu(&answer["result"]["value"]);
+    }
+
+    /// Any other press puts Chrome's menu away, as it does in a window.
+    pub(super) fn pressed(&mut self) {
+        self.context = None;
+    }
+
+    /// Does what was chosen from Chrome's menu, and puts it away.
+    pub(super) fn choose_from_menu(&mut self, cdp: &Cdp, session: &str, action: Option<&BrowserMenuAction>) {
+        let Some(context) = self.context.take() else { return };
+        let Some(action) = action else { return };
+        let page = |input: BrowserInput| {
+            for (method, params) in commands(&input) {
+                cdp.tell(method, params, Some(session));
+            }
+        };
+        match action {
+            BrowserMenuAction::OpenLink => {
+                if let Some(link) = context.link.filter(|link| navigable(link)) {
+                    cdp.tell("Target.createTarget", json!({ "url": link }), None);
+                }
+            }
+            BrowserMenuAction::Back => page(BrowserInput::Back),
+            BrowserMenuAction::Forward => page(BrowserInput::Forward),
+            BrowserMenuAction::Reload => page(BrowserInput::Reload),
+            BrowserMenuAction::Cut => page(BrowserInput::Key { key: BrowserKey::Backspace }),
+            BrowserMenuAction::Paste { text } => page(BrowserInput::Text { text: text.clone() }),
+            BrowserMenuAction::SelectAll => {
+                let key = |kind: &str| json!({ "type": kind, "key": "a", "code": "KeyA", "windowsVirtualKeyCode": 65, "modifiers": 2, "commands": ["selectAll"] });
+                cdp.tell("Input.dispatchKeyEvent", key("rawKeyDown"), Some(session));
+                cdp.tell("Input.dispatchKeyEvent", key("keyUp"), Some(session));
+            }
+        }
+    }
+
     /// The person's answer to the dialog; it stays held until the page says
     /// it closed.
     pub(super) fn answer(&self, cdp: &Cdp, session: &str, accept: bool, text: Option<&str>) {
@@ -99,6 +160,39 @@ fn select_at(x: f64, y: f64) -> String {
         "(() => {{ const hit = document.elementFromPoint({x}, {y}); const s = hit && hit.closest('select'); \
          if (!s || s.multiple || s.size > 1 || s.disabled) return null; s.focus(); return s; }})()"
     )
+}
+
+/// The listener every shown tab is given: what a right-click landed on, and,
+/// once every handler has run, whether one prevented Chrome's menu. Kept
+/// under a symbol a page's own names cannot meet.
+const NOTE: &str = "(() => { const key = Symbol.for('argus.contextmenu'); if (key in window) return; window[key] = null; \
+    addEventListener('contextmenu', (e) => { const t = e.target instanceof Element ? e.target : e.target && e.target.parentElement; \
+      setTimeout(() => { const link = t && t.closest('a[href]'); const image = t && t.closest('img'); \
+        const field = t && t.matches('textarea, input') && !t.disabled && !t.readOnly && /^(text|search|url|tel|email|password|number|)$/.test(t.getAttribute('type') || '') ? t : null; \
+        const selected = field ? field.value.substring(field.selectionStart || 0, field.selectionEnd || 0) : String(getSelection()); \
+        window[key] = { prevented: e.defaultPrevented, x: e.clientX, y: e.clientY, link: link ? link.href : null, \
+          image: image ? (image.currentSrc || image.src) : null, selection: selected || null, editable: !!(field || (t && t.isContentEditable)) }; }, 0); \
+    }, true); })()";
+
+/// Takes the last note, after the turn its listener waits for.
+const TAKE: &str = "new Promise((done) => setTimeout(() => { const key = Symbol.for('argus.contextmenu'); \
+    const noted = window[key] || null; if (key in window) window[key] = null; done(noted); }, 50))";
+
+/// Chrome's menu for a note, or none when the page prevented it or nothing
+/// was noted.
+fn noted_menu(note: &Value) -> Option<BrowserContext> {
+    if note.is_null() || note["prevented"].as_bool() != Some(false) {
+        return None;
+    }
+    let text = |key: &str| note[key].as_str().filter(|text| !text.is_empty()).map(str::to_string);
+    Some(BrowserContext {
+        x: note["x"].as_f64()?,
+        y: note["y"].as_f64()?,
+        link: text("link"),
+        image: text("image"),
+        selection: text("selection"),
+        editable: note["editable"].as_bool().unwrap_or(false),
+    })
 }
 
 /// Read on the select: its options a person can see and where it is.
@@ -164,6 +258,15 @@ mod tests {
         assert_eq!((select.options[1].index, select.options[1].group.as_deref(), select.options[1].disabled), (2, Some("Odd"), true));
         assert_eq!((select.selected, select.y), (Some(2), 20.0));
         assert_eq!(described(&json!({ "options": [] })), None, "a select with no place is not one");
+    }
+
+    #[test]
+    fn chromes_menu_opens_only_for_a_click_the_page_left_alone() {
+        let note = json!({ "prevented": false, "x": 10.0, "y": 20.0, "link": "https://a.test/", "image": null, "selection": "", "editable": false });
+        let menu = noted_menu(&note).unwrap();
+        assert_eq!((menu.link.as_deref(), menu.selection, menu.editable), (Some("https://a.test/"), None, false), "empty text is none");
+        assert_eq!(noted_menu(&json!({ "prevented": true, "x": 1.0, "y": 1.0 })), None, "the page's own menu is the page's");
+        assert_eq!(noted_menu(&Value::Null), None);
     }
 
     #[test]

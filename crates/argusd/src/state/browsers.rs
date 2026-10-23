@@ -54,7 +54,7 @@ pub enum BrowserNews {
 impl BrowserNews {
     pub(crate) fn message(self) -> ServerMsg {
         match self {
-            BrowserNews::Page(page) => ServerMsg::BrowserPage(*page),
+            BrowserNews::Page(page) => ServerMsg::BrowserPage(page),
             BrowserNews::Frame(frame) => ServerMsg::BrowserFrame(Box::new((*frame).clone())),
             BrowserNews::Cursor { pane, cursor } => ServerMsg::BrowserCursor { pane, cursor },
             BrowserNews::Closed { pane } => ServerMsg::BrowserClosed { pane },
@@ -156,6 +156,7 @@ impl Daemon {
             dialog: None,
             select: None,
             sized: None,
+            context: None,
         };
         browsers.open.insert(pane, Open { owner: agent, browser, started, page: page.clone(), frame: None });
         self.pushes.browser(&browsers, BrowserNews::Page(Box::new(page)));
@@ -274,13 +275,13 @@ impl Daemon {
                 let on = seen.shown.as_deref().and_then(|id| seen.tabs.iter().find(|tab| tab.id == id));
                 let (url, title) = on.map(|tab| (tab.url.clone(), tab.title.clone())).unwrap_or_default();
                 titled = Some(if title.is_empty() { UNTITLED.to_string() } else { title.clone() });
-                let Seen { tabs, shown, following, held, driver, dialog, select, sized } = seen;
+                let Seen { tabs, shown, following, held, driver, dialog, select, sized, context } = *seen;
                 // With no tab shown there is no page: the last picture is of
                 // one that closed, and a client that joins is not sent it.
                 if shown.is_none() {
                     open.frame = None;
                 }
-                open.page = BrowserPage { pane, owner, url, title, tabs, shown, following, held, driver, dialog, select, sized };
+                open.page = BrowserPage { pane, owner, url, title, tabs, shown, following, held, driver, dialog, select, sized, context };
                 BrowserNews::Page(Box::new(open.page.clone()))
             }
             Report::Frame { jpeg, width, height } => {

@@ -27,6 +27,7 @@ fn browser(pane: u64, agent: &str, tab: bool) -> PageBrowser {
         dialog: None,
         select: None,
         sized: None,
+        context: None,
     }
 }
 

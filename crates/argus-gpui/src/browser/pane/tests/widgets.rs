@@ -121,3 +121,39 @@ fn an_agents_size_is_said_in_the_toolbar_with_a_way_back_to_the_views(cx: &mut T
     click(cx, &opened, "browser-fit-105");
     assert_eq!(said(&opened), ["BrowserInput { pane: 105, input: FitView }"]);
 }
+
+fn right_clicked(cx: &mut TestAppContext) -> Opened {
+    let opened = opened(cx, 1, browser());
+    hear(cx, &opened, vec![Event::BrowserShot(BrowserShot { pane: PANE, jpeg: png(), width: 1280, height: 800 })]);
+    settle(cx, &opened);
+    let mut menu = browser();
+    menu.context = Some(argus_protocol::BrowserContext { x: 40.0, y: 40.0, link: Some("https://a.test/".into()), image: None, selection: None, editable: false });
+    hear(cx, &opened, vec![page(menu)]);
+    settle(cx, &opened);
+    opened.calls.borrow_mut().clear();
+    opened
+}
+
+#[gpui_kit::test]
+fn copying_a_links_address_is_the_windows_and_only_puts_chromes_menu_away(cx: &mut TestAppContext) {
+    let opened = right_clicked(cx);
+    pick(cx, &opened, crate::browser::pane::context::COPY_LINK);
+    assert_eq!(said(&opened), ["BrowserInput { pane: 105, input: Context { action: None } }"]);
+    let copied = cx.update(|cx| cx.read_from_clipboard().and_then(|item| item.text()));
+    assert_eq!(copied.as_deref(), Some("https://a.test/"));
+}
+
+#[gpui_kit::test]
+fn opening_a_link_from_chromes_menu_asks_the_page_once(cx: &mut TestAppContext) {
+    let opened = right_clicked(cx);
+    pick(cx, &opened, crate::browser::pane::context::OPEN_LINK);
+    assert_eq!(said(&opened), ["BrowserInput { pane: 105, input: Context { action: Some(OpenLink) } }"], "a choice is not also a dismissal");
+}
+
+#[gpui_kit::test]
+fn escape_puts_chromes_menu_away(cx: &mut TestAppContext) {
+    let opened = right_clicked(cx);
+    press(cx, &opened, "escape");
+    settle(cx, &opened);
+    assert_eq!(said(&opened), ["BrowserInput { pane: 105, input: Context { action: None } }"]);
+}

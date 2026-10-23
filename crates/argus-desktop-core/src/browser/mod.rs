@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use argus_protocol::{BrowserButton, BrowserCursor, BrowserDialog, BrowserDriver, BrowserFrame, BrowserInput, BrowserPage, BrowserSelect, BrowserSize, BrowserTab, ClientMsg, PaneId};
+use argus_protocol::{BrowserButton, BrowserContext, BrowserCursor, BrowserDialog, BrowserDriver, BrowserFrame, BrowserInput, BrowserPage, BrowserSelect, BrowserSize, BrowserTab, ClientMsg, PaneId};
 use serde::Serialize;
 
 use crate::connection::sent::Sent;
@@ -66,6 +66,8 @@ pub struct PageBrowser {
     pub select: Option<BrowserSelect>,
     /// The size an agent laid the page out at, over the view's own.
     pub sized: Option<BrowserSize>,
+    /// Chrome's own menu, open where a right-click landed.
+    pub context: Option<BrowserContext>,
 }
 
 /// One picture of a pane's browser, as the daemon sent it.
@@ -267,6 +269,7 @@ impl Browsers {
                     dialog: page.dialog.clone(),
                     select: page.select.clone(),
                     sized: page.sized,
+                    context: page.context.clone(),
                 })
                 .collect(),
         });
@@ -285,7 +288,7 @@ mod tests {
     use super::*;
 
     fn page(pane: u64, url: &str) -> BrowserPage {
-        BrowserPage { pane: PaneId(pane), owner: PaneId(pane), url: url.into(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None, dialog: None, select: None, sized: None }
+        BrowserPage { pane: PaneId(pane), owner: PaneId(pane), url: url.into(), title: String::new(), tabs: Vec::new(), shown: None, following: true, held: false, driver: None, dialog: None, select: None, sized: None, context: None }
     }
 
     #[test]

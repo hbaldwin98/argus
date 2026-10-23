@@ -66,6 +66,7 @@ mod tests {
             dialog: None,
             select: None,
             sized: None,
+            context: None,
         }
     }
 

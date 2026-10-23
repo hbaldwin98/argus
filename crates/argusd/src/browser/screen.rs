@@ -225,6 +225,9 @@ pub(super) async fn follow(
                 if hand.drives() {
                     driver = Some((BrowserDriver::Person, Instant::now()));
                 }
+                if matches!(hand, BrowserInput::Press { .. } | BrowserInput::Click { .. }) {
+                    widgets.pressed();
+                }
                 // A press can change what is under the pointer as much as a
                 // move, so both ask what the cursor is there.
                 if let (Some(shown), BrowserInput::Move { x, y, .. } | BrowserInput::Press { x, y, .. } | BrowserInput::Release { x, y, .. }) = (&shown, &hand) {
@@ -250,6 +253,18 @@ pub(super) async fn follow(
                             if sizing.fit(&cdp, Some(&shown.target)) {
                                 sizing.apply(&cdp, &shown.session, &shown.target).await;
                             }
+                        }
+                    }
+                    BrowserInput::Release { button: BrowserButton::Right, .. } if shown.is_some() => {
+                        let session = shown.as_ref().map(|s| s.session.clone()).unwrap_or_default();
+                        for (method, params) in commands(&hand) {
+                            cdp.tell(method, params, Some(&session));
+                        }
+                        widgets.right_released(&cdp, &session).await;
+                    }
+                    BrowserInput::Context { action } => {
+                        if let Some(shown) = &shown {
+                            widgets.choose_from_menu(&cdp, &shown.session, action.as_ref());
                         }
                     }
                     BrowserInput::Press { x, y, button: BrowserButton::Left, .. } if shown.is_some() => {
@@ -298,9 +313,10 @@ pub(super) async fn follow(
             dialog: widgets.dialog.clone(),
             select: widgets.select().cloned(),
             sized: sizing.sized(shown.as_ref().map(|s| &*s.target)),
+            context: widgets.context.clone(),
         };
         if told.as_ref() != Some(&now) {
-            let _ = reports.send(Report::Page(now.clone()));
+            let _ = reports.send(Report::Page(Box::new(now.clone())));
             told = Some(now);
         }
     }
@@ -339,6 +355,7 @@ async fn show(cdp: &Cdp, old: Option<Shown>, target: Option<String>, sizing: &Si
         }
     };
     let _ = cdp.call("Page.enable", json!({}), Some(&session)).await;
+    Widgets::watch(cdp, &session).await;
     sizing.apply(cdp, &session, &target).await;
     Some(Shown { target, session })
 }

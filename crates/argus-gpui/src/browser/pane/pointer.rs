@@ -6,7 +6,7 @@
 //! are off the page, as is anywhere past the screen. A release is sent only for a press the page
 //! was sent, wherever it lands: a drag that ends past the screen still lets the button go.
 
-use argus_desktop_core::browser::within::{within, Box2};
+use argus_desktop_core::browser::within::{onto, within, At, Box2};
 use argus_desktop_core::connection::page::Call;
 use argus_protocol::{BrowserButton, BrowserCursor, BrowserInput};
 use gpui_kit::{Context, CursorStyle, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point, Pixels, ScrollWheelEvent, Window};
@@ -54,12 +54,10 @@ impl BrowserPane {
         self.caller.call(Call::BrowserInput { pane: self.pane, input });
     }
 
-    /// The point of a pointer's place in the page's own pixels, or none in the bands either side of
-    /// the picture (and while there is no picture to be on).
-    fn point_in_page(&self, at: Point<Pixels>, cx: &gpui_kit::App) -> Option<(f64, f64)> {
-        let (width, height) = {
-            let heard = self.heard.read(cx);
-            let picture = heard.pictures.of(self.pane)?;
+    /// The screen's box and the page's size in it, while there is a picture to be on.
+    fn fitted(&self, cx: &gpui_kit::App) -> Option<(Box2, (u32, u32))> {
+        let page = {
+            let picture = self.heard.read(cx).pictures.of(self.pane)?;
             (picture.width, picture.height)
         };
         let area = self.area.get();
@@ -69,7 +67,22 @@ impl BrowserPane {
             width: f64::from(area.size.width),
             height: f64::from(area.size.height),
         };
-        within(room, (width, height), f64::from(at.x), f64::from(at.y)).map(|at| (at.x, at.y))
+        Some((room, page))
+    }
+
+    /// The point of a pointer's place in the page's own pixels, or none in the bands either side of
+    /// the picture (and while there is no picture to be on).
+    fn point_in_page(&self, at: Point<Pixels>, cx: &gpui_kit::App) -> Option<(f64, f64)> {
+        let (room, page) = self.fitted(cx)?;
+        within(room, page, f64::from(at.x), f64::from(at.y)).map(|at| (at.x, at.y))
+    }
+
+    /// Where a point of the page is drawn in the window: what the window draws for the page (a
+    /// `<select>`'s list, Chrome's menu) opens on the place it belongs to.
+    pub(super) fn point_on_window(&self, x: f64, y: f64, cx: &gpui_kit::App) -> Option<Point<Pixels>> {
+        let (room, page) = self.fitted(cx)?;
+        let (x, y) = onto(room, page, At { x, y })?;
+        Some(gpui_kit::point(gpui_kit::px(x as f32), gpui_kit::px(y as f32)))
     }
 
     pub(super) fn pressed(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {

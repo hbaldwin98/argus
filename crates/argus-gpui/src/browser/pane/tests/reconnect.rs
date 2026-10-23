@@ -47,7 +47,7 @@ fn tree(browser: bool) -> ServerMsg {
 }
 
 fn replay() -> ServerMsg {
-    ServerMsg::BrowserPage(BrowserPage {
+    ServerMsg::BrowserPage(Box::new(BrowserPage {
         pane: PaneId(PANE),
         owner: PaneId(1),
         url: "https://a.test/x".into(),
@@ -60,7 +60,8 @@ fn replay() -> ServerMsg {
         dialog: None,
         select: None,
         sized: None,
-    })
+        context: None,
+    }))
 }
 
 #[gpui_kit::test]

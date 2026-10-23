@@ -490,7 +490,7 @@ impl Session {
             // at joins it in the grid; any other is only listed.
             ServerMsg::BrowserPage(page) => {
                 let pane = page.pane;
-                if self.browsers.page(page) {
+                if self.browsers.page(*page) {
                     self.browsers_beside.push(pane);
                     self.open_browsers_beside();
                 }
@@ -4505,7 +4505,7 @@ mod tests {
     }
 
     fn browser_page(pane: u64, owner: u64) -> ServerMsg {
-        ServerMsg::BrowserPage(argus_protocol::BrowserPage {
+        ServerMsg::BrowserPage(Box::new(argus_protocol::BrowserPage {
             pane: PaneId(pane),
             owner: PaneId(owner),
             url: "https://a.test".into(),
@@ -4518,7 +4518,8 @@ mod tests {
             dialog: None,
             select: None,
             sized: None,
-        })
+            context: None,
+        }))
     }
 
     #[test]

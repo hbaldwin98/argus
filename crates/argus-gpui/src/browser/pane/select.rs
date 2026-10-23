@@ -10,11 +10,10 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use argus_desktop_core::browser::within::{onto, At as PageAt, Box2};
 use argus_desktop_core::browser::PageBrowser;
 use argus_desktop_core::connection::page::Call;
 use argus_protocol::{BrowserInput, BrowserSelect};
-use gpui_kit::{point, px, AnyElement, Context, Window};
+use gpui_kit::{AnyElement, Context, Window};
 
 use super::BrowserPane;
 use crate::kit::menu::at::At;
@@ -63,7 +62,8 @@ impl BrowserPane {
         }
         self.list = List::default();
         let Some(select) = said else { return };
-        let Some(position) = self.under(&select, cx) else { return };
+        // Under the select's bottom-left corner, as Chrome opens its list.
+        let Some(position) = self.point_on_window(select.x, select.y + select.height, cx) else { return };
         let (caller, pane, tokens) = (self.caller.clone(), self.pane, *Tokens::global(cx));
         let chosen = Rc::new(Cell::new(false));
         let (picked, kept) = (chosen.clone(), chosen);
@@ -92,23 +92,6 @@ impl BrowserPane {
             },
         );
         self.list = List { select: Some(select), menu: Some(menu) };
-    }
-
-    /// The window's point under the select's bottom-left corner.
-    fn under(&self, select: &BrowserSelect, cx: &gpui_kit::App) -> Option<gpui_kit::Point<gpui_kit::Pixels>> {
-        let page = {
-            let picture = self.heard.read(cx).pictures.of(self.pane)?;
-            (picture.width, picture.height)
-        };
-        let area = self.area.get();
-        let room = Box2 {
-            left: f64::from(area.origin.x),
-            top: f64::from(area.origin.y),
-            width: f64::from(area.size.width),
-            height: f64::from(area.size.height),
-        };
-        let (x, y) = onto(room, page, PageAt { x: select.x, y: select.y + select.height })?;
-        Some(point(px(x as f32), px(y as f32)))
     }
 }
 
