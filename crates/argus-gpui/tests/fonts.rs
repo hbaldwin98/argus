@@ -14,10 +14,23 @@ use argus_gpui::kit::fonts::SYMBOLS;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{font, px};
 
+const NAME: &str = "the_pages_families_load_and_the_theme_names_them";
+
 fn main() {
+    // With no harness, libtest's arguments are this file's to answer. nextest
+    // lists a binary's tests with `--list --format terse` (and again with
+    // `--ignored`) before it runs any, and fails the whole run on a listing
+    // it cannot read; a listing must never start the platform either.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--list") {
+        if !args.iter().any(|arg| arg == "--ignored") {
+            println!("{NAME}: test");
+        }
+        return;
+    }
     // A Linux machine with no display never starts the platform: the run would hang, as CI's did.
     if cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
-        println!("test the_pages_families_load_and_the_theme_names_them ... ignored, no display");
+        println!("test {NAME} ... ignored, no display");
         return;
     }
     let outcome: Rc<RefCell<Option<Result<(), String>>>> = Rc::new(RefCell::new(None));
@@ -29,7 +42,7 @@ fn main() {
     });
     let outcome = outcome.borrow_mut().take();
     outcome.expect("the application quit before the check ran").unwrap();
-    println!("test the_pages_families_load_and_the_theme_names_them ... ok");
+    println!("test {NAME} ... ok");
 }
 
 fn check(cx: &gpui_kit::App) -> Result<(), String> {
