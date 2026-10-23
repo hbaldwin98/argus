@@ -38,7 +38,7 @@ use editor::CodeEditor;
 use rendered::mode::{is_markdown, Mode, Modes};
 use rendered::choice::Choose;
 use rendered::Rendered;
-use ruler::{Over, Ruler};
+use ruler::{CodeRuler, Over};
 
 pub use header::bar as header;
 
@@ -47,7 +47,7 @@ pub struct CodeFile {
     caller: Caller,
     diff: Entity<DiffView>,
     comment: Entity<CommentBox>,
-    ruler: Entity<Ruler>,
+    ruler: CodeRuler,
     /// The editor that stands in for the lines while the stage edits the file.
     editor: Entity<CodeEditor>,
     /// The markdown file read as a document, and which way each markdown file was last read.
@@ -71,7 +71,7 @@ impl CodeFile {
         let diff = cx.new(|cx| DiffView::new("code-lines", true, false, cx).reading(&tokens));
         let comment = cx.new(|cx| CommentBox::new(heard.clone(), caller.clone(), Rc::new(ways::Code), window, cx));
         let editor = cx.new(|cx| CodeEditor::new(heard.clone(), caller.clone(), window, cx));
-        let ruler = cx.new(|cx| Ruler::new(heard.clone(), caller.clone(), diff.clone(), editor.clone(), cx));
+        let ruler = CodeRuler::new(heard.clone(), caller.clone(), diff.clone(), editor.clone(), cx);
         let document = cx.new(|cx| Rendered::new(heard.clone(), caller.clone(), editor.clone(), cx));
         let pressed = cx.subscribe(&diff, |this, _, event: &DiffEvent, cx| match *event {
             // A click on a line moves the cursor to it, and Shift extends a range from where it was.
@@ -121,7 +121,7 @@ impl CodeFile {
             self.editor.update(cx, |editor, cx| editor.leave(cx));
         }
         let over = if editing { Over::Editor } else { Over::Lines };
-        self.ruler.update(cx, |ruler, cx| ruler.show(if lines || editing { &page.ruler } else { &[] }, over, cx));
+        self.ruler.show(if lines || editing { &page.ruler } else { &[] }, over, cx);
         let key = cursor_key(page.path.as_deref(), page.at);
         if key != self.cursor {
             self.cursor = key;
@@ -174,7 +174,7 @@ impl CodeFile {
                         .flex_1()
                         .min_h_0()
                         .child(div().flex_1().min_w_0().h_full().child(self.editor.clone()))
-                        .when(!page.lines.is_empty(), |wrap| wrap.child(self.ruler.clone())),
+                        .when(!page.lines.is_empty(), |wrap| wrap.child(self.ruler.view.clone())),
                 )
                 .into_any_element(),
             Area::Lines => h_flex()
@@ -183,7 +183,7 @@ impl CodeFile {
                 .size_full()
                 .min_h_0()
                 .child(div().id("code-lines-pane").test_support().flex_1().min_w_0().h_full().child(self.diff.clone()))
-                .when(!page.lines.is_empty(), |wrap| wrap.child(self.ruler.clone()))
+                .when(!page.lines.is_empty(), |wrap| wrap.child(self.ruler.view.clone()))
                 .into_any_element(),
         }
     }

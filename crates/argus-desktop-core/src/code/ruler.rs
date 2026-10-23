@@ -5,7 +5,10 @@
 //! The ruler is the file's scrollbar. Its marks and band are measured off the rows as they are
 //! drawn, so a removal marker or a comment box between lines moves them together rather than
 //! sliding one past the other; this is only the arithmetic, so a window with its own units asks
-//! the same questions.
+//! the same questions. A diff's ruler (the Changes pane's) marks each run of changed rows instead of
+//! the runs the session sends, as the prototype's `ruler` does.
+
+use crate::connection::page::{DiffRow, DiffSide};
 
 /// A stretch of the ruler.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,9 +70,82 @@ pub fn mark_title(kind: &str, line: u32) -> (String, String) {
     }
 }
 
+/// A run of a diff's changed rows, by the rows' numbers: `added`, `removed`, or `mixed` when it
+/// holds both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Run {
+    pub first: usize,
+    pub last: usize,
+    pub kind: &'static str,
+}
+
+/// Each run of changed rows in a diff, in order: a line added or removed, or a pair. A context
+/// line, a hunk's header, a fold or a note ends a run.
+pub fn runs(rows: &[DiffRow]) -> Vec<Run> {
+    let changed = |side: &Option<DiffSide>| side.as_ref().map(|side| side.kind).filter(|kind| *kind != "context");
+    let mut out: Vec<Run> = Vec::new();
+    let mut open = false;
+    for row in rows {
+        let kinds = [changed(&row.left), changed(&row.right)];
+        let (added, removed) = (kinds.contains(&Some("added")), kinds.contains(&Some("removed")));
+        if !matches!(row.kind, "line" | "pair") || !(added || removed) {
+            open = false;
+            continue;
+        }
+        let kind = if added && removed { "mixed" } else if added { "added" } else { "removed" };
+        match out.last_mut().filter(|_| open) {
+            Some(run) => {
+                run.last = row.row;
+                if run.kind != kind {
+                    run.kind = "mixed";
+                }
+            }
+            None => out.push(Run { first: row.row, last: row.row, kind }),
+        }
+        open = true;
+    }
+    out
+}
+
+/// The words for a diff's run: its title, and what a screen reader says.
+pub fn run_title(kind: &str) -> &'static str {
+    match kind {
+        "added" => "Lines added",
+        "removed" => "Lines removed",
+        _ => "Lines changed",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn row(row: usize, kind: &'static str, left: Option<&'static str>, right: Option<&'static str>) -> DiffRow {
+        let side = |kind: &'static str| DiffSide { old: None, new: None, marker: "", kind, parts: Vec::new() };
+        DiffRow { row, kind, text: String::new(), hidden: None, step: None, left: left.map(side), right: right.map(side), cursor: false, picked: false }
+    }
+
+    /// The prototype's `ruler`: changed rows next to each other are one mark, of both kinds when
+    /// they hold both, and anything else between them parts them.
+    #[test]
+    fn changed_rows_next_to_each_other_are_one_run_and_anything_else_parts_them() {
+        let rows = [
+            row(0, "hunk", None, None),
+            row(1, "line", Some("context"), None),
+            row(2, "line", Some("removed"), None),
+            row(3, "line", Some("added"), None),
+            row(4, "line", Some("context"), None),
+            row(5, "line", Some("added"), None),
+            row(6, "fold", None, None),
+            row(7, "pair", Some("removed"), Some("added")),
+            row(8, "line", Some("removed"), None),
+        ];
+        assert_eq!(
+            runs(&rows),
+            [Run { first: 2, last: 3, kind: "mixed" }, Run { first: 5, last: 5, kind: "added" }, Run { first: 7, last: 8, kind: "mixed" }]
+        );
+        assert_eq!(runs(&[row(0, "line", Some("removed"), None), row(1, "line", Some("removed"), None)]), [Run { first: 0, last: 1, kind: "removed" }]);
+    }
 
     /// CODE-43: a mark is its rows' place scaled to the ruler, at least as tall as the minimum.
     #[test]

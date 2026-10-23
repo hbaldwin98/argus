@@ -161,3 +161,18 @@ fn the_comment_box_of_a_review_being_drafted_adds_to_it(cx: &mut TestAppContext)
     click(cx, &opened, "comment-send");
     assert_eq!(asked(&opened), [r#"DraftComment { body: "why two?" }"#]);
 }
+
+/// The prototype's ruler down the diff's edge: a mark for each run of changed rows, of both kinds
+/// when it holds both, and a press on one scrolls the diff, which is the window's own.
+#[gpui_kit::test]
+fn the_ruler_marks_each_run_of_changed_rows_and_a_press_only_scrolls(cx: &mut TestAppContext) {
+    let opened = on_main(cx);
+    hear(cx, &opened, vec![reviewing(changes())]);
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    assert!(present(cx, &opened, "review-ruler"));
+    assert_eq!(label(cx, &opened, ("review-mark", 0usize)).as_deref(), Some("Lines changed"), "a line removed and one added");
+    assert!(!present(cx, &opened, ("review-mark", 1usize)), "one run");
+    forget(&opened);
+    click(cx, &opened, ("review-mark", 0usize));
+    assert!(asked(&opened).is_empty());
+}

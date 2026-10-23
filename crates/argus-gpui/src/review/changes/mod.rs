@@ -8,7 +8,8 @@
 //!
 //! Everything it draws is the session's `ReviewPage`: the files, the file on screen, the rows
 //! with the cursor and the pick, the comment box, the jump field's matches, and why there is no
-//! diff when there is none. A press sends its call and changes nothing on screen; the review
+//! diff when there is none, with the change ruler down the diff's edge (`kit::ruler`), a mark for
+//! each run of changed rows that scrolls the diff to it. A press sends its call and changes nothing on screen; the review
 //! changes when the next `Review` event says so, so a refused click leaves the diff as the
 //! session holds it. What a body shows is chosen in the page's order (SHARED-3): loading bars,
 //! then the muted reason there is no diff, then the rows. The split between the files and the
@@ -47,11 +48,15 @@ use crate::review::changes::side::Files;
 use crate::review::changes::narrow::Narrow;
 use crate::review::submit::Submit;
 use crate::kit::ghosts::ghosts;
+use crate::kit::ruler::{Ids, Mark, Ruler, Track};
+use argus_desktop_core::code::ruler::{run_title, runs};
 use crate::kit::hints;
 use crate::kit::split::{self, Split};
 use crate::style::Typed as _;
 use crate::theme::scale::{rem, zoom};
 use crate::theme::Tokens;
+
+const RULER: Ids = Ids { ruler: "review-ruler", band: "review-ruler-view", mark: "review-mark", label: "Where this file changed" };
 
 /// The width the list column opens at (`--side`), and how far the person may drag it.
 const FILES: f32 = 340.0;
@@ -80,6 +85,8 @@ pub struct Changes {
     caller: Caller,
     files: Entity<Files>,
     diff: Entity<DiffView>,
+    /// The diff's scrollbar, with a mark for each run of its changed rows.
+    ruler: Entity<Ruler>,
     /// A file with no change, read whole from the Files tab in place of the diff.
     whole: Entity<DiffView>,
     comment: Entity<CommentBox>,
@@ -104,7 +111,18 @@ impl Changes {
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let files = cx.new(|cx| Files::new(heard.clone(), caller.clone(), window, cx));
         let comment = cx.new(|cx| CommentBox::new(heard.clone(), caller.clone(), Rc::new(ways::Review), window, cx));
-        let diff = cx.new(|cx| DiffView::new("review-diff", true, true, cx));
+        let diff = cx.new(|cx| DiffView::new("review-diff", true, true, cx).ruled());
+        let ruler = cx.new(|cx| {
+            let track = diff.clone();
+            // A mark's run, a third of the way down, as a step to a change puts it.
+            let pressed = Rc::new(move |found: &Mark, cx: &mut gpui_kit::App| {
+                if let Some((top, _)) = track.span(found.first, found.first, cx) {
+                    let (_, viewport, _) = track.measures(cx);
+                    track.scroll_to((top - viewport / 3.0).max(0.0), cx);
+                }
+            });
+            Ruler::new(RULER, Rc::new(diff.clone()), pressed, cx)
+        });
         let tokens = *Tokens::global(cx);
         let whole = cx.new(|cx| DiffView::new("review-whole", true, false, cx).reading(&tokens));
         let split = cx.new(|cx| Split::new("review-split", "Resize the files", FILES, FILES_MIN, FILES_MAX, cx));
@@ -139,7 +157,7 @@ impl Changes {
             };
             this.ask(Call::ReviewClick { target }, cx);
         });
-        Self { heard, caller, files, diff, whole, comment, split, submit, cards: HashMap::new(), last_tick: None, narrow: Narrow::new(), focus: cx.focus_handle(), _subscriptions: [pressed, resized, opened] }
+        Self { heard, caller, files, diff, ruler, whole, comment, split, submit, cards: HashMap::new(), last_tick: None, narrow: Narrow::new(), focus: cx.focus_handle(), _subscriptions: [pressed, resized, opened] }
     }
 
     /// A box ticked: its line, or with Shift every changed line from the last box ticked to it.
@@ -214,6 +232,15 @@ impl Changes {
             diff.show(&page.rows, page.split, slot, cx);
         });
         self.place_notes(page, window, cx);
+        let marks = runs(&page.rows)
+            .into_iter()
+            .map(|run| {
+                let title = SharedString::from(run_title(run.kind));
+                Mark { first: run.first, last: run.last, kind: run.kind, label: title.clone(), title }
+            })
+            .collect();
+        let track: Rc<dyn Track> = Rc::new(self.diff.clone());
+        self.ruler.update(cx, |ruler, cx| ruler.show(marks, track, cx));
         let whole = page.tree.as_ref().and_then(|tree| tree.reading.as_ref()).map(|reading| reading.rows.as_slice()).unwrap_or_default();
         self.whole.update(cx, |view, cx| view.show(whole, false, None, cx));
         self.submit.update(cx, |submit, cx| submit.follow(page.drafts.as_ref(), window, cx));
@@ -252,7 +279,14 @@ impl Changes {
         if let Some(why) = &page.empty {
             return said(why, tokens);
         }
-        div().id("review-rows").test_support().size_full().min_h_0().child(self.diff.clone()).into_any_element()
+        h_flex()
+            .id("review-rows")
+            .test_support()
+            .size_full()
+            .min_h_0()
+            .child(div().flex_1().min_w_0().h_full().child(self.diff.clone()))
+            .when(!page.rows.is_empty(), |rows| rows.child(self.ruler.clone()))
+            .into_any_element()
     }
 }
 

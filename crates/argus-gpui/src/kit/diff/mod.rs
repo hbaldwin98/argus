@@ -101,6 +101,9 @@ pub struct DiffView {
     /// A file read whole rather than a diff: one number column, the page's `.cline` face, the
     /// places lines were removed said in red, and no scrolling of its own to the cursor.
     reading: bool,
+    /// The owner draws a ruler beside it for its vertical scrollbar (`kit::ruler`), as a file read
+    /// whole always does.
+    ruled: bool,
     /// How wide the number columns of a unified line are together, in the page's pixels.
     numbers_w: f32,
     /// Which number columns a unified line shows: one a new or deleted file never uses is left out.
@@ -169,6 +172,7 @@ impl DiffView {
             tops: vec![0.0],
             numbered: Default::default(),
             reading: false,
+            ruled: false,
             numbers_w: gutter::NUMBER * 2.0,
             shown: gutter::Shown::BOTH,
             scroll: VirtualListScrollHandle::new(),
@@ -196,7 +200,14 @@ impl DiffView {
     /// is the stage's rule (`argus_desktop_core::code::scroll`), which only a move of the cursor invokes.
     pub fn reading(mut self, tokens: &Tokens) -> Self {
         self.reading = true;
+        self.ruled = true;
         self.numbers_w = tokens.code_no_w;
+        self
+    }
+
+    /// A diff with a ruler beside it, which is its vertical scrollbar.
+    pub fn ruled(mut self) -> Self {
+        self.ruled = true;
         self
     }
 
@@ -310,8 +321,8 @@ impl Render for DiffView {
             self.size();
         }
         let (pane, area, diff) = (self.pane.clone(), self.area.clone(), cx.entity());
-        // The vertical bar's gutter is not the lines' to fill; a file read whole has the ruler instead.
-        let gutter = if self.reading { px(0.) } else { Scrollbar::width() };
+        // The vertical bar's gutter is not the lines' to fill; a list with a ruler has that instead.
+        let gutter = if self.ruled { px(0.) } else { Scrollbar::width() };
         let body = div()
             .id(SharedString::from(format!("{}-body", self.id)))
             .test_support()
@@ -371,9 +382,9 @@ impl Render for DiffView {
                     .left_0()
                     .size_full()
                     .child(
-                        // A file read whole has the ruler for its scrollbar; a second one beside it would say the
+                        // A list with a ruler has that for its scrollbar; a second one beside it would say the
                         // same at another scale (`.code-body::-webkit-scrollbar:vertical`).
-                        if self.reading { Scrollbar::horizontal(&self.scroll) } else { Scrollbar::new(&self.scroll) }
+                        if self.ruled { Scrollbar::horizontal(&self.scroll) } else { Scrollbar::new(&self.scroll) }
                             .viewport_from_layout()
                             .mode(ScrollbarMode::Always),
                     ),
