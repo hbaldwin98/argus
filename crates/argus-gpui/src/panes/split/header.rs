@@ -1,4 +1,6 @@
-//! A cell's header: the pane's title, its status, and the button that takes it out of the grid.
+//! A cell's header: the pane's title, its status, and the button that takes it out of the grid. A
+//! panel's cell has the same header with the panel's title and no status: it is carried and closed
+//! as a pane's is, and its close sends the panel back to its dock.
 //!
 //! The header is the handle a pane is carried by (SHELL-GRID-11): a press on it is followed by the
 //! work area's drag, which lifts it after the shared threshold, lights the zone it would land on,
@@ -6,7 +8,9 @@
 //! selected colour and an accent edge under it (`.gcell.keyed > .thead`); the Workspace's own cell
 //! keeps the close button's room empty, so the status dots line up across the headers.
 
-use argus_desktop_core::connection::page::{Call, Shown, Side};
+use argus_desktop_core::connection::page::{Call, Side};
+use argus_desktop_core::layout::docks::{DocksPage, Panel};
+use argus_desktop_core::panes::shown::workspace_grid::Occupant;
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, Context, MouseButton, MouseDownEvent, SharedString};
@@ -23,12 +27,34 @@ use crate::theme::Tokens;
 /// The words on a header's close.
 pub const TAKE_OUT: &str = "Take out of the grid";
 
+/// What a header names: what its cell holds, by the title it is shown by, and a pane's status.
+pub(super) struct Named {
+    pub held: Occupant,
+    pub title: String,
+    pub status: Option<&'static str>,
+}
+
+/// A panel's title as its dock's tab or its dialog says it; one never docked is named by its kind.
+pub(super) fn panel_title(docks: &DocksPage, panel: &Panel) -> String {
+    let tabs = [&docks.left, &docks.right, &docks.bottom].into_iter().flat_map(|dock| dock.tabs.iter().map(|tab| (&tab.panel, &tab.title)));
+    let floating = docks.floating.iter().map(|float| (&float.panel, &float.title));
+    match tabs.chain(floating).find(|(held, _)| *held == panel) {
+        Some((_, title)) => title.clone(),
+        None => match panel {
+            Panel::Console => "Console".into(),
+            Panel::Views => "Views".into(),
+            Panel::Browsers => "Browsers".into(),
+            Panel::Extension(_) | Panel::Saved(_) => panel.to_string(),
+        },
+    }
+}
+
 impl SplitView {
-    pub(super) fn head(&self, n: u8, pane: &Shown, keyed: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn head(&self, n: u8, named: Named, keyed: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *tokens;
-        let (id, title) = (pane.pane, SharedString::from(pane.title.clone()));
+        let title = SharedString::from(named.title.clone());
         let (fill, foreground) = (tokens.fill, tokens.fg);
-        let carried = Carried::Cell { slot: n, pane: id, title: pane.title.clone() };
+        let carried = Carried::Cell { slot: n, held: named.held, title: named.title };
         let held = self.heard.read(cx).held();
         h_flex()
             .id(SharedString::from(format!("cell-head-{n}")))
@@ -61,7 +87,7 @@ impl SplitView {
                 })
             })
             .child(strip::title(title.clone()).flex_1())
-            .child(status_dot(format!("cell-{n}"), pane.status, &tokens))
+            .children(named.status.map(|status| status_dot(format!("cell-{n}"), status, &tokens)))
             .child(if n == 0 {
                 div().w(rem(tokens.control_h_sm)).flex_shrink_0().into_any_element()
             } else {

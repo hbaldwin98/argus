@@ -11,12 +11,13 @@
 //! folds not at all.
 
 use gpui_kit::component::{h_flex, v_flex};
-use gpui_kit::{div, prelude::*, Context, SharedString};
+use gpui_kit::{div, prelude::*, Context, MouseButton, MouseDownEvent, SharedString};
 
 use super::row::{line, Ctx};
 use super::slice::Slice;
 use super::RailView;
 use argus_desktop_core::keys::keymap::Action;
+use argus_desktop_core::layout::docks::Panel;
 use crate::chrome::nav::Nav;
 use crate::keys::over::run_over;
 use crate::kit::keycap::keycap;
@@ -129,6 +130,13 @@ impl RailView {
                         }
                         this.go(nav, held, cx)
                     }))
+                    // A press that travels carries every browser, as their panel, beside an agent.
+                    .when(nav == Nav::Browsers && !slice.subs.is_empty(), |row| {
+                        row.on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| this.carry_panel(event, &Panel::Browsers, nav.label(), held, cx)),
+                        )
+                    })
                     .child(icon)
                     .when(!ctx.icons, |row| row.child(div().flex_1().min_w_0().truncate().child(nav.label())))
                     .when(browsers, |row| row.child(self.browsers_tail(slice, tokens, cx)))

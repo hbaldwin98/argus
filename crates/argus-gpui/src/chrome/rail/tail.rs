@@ -131,7 +131,7 @@ impl RailView {
 
     /// Presses a panel into the work area's drag: carried to a dock it docks, and over the stage it
     /// lands where its kind lands (Rust's `PresentPanel`, never guessed from the name).
-    fn carry_panel(&self, event: &MouseDownEvent, panel: &argus_desktop_core::layout::docks::Panel, title: &str, held: bool, cx: &mut Context<Self>) {
+    pub(super) fn carry_panel(&self, event: &MouseDownEvent, panel: &argus_desktop_core::layout::docks::Panel, title: &str, held: bool, cx: &mut Context<Self>) {
         if held {
             return;
         }

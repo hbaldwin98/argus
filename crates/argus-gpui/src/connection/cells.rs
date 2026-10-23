@@ -1,5 +1,5 @@
-//! What the Workspace's grid is, as the rail last said it: the pane in each cell by its number,
-//! and whether the grid is on screen.
+//! What the Workspace's grid is, as the rail last said it: what each cell holds by its number, a
+//! pane or a panel, and whether the grid is on screen.
 //!
 //! A cell is numbered as the rail numbers it (`GridPage`): 0 is the Workspace's own pane, `n + 1`
 //! is `Beside(n)`. The cells and the drags that land on them read these and never count the rail
@@ -7,14 +7,21 @@
 
 use argus_desktop_core::connection::page::Side;
 use argus_desktop_core::panes::console::ConsolePlace;
+use argus_desktop_core::panes::shown::workspace_grid::Occupant;
 
 use super::heard::Heard;
 
 impl Heard {
-    /// The pane in each cell, the Workspace's first; none for a cell the tree no longer names.
-    pub fn cell_panes(&self) -> Vec<Option<u64>> {
-        let own = self.rail.shown.as_ref().map(|shown| shown.pane);
-        std::iter::once(own).chain(self.rail.row.beside.iter().map(|shown| shown.as_ref().map(|shown| shown.pane))).collect()
+    /// What each cell holds, the Workspace's pane first; none for a cell the tree no longer names.
+    pub fn cell_panes(&self) -> Vec<Option<Occupant>> {
+        let row = &self.rail.row;
+        let own = self.rail.shown.as_ref().map(|shown| Occupant::Pane(shown.pane));
+        let beside = row.beside.iter().enumerate().map(|(n, shown)| match (shown, row.panels.get(n).cloned().flatten()) {
+            (_, Some(panel)) => Some(Occupant::Panel(panel)),
+            (Some(shown), None) => Some(Occupant::Pane(shown.pane)),
+            (None, None) => None,
+        });
+        std::iter::once(own).chain(beside).collect()
     }
 
     /// Whether the grid is drawn: the Workspace's stage is up, no console covers it, and the Git
@@ -73,7 +80,18 @@ mod tests {
     #[test]
     fn the_cells_are_numbered_the_workspaces_first_then_each_split_in_the_order_opened() {
         let heard = heard_with(Some(1), vec![Some(5), None, Some(7)], None);
-        assert_eq!(heard.cell_panes(), [Some(1), Some(5), None, Some(7)]);
+        let pane = |pane| Some(Occupant::Pane(pane));
+        assert_eq!(heard.cell_panes(), [pane(1), pane(5), None, pane(7)]);
+    }
+
+    #[test]
+    fn a_cell_with_a_panel_holds_the_panel() {
+        use argus_desktop_core::layout::docks::Panel;
+        let mut heard = heard_with(Some(1), vec![None, Some(7)], None);
+        let mut rail = heard.rail.clone();
+        rail.row.panels = vec![Some(Panel::Browsers), None];
+        heard.hear(Event::Rail(Box::new(rail)));
+        assert_eq!(heard.cell_panes(), [Some(Occupant::Pane(1)), Some(Occupant::Panel(Panel::Browsers)), Some(Occupant::Pane(7))]);
     }
 
     #[test]

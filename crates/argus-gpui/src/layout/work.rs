@@ -12,8 +12,9 @@
 //!
 //! Panels are dragged by a tab or a single panel's head, to a dock or the
 //! stage (`layout/drop_target`), through the window's one drag helper
-//! (`kit::drag`) so the 5 px threshold and the cancel are not written here. A pane is carried by
-//! the same drag, from a cell's header or a rail row, to a cell, the stage or a checkout
+//! (`kit::drag`) so the 5 px threshold and the cancel are not written here. A panel that may have a
+//! cell lands on one too, as a pane does, wherever no dock's strip is under the pointer. A pane is
+//! carried by the same drag, from a cell's header or a rail row, to a cell, the stage or a checkout
 //! (`layout/carry`); the places it can land are published by the views that draw them (`kit/spots`).
 
 use std::cell::Cell;
@@ -25,7 +26,7 @@ use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     div, prelude::*, AnyView, App, Bounds, Context, Entity, FocusHandle, KeyDownEvent,
-    MouseButton, Pixels, Point, SharedString, Subscription, Window,
+    MouseButton, Pixels, Point, Subscription, Window,
 };
 
 use crate::connection::caller::Caller;
@@ -174,6 +175,19 @@ impl WorkView {
         drop_target::target_at(at, self.work.get(), self.center.get(), stage)
     }
 
+    /// The cell a panel dropped at `at` would split off beside, as Rust tells which panels may
+    /// have one. Over a cell the docks keep only a slim band at the area's edges: their full strips
+    /// would cover a cell's lower and outer zones.
+    fn panel_cell(&self, panel: &Panel, title: &str, at: Point<Pixels>, cx: &App) -> Option<(Carried, Landing)> {
+        if drop_target::in_band(at, self.work.get(), self.zoom.get()) {
+            return None;
+        }
+        let cells = self.heard.read(cx).docks.present.iter().any(|present| &present.panel == panel && present.cell);
+        let carried = Carried::Panel { panel: panel.clone(), title: title.to_owned() };
+        let landed = cells.then(|| self.landed(&carried, at, cx))?;
+        matches!(landed, Landing::Cell { .. }).then_some((carried, landed))
+    }
+
     fn follow(&mut self, held: &Held, cx: &mut Context<Self>) {
         if let (Held::Sash { dock, grab }, Some(at)) = (held, self.drag.at()) {
             self.sizing = Some((*dock, sash::held(*dock, *grab, at, self.work.get(), self.center.get(), self.zoom.get())));
@@ -238,29 +252,12 @@ impl WorkView {
         let at = self.drag.at()?;
         let (work, center) = (self.work.get(), self.center.get());
         let (title, lit) = match held {
+            Held::Panel { panel, title, .. } if self.panel_cell(panel, title, at, cx).is_some() => {
+                let (_, landed) = self.panel_cell(panel, title, at, cx)?;
+                (title.as_str(), preview::lit(landed, work.origin, &Spots::peek(cx), tokens))
+            }
             Held::Panel { title, stage, .. } => {
-                let lit = self.target(at, *stage).map(|target| {
-                    let land = drop_target::landing(target, work, center);
-                    let words = SharedString::from(drop_target::words(target));
-                    div()
-                        .id("drop-preview")
-                        .test_support()
-                        .aria_label(words.clone())
-                        .absolute()
-                        .left(land.origin.x - work.origin.x)
-                        .top(land.origin.y - work.origin.y)
-                        .w(land.size.width)
-                        .h(land.size.height)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(rem(tokens.r_sm))
-                        .border_2()
-                        .border_color(tokens.accent)
-                        .bg(tokens.accent.opacity(tokens.share_landing))
-                        .child(div().px_2().py_1().rounded(rem(tokens.r_sm)).bg(tokens.bg_surface).text_sm().text_color(tokens.fg).child(words))
-                        .into_any_element()
-                });
+                let lit = self.target(at, *stage).map(|target| drop_target::preview(target, work, center, tokens));
                 (title.as_str(), lit)
             }
             Held::Pane(carried) => {
@@ -296,8 +293,12 @@ impl Dragger for WorkView {
                 self.ask(Call::Docks { gesture: DockGesture::Show { panel } }, cx)
             }
             Step::Clicked(_) => {}
-            Step::Dropped(Held::Panel { panel, stage, .. }, at) => {
-                if let Some(target) = self.target(at, stage) {
+            Step::Dropped(Held::Panel { panel, title, stage, .. }, at) => {
+                if let Some((carried, landed)) = self.panel_cell(&panel, &title, at, cx) {
+                    if let Some(call) = carried_call(&carried, landed) {
+                        self.ask(call, cx);
+                    }
+                } else if let Some(target) = self.target(at, stage) {
                     self.ask(drop_target::call(target, panel), cx);
                 }
             }

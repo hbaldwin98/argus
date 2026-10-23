@@ -249,7 +249,7 @@ fn browsers_docked() -> Event {
     let panel = Panel::Browsers;
     let mut docks = crate::layout::work::tests::docks();
     docks.right = DockPage { tabs: vec![DockTab { panel: panel.clone(), title: "Browsers".into() }], shown: Some(panel.clone()), size: 400 };
-    docks.present.push(PresentPanel { panel, kind: PanelKind::Browsers, floats: true, stage: true, closes: false });
+    docks.present.push(PresentPanel { panel, kind: PanelKind::Browsers, floats: true, stage: true, closes: false, cell: true });
     Event::Docks(Box::new(docks))
 }
 

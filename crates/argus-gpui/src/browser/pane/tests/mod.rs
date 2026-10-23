@@ -75,6 +75,7 @@ pub(super) fn page(browser: PageBrowser) -> Event {
 pub(super) fn workspace(keyed: u8) -> Vec<Event> {
     let row = GridPage {
         beside: vec![Some(shown(PANE, true))],
+        panels: vec![None],
         grid: vec![vec![0, 1]],
         heights: vec![1000],
         widths: vec![vec![500, 500]],

@@ -3,12 +3,16 @@
 //! may join it and why another may not, and the page the rail carries of it.
 //!
 //! Cells are numbered as `split_grid` numbers its panes: 0 the Workspace's,
-//! `n + 1` the page's `Side::Beside(n)`. Every cell holds a pane but the
-//! Workspace's when it is the only one, so a side the page names is never
-//! an empty split. Which side has the keys is `shown`'s; this keeps that
-//! side's number right as cells come and go.
+//! `n + 1` the page's `Side::Beside(n)`. Every cell holds a pane or a panel
+//! but the Workspace's when it is the only one, so a side the page names is
+//! never an empty split. The Workspace's own cell is always a pane's: a
+//! panel only splits off one, and a panel left first when that pane goes
+//! trades places with the first pane after it, or with none left leaves the
+//! grid. Which side has the keys is `shown`'s; this keeps that side's number
+//! right as cells come and go.
 
 pub mod gutter;
+pub mod occupant;
 pub mod rects;
 mod split_grid;
 pub mod zones;
@@ -18,8 +22,10 @@ use serde::Serialize;
 
 use super::Slot;
 use crate::connection::page::{Shown, Side};
+use crate::layout::docks::Panel;
 use split_grid::{Layout, MIN_COLS, MIN_ROWS};
 
+pub use occupant::Occupant;
 pub use split_grid::{Dir, Rect, Zone};
 
 /// What the rail carries of the Workspace's grid: the first pane is `Rail.shown`.
@@ -31,6 +37,9 @@ pub struct GridPage {
     /// cell `n + 1` of `grid` is `beside[n]`. None for one the tree no
     /// longer names, so its cell keeps its place without a header.
     pub beside: Vec<Option<Shown>>,
+    /// The panel each split draws, numbered as `beside` is; none for a
+    /// pane's. A cell with a panel has no `beside`.
+    pub panels: Vec<Option<Panel>>,
     /// Which cells, the first's too, sit in each row of the grid.
     pub grid: Vec<Vec<u8>>,
     /// Each row's height, in thousandths of the grid's.
@@ -74,6 +83,7 @@ impl std::fmt::Display for Refusal {
 /// pane that takes another side takes that side's room.
 fn shift(from: &mut Slot, to: &mut Slot) {
     to.pane = from.pane.take();
+    to.panel = from.panel.take();
     to.screen = from.screen.take();
     to.sized = from.sized.take();
 }
@@ -144,13 +154,28 @@ impl WorkspaceGrid {
         }
     }
 
-    /// `pane` dropped on `onto`'s `zone`; false when either is not in the
-    /// grid.
-    pub fn place(&mut self, pane: PaneId, onto: PaneId, zone: Zone) -> bool {
-        let at = |pane| self.cells.iter().position(|cell| cell.pane == Some(pane));
-        let (Some(a), Some(b)) = (at(pane), at(onto)) else { return false };
+    /// The cell holding `moved` dropped on `onto`'s `zone`; false when
+    /// either is not in the grid. A panel never takes the Workspace's own
+    /// place, so a drop that would swap one there changes nothing.
+    pub fn place(&mut self, moved: &Occupant, onto: &Occupant, zone: Zone) -> bool {
+        let at = |occupant: &Occupant| self.cells.iter().position(|cell| cell.holds(occupant));
+        let (Some(a), Some(b)) = (at(moved), at(onto)) else { return false };
+        let panel = |n: usize| self.cells[n].panel.is_some();
+        if zone == Zone::Centre && ((a == 0 && panel(b)) || (b == 0 && panel(a))) {
+            return false;
+        }
         self.layout.place(a, b, zone);
         true
+    }
+
+    /// Whether `panel` has a cell of the grid.
+    pub fn holds_panel(&self, panel: &Panel) -> bool {
+        self.cells.iter().any(|cell| cell.panel.as_ref() == Some(panel))
+    }
+
+    /// The panels with a cell, in opening order.
+    pub fn panels(&self) -> Vec<Panel> {
+        self.cells.iter().filter_map(|cell| cell.panel.clone()).collect()
     }
 
     /// The page the rail carries of the grid. `keys` is the side with
@@ -159,6 +184,7 @@ impl WorkspaceGrid {
         let thousandths = |list: &[f32]| list.iter().map(|s| (s * 1000.0).round() as u16).collect::<Vec<_>>();
         GridPage {
             beside: self.cells[1..].iter().map(|cell| cell.pane.and_then(&describe)).collect(),
+            panels: self.cells[1..].iter().map(|cell| cell.panel.clone()).collect(),
             grid: self.layout.rows().iter().map(|row| row.iter().map(|&n| n as u8).collect()).collect(),
             heights: thousandths(self.layout.heights()),
             widths: self.layout.widths().iter().map(|w| thousandths(w)).collect(),
@@ -195,11 +221,38 @@ impl WorkspaceGrid {
     /// the room of the cell before it until the page measures its own. A
     /// pane the grid holds already is not split again; its side is returned.
     pub(super) fn join(&mut self, pane: PaneId, out: &mut Vec<ClientMsg>) -> Result<Side, Refusal> {
-        if self.cells[0].pane.is_none() {
-            return Err(Refusal::NoWorkspacePane);
-        }
         if let Some(side) = self.side_of(pane) {
             return Ok(side);
+        }
+        self.admits()?;
+        let mut cell = self.next_cell();
+        cell.subscribe(pane, out);
+        Ok(self.push(cell))
+    }
+
+    /// Splits `panel` off into a new cell, as `join` does a pane, with
+    /// nothing to subscribe: the window draws it.
+    pub(super) fn join_panel(&mut self, panel: &Panel) -> Result<Side, Refusal> {
+        if let Some(at) = self.cells.iter().position(|cell| cell.panel.as_ref() == Some(panel)) {
+            return Ok(side(at));
+        }
+        self.admits()?;
+        let cell = Slot { panel: Some(panel.clone()), ..self.next_cell() };
+        Ok(self.push(cell))
+    }
+
+    /// Takes `panel`'s cell out on the next `close_empty`; false when it has
+    /// none.
+    pub(super) fn release(&mut self, panel: &Panel) -> bool {
+        let Some(cell) = self.cells.iter_mut().find(|cell| cell.panel.as_ref() == Some(panel)) else { return false };
+        cell.panel = None;
+        true
+    }
+
+    /// Why another cell may not split off now, if it may not.
+    fn admits(&self) -> Result<(), Refusal> {
+        if self.cells[0].pane.is_none() {
+            return Err(Refusal::NoWorkspacePane);
         }
         // A grid the page has not measured always has room, so the cells'
         // numbers, which the page reads as bytes, are what bounds it.
@@ -209,12 +262,20 @@ impl WorkspaceGrid {
         if !self.has_room() {
             return Err(Refusal::NoRoom);
         }
-        let mut cell = Slot { capacity: self.cells.last().and_then(|cell| cell.capacity), ..Slot::default() };
-        cell.subscribe(pane, out);
+        Ok(())
+    }
+
+    /// An empty cell sized to the room of the cell before it until the page
+    /// measures its own.
+    fn next_cell(&self) -> Slot {
+        Slot { capacity: self.cells.last().and_then(|cell| cell.capacity), ..Slot::default() }
+    }
+
+    fn push(&mut self, cell: Slot) -> Side {
         self.cells.push(cell);
         self.layout.add();
         debug_assert!(self.whole());
-        Ok(side(self.cells.len() - 1))
+        side(self.cells.len() - 1)
     }
 
     /// Takes every emptied cell out — the Workspace's too while another
@@ -223,8 +284,41 @@ impl WorkspaceGrid {
     /// whole; `keys` follows its pane, and keys on a cell that went go to
     /// its neighbour on the left, or the Workspace's.
     pub(super) fn close_empty(&mut self, keys: &mut Side, out: &mut Vec<ClientMsg>) {
+        self.drop_empty(keys, out);
+        if self.cells[0].panel.is_none() {
+            debug_assert!(self.whole());
+            return;
+        }
+        match self.cells.iter().position(|cell| cell.pane.is_some()) {
+            // The pane takes the Workspace's number and the panel its, each
+            // keeping its place on screen.
+            Some(k) => {
+                let (first, rest) = self.cells.split_at_mut(k);
+                let (a, b) = (&mut first[0], &mut rest[0]);
+                std::mem::swap(&mut a.pane, &mut b.pane);
+                std::mem::swap(&mut a.panel, &mut b.panel);
+                std::mem::swap(&mut a.screen, &mut b.screen);
+                std::mem::swap(&mut a.sized, &mut b.sized);
+                self.layout.swap(0, k);
+                redraw(&mut self.cells[0], out);
+                if *keys == side(k) {
+                    *keys = Side::Workspace;
+                }
+            }
+            // Nothing is left to split from.
+            None => {
+                for cell in &mut self.cells {
+                    cell.panel = None;
+                }
+                self.drop_empty(keys, out);
+            }
+        }
+        debug_assert!(self.whole());
+    }
+
+    fn drop_empty(&mut self, keys: &mut Side, out: &mut Vec<ClientMsg>) {
         for n in (0..self.cells.len()).rev() {
-            if self.cells[n].pane.is_some() || self.cells.len() < 2 {
+            if self.cells[n].filled() || self.cells.len() < 2 {
                 continue;
             }
             for j in n + 1..self.cells.len() {
@@ -242,7 +336,6 @@ impl WorkspaceGrid {
                 redraw(cell, out);
             }
         }
-        debug_assert!(self.whole());
     }
 
     /// The side next to `side`'s in `dir`.
@@ -279,254 +372,15 @@ impl WorkspaceGrid {
     }
 
     /// The invariants every move leaves: a cell for each place in the
-    /// layout, a pane in each but a lone Workspace's, and no more cells
-    /// than a side's number can name.
+    /// layout, a pane or a panel in each but a lone Workspace's, which only
+    /// a pane fills, none with both, and no more cells than a side's number
+    /// can name.
     fn whole(&self) -> bool {
-        let filled = self.cells.iter().skip(1).all(|cell| cell.pane.is_some());
-        let first = self.cells.first().is_some_and(|cell| cell.pane.is_some() || self.cells.len() == 1);
+        let filled = self.cells.iter().skip(1).all(|cell| cell.filled() && !(cell.pane.is_some() && cell.panel.is_some()));
+        let first = self.cells.first().is_some_and(|cell| cell.panel.is_none() && (cell.pane.is_some() || self.cells.len() == 1));
         first && filled && self.cells.len() == self.layout.len() && self.cells.len() <= 256
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn names(out: &[ClientMsg]) -> Vec<String> {
-        out.iter()
-            .map(|m| match m {
-                ClientMsg::Subscribe { pane } => format!("subscribe {pane}"),
-                ClientMsg::Unsubscribe { pane } => format!("unsubscribe {pane}"),
-                ClientMsg::Resize { pane, rows, cols } => format!("resize {pane} {rows}x{cols}"),
-                other => format!("{other:?}"),
-            })
-            .collect()
-    }
-
-    /// Pane 1 in the Workspace's cell with `room`, and nothing beside it.
-    fn workspace(room: (u16, u16)) -> WorkspaceGrid {
-        let mut grid = WorkspaceGrid::default();
-        let cell = grid.cell_mut(Side::Workspace).unwrap();
-        cell.capacity = Some(room);
-        cell.subscribe(PaneId(1), &mut Vec::new());
-        grid
-    }
-
-    fn room(grid: &mut WorkspaceGrid, side: Side, room: (u16, u16)) {
-        grid.cell_mut(side).unwrap().capacity = Some(room);
-    }
-
-    /// `n` panes, 1 the Workspace's and from 2 on beside it, in a grid the
-    /// page has not measured.
-    fn unmeasured(n: u64) -> WorkspaceGrid {
-        let mut grid = WorkspaceGrid::default();
-        grid.cell_mut(Side::Workspace).unwrap().subscribe(PaneId(1), &mut Vec::new());
-        for pane in 2..=n {
-            grid.join(PaneId(pane), &mut Vec::new()).unwrap();
-        }
-        grid
-    }
-
-    fn rows(grid: &WorkspaceGrid) -> Vec<Vec<u8>> {
-        grid.page(Side::Workspace, |_| None).grid
-    }
-
-    /// The Workspace's pane 1 and 4, 5 and 6 beside it, each cell's room
-    /// 20 rows by 30 columns and one more for each cell after the first.
-    fn four() -> WorkspaceGrid {
-        let mut grid = workspace((20, 60));
-        for pane in [4, 5, 6] {
-            grid.join(PaneId(pane), &mut Vec::new()).unwrap();
-        }
-        for (n, (side, cell)) in grid.cells_mut().enumerate() {
-            assert_eq!(side, self::side(n));
-            cell.capacity = Some((20, 30 + n as u16));
-            cell.send_size(&mut Vec::new());
-        }
-        grid
-    }
-
-    #[test]
-    fn a_pane_joins_by_the_grid_rule_at_the_room_of_the_cell_before_it() {
-        let mut grid = workspace((20, 60));
-        let mut out = Vec::new();
-        assert_eq!(grid.join(PaneId(4), &mut out), Ok(Side::Beside(0)));
-        assert_eq!(names(&out), ["subscribe 4", "resize 4 20x60"]);
-        assert_eq!(rows(&grid), [vec![0, 1]]);
-        grid.join(PaneId(5), &mut Vec::new()).unwrap();
-        assert_eq!(rows(&grid), [vec![0, 1], vec![2]], "two over one");
-        assert_eq!(grid.panes().collect::<Vec<_>>(), [PaneId(1), PaneId(4), PaneId(5)]);
-    }
-
-    #[test]
-    fn a_pane_already_in_the_row_is_not_split_again() {
-        let mut grid = four();
-        let mut out = Vec::new();
-        assert_eq!(grid.join(PaneId(5), &mut out), Ok(Side::Beside(1)));
-        assert!(out.is_empty());
-        assert_eq!(grid.sides().len(), 4);
-    }
-
-    #[test]
-    fn a_grid_refuses_a_pane_that_would_leave_one_smaller_than_the_least() {
-        let mut grid = workspace((20, 70));
-        assert_eq!(grid.join(PaneId(4), &mut Vec::new()), Ok(Side::Beside(0)), "70 columns make two of 35");
-        room(&mut grid, Side::Beside(0), (20, 35));
-        assert!(grid.has_room(), "two over one of 20 rows makes 10 each");
-        room(&mut grid, Side::Workspace, (20, 20));
-        room(&mut grid, Side::Beside(0), (20, 19));
-        let mut out = Vec::new();
-        assert_eq!(grid.join(PaneId(5), &mut out), Err(Refusal::NoRoom), "39 columns cannot make two of 20 over a third");
-        room(&mut grid, Side::Workspace, (11, 40));
-        room(&mut grid, Side::Beside(0), (11, 40));
-        assert_eq!(grid.join(PaneId(5), &mut out), Err(Refusal::NoRoom), "11 rows cannot make two of 6");
-        assert!(out.is_empty(), "nothing subscribed");
-        assert_eq!(grid.sides(), [Side::Workspace, Side::Beside(0)]);
-    }
-
-    #[test]
-    fn nothing_splits_off_a_workspace_with_no_pane() {
-        let mut grid = WorkspaceGrid::default();
-        let mut out = Vec::new();
-        assert_eq!(grid.join(PaneId(4), &mut out), Err(Refusal::NoWorkspacePane));
-        assert!(out.is_empty());
-        assert_eq!(grid.sides(), [Side::Workspace]);
-    }
-
-    #[test]
-    fn the_grids_page_reads_as_the_page_expects() {
-        let page = unmeasured(2).page(Side::Workspace, |_| None);
-        assert_eq!(
-            serde_json::to_value(page).unwrap(),
-            serde_json::json!({
-                "beside": [null],
-                "grid": [[0, 1]],
-                "heights": [1000],
-                "widths": [[500, 500]],
-                "keyed": 0,
-                "minCols": 20,
-                "minRows": 6,
-            })
-        );
-    }
-
-    #[test]
-    fn the_page_sends_sizes_in_thousandths() {
-        let page = unmeasured(5).page(Side::Workspace, |_| None);
-        assert_eq!(page.grid, [vec![0, 1, 4], vec![2, 3]]);
-        assert_eq!((page.widths[0].clone(), page.heights), (vec![333, 333, 333], vec![500, 500]));
-    }
-
-    #[test]
-    fn the_page_names_the_cell_with_the_keys_as_the_grid_numbers_it() {
-        let grid = unmeasured(3);
-        assert_eq!(grid.page(Side::Workspace, |_| None).keyed, Some(0));
-        assert_eq!(grid.page(Side::Beside(1), |_| None).keyed, Some(2));
-    }
-
-    #[test]
-    fn no_cell_is_keyed_while_the_keys_are_off_the_grid() {
-        let grid = unmeasured(3);
-        for keys in [Side::First, Side::Second, Side::View(0)] {
-            assert_eq!(grid.page(keys, |_| None).keyed, None, "{keys:?}");
-        }
-    }
-
-    #[test]
-    fn a_split_the_tree_no_longer_names_keeps_its_place_without_a_header() {
-        let grid = unmeasured(3);
-        let describe = |pane: PaneId| {
-            let shown = Shown {
-                pane: pane.0,
-                repository: String::new(),
-                checkout: String::new(),
-                branch: String::new(),
-                agent: false,
-                browser: false,
-                title: format!("pane {pane}"),
-                status: "idle",
-                resumed: None,
-            };
-            (pane != PaneId(2)).then_some(shown)
-        };
-        let page = grid.page(Side::Workspace, describe);
-        let titles: Vec<Option<String>> = page.beside.iter().map(|b| b.as_ref().map(|s| s.title.clone())).collect();
-        assert_eq!(titles, [None, Some("pane 3".to_string())], "pane 3's header stays on its own cell");
-        assert_eq!(page.beside.len(), grid.sides().len() - 1);
-    }
-
-    #[test]
-    fn dragged_sizes_that_do_not_fit_the_grid_change_nothing() {
-        let mut grid = unmeasured(4);
-        let page = |grid: &WorkspaceGrid| grid.page(Side::Workspace, |_| None);
-        assert!(grid.share(&[250, 750], &[vec![750, 250], vec![500, 500]]));
-        assert_eq!((page(&grid).heights, page(&grid).widths[0].clone()), (vec![250, 750], vec![750, 250]));
-        assert!(grid.share(&[1, 3], &[vec![1, 1], vec![1, 1]]), "normalised");
-        assert_eq!(page(&grid).widths[0], [500, 500]);
-        assert!(!grid.share(&[1000, 0], &[vec![500, 500], vec![500, 500]]), "a zero share");
-        assert!(!grid.share(&[1000], &[vec![1000]]), "the wrong shape");
-        assert_eq!(page(&grid).heights, [250, 750]);
-        grid.share(&[250, 750], &[vec![750, 250], vec![500, 500]]);
-        grid.even_out(Some(0));
-        assert_eq!(page(&grid).widths[0], [500, 500]);
-        grid.even_out(None);
-        assert_eq!(page(&grid).heights, [500, 500]);
-    }
-
-    #[test]
-    fn a_refusal_says_why_in_the_words_the_note_shows() {
-        assert!(Refusal::NoWorkspacePane.to_string().contains("in the Workspace first"));
-        assert!(Refusal::NoRoom.to_string().contains("20 columns by 6 rows"));
-        assert!(Refusal::OnConsole.to_string().contains("open in the console"));
-        assert!(Refusal::Full.to_string().contains("close one first"));
-    }
-
-    #[test]
-    fn the_grid_refuses_a_pane_past_the_most_its_page_can_number() {
-        let mut grid = unmeasured(1);
-        for pane in 2..=256 {
-            assert!(grid.join(PaneId(pane), &mut Vec::new()).is_ok(), "pane {pane}");
-        }
-        let mut out = Vec::new();
-        assert_eq!(grid.join(PaneId(257), &mut out), Err(Refusal::Full));
-        assert!(out.is_empty());
-        let sides = grid.sides();
-        let distinct: std::collections::HashSet<_> = sides.iter().map(|side| format!("{side:?}")).collect();
-        assert_eq!((sides.len(), distinct.len()), (256, 256), "no side's number repeats");
-        let cells: std::collections::HashSet<u8> = rows(&grid).into_iter().flatten().collect();
-        assert_eq!(cells.len(), 256, "nor does a cell's on the page");
-    }
-
-    #[test]
-    fn an_emptied_cell_goes_and_the_cells_after_it_number_down_with_the_keys() {
-        let mut grid = four();
-        let mut keys = Side::Beside(2);
-        grid.cell_mut(Side::Beside(1)).unwrap().clear(true, &mut Vec::new());
-        let mut out = Vec::new();
-        grid.close_empty(&mut keys, &mut out);
-        assert_eq!(keys, Side::Beside(1), "the keys follow pane 6");
-        assert_eq!(grid.cell(Side::Beside(1)).and_then(|cell| cell.pane), Some(PaneId(6)));
-        assert_eq!(grid.cell(Side::Beside(1)).and_then(|cell| cell.capacity), Some((20, 32)), "the room stays with the number");
-        assert_eq!(names(&out), ["resize 6 20x32"]);
-        assert_eq!(rows(&grid), [vec![0, 1], vec![2]]);
-
-        grid.cell_mut(Side::Beside(1)).unwrap().clear(true, &mut Vec::new());
-        grid.close_empty(&mut keys, &mut Vec::new());
-        assert_eq!(keys, Side::Beside(0), "keys on the cell that went go to its left");
-        assert_eq!(grid.sides(), [Side::Workspace, Side::Beside(0)]);
-    }
-
-    #[test]
-    fn the_workspaces_cell_alone_stays_when_emptied() {
-        let mut grid = workspace((20, 60));
-        grid.join(PaneId(4), &mut Vec::new()).unwrap();
-        let mut keys = Side::Workspace;
-        grid.cell_mut(Side::Workspace).unwrap().clear(true, &mut Vec::new());
-        grid.close_empty(&mut keys, &mut Vec::new());
-        assert_eq!((grid.side_of(PaneId(4)), keys), (Some(Side::Workspace), Side::Workspace), "the split takes its place");
-        grid.cell_mut(Side::Workspace).unwrap().clear(true, &mut Vec::new());
-        grid.close_empty(&mut keys, &mut Vec::new());
-        assert_eq!(grid.sides(), [Side::Workspace]);
-        assert_eq!(grid.panes().count(), 0);
-    }
-}
+mod tests;

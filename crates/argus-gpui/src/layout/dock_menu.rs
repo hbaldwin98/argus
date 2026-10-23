@@ -93,7 +93,7 @@ mod tests {
     use argus_desktop_core::layout::docks::{DockPage, DockTab, FloatBounds, FloatPage, PanelKind};
 
     fn present(panel: &Panel, floats: bool, closes: bool) -> PresentPanel {
-        PresentPanel { panel: panel.clone(), kind: PanelKind::Views, floats, stage: false, closes }
+        PresentPanel { panel: panel.clone(), kind: PanelKind::Views, floats, stage: false, closes, cell: false }
     }
 
     fn docks_with(panel: &Panel, right: bool) -> DocksPage {

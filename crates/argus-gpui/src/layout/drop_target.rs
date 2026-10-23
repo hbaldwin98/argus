@@ -5,11 +5,17 @@
 //! side of the work area is that side's dock, the bottom of the stage is the
 //! bottom dock, and the rest is the stage for a panel that has a page. The
 //! decision is Rust's (`DockGesture::Move` and `Stage`); this only names the
-//! place the pointer is over.
+//! place the pointer is over, and draws the area it would fill. Over the
+//! grid, a panel that may have a cell keeps the docks to a slim band
+//! (`in_band`) and splits the cell under it anywhere else.
 
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{Dock, DockGesture, Panel};
-use gpui_kit::{point, px, size, Bounds, Pixels, Point};
+use gpui_kit::TestSupportExt as _;
+use gpui_kit::{div, point, prelude::*, px, size, AnyElement, Bounds, Pixels, Point, SharedString};
+
+use crate::theme::scale::rem;
+use crate::theme::Tokens;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
@@ -22,6 +28,9 @@ const EDGE: f32 = 160.0;
 const BOTTOM_STRIP: f32 = 160.0;
 const SIDE_PREVIEW: f32 = 560.0;
 const BOTTOM_PREVIEW: f32 = 320.0;
+/// How deep the band at the work area's edges is in which a panel carried over the grid docks
+/// rather than splitting a cell, in the page's pixels.
+const BAND: f32 = 40.0;
 
 fn left(b: Bounds<Pixels>) -> f32 {
     b.origin.x.as_f32()
@@ -81,6 +90,36 @@ pub fn landing(target: Target, work: Bounds<Pixels>, center: Bounds<Pixels>) -> 
     }
 }
 
+/// Whether `at` is in the slim band at the work area's left, right or bottom edge, at `zoom`.
+pub fn in_band(at: Point<Pixels>, work: Bounds<Pixels>, zoom: f32) -> bool {
+    let (x, y, band) = (at.x.as_f32(), at.y.as_f32(), BAND * zoom);
+    x < left(work) + band || x > left(work) + width(work) - band || y > top(work) + height(work) - band
+}
+
+/// The area a drop on `target` would fill, with what it does in words, drawn in the work area's box.
+pub fn preview(target: Target, work: Bounds<Pixels>, center: Bounds<Pixels>, tokens: &Tokens) -> AnyElement {
+    let land = landing(target, work, center);
+    let words = SharedString::from(words(target));
+    div()
+        .id("drop-preview")
+        .test_support()
+        .aria_label(words.clone())
+        .absolute()
+        .left(land.origin.x - work.origin.x)
+        .top(land.origin.y - work.origin.y)
+        .w(land.size.width)
+        .h(land.size.height)
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(rem(tokens.r_sm))
+        .border_2()
+        .border_color(tokens.accent)
+        .bg(tokens.accent.opacity(tokens.share_landing))
+        .child(div().px_2().py_1().rounded(rem(tokens.r_sm)).bg(tokens.bg_surface).text_sm().text_color(tokens.fg).child(words))
+        .into_any_element()
+}
+
 /// What the preview says it would do.
 pub fn words(target: Target) -> &'static str {
     match target {
@@ -137,6 +176,16 @@ mod tests {
     fn outside_the_work_area_nothing_is_a_target() {
         assert_eq!(over(100.0, 300.0, true), None, "over the sidebar");
         assert_eq!(over(700.0, 10.0, true), None, "over the header");
+    }
+
+    #[test]
+    fn the_band_a_panel_docks_in_over_the_grid_is_slim_and_grows_with_the_zoom() {
+        let at = |x: f32, y: f32| point(px(x), px(y));
+        assert!(in_band(at(248.0 + 39.0, 300.0), work(), 1.0));
+        assert!(!in_band(at(248.0 + 41.0, 300.0), work(), 1.0), "a dock's full strip would be 160");
+        assert!(in_band(at(700.0, 34.0 + 600.0 - 39.0), work(), 1.0));
+        assert!(!in_band(at(700.0, 34.0 + 600.0 - 41.0), work(), 1.0));
+        assert!(in_band(at(248.0 + 1000.0 - 79.0, 300.0), work(), 2.0));
     }
 
     #[test]

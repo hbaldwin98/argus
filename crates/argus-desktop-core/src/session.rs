@@ -67,7 +67,7 @@ use crate::system::notifications::{self, Alert, Looking};
 use crate::keys::page_key::{self, PageKey};
 use crate::board::tracker::link_dialog::LinkGesture;
 use crate::code::stage::{Back, Code, CodeGesture, Then as CodeThen};
-use crate::panes::shown::workspace_grid::{self, Dir, Zone};
+use crate::panes::shown::workspace_grid::{self, Dir, Occupant, Zone};
 use crate::layout::stage::{Page, Stages};
 use crate::connection::page::{
     self, Call, Event, FeatureEdit, PageMouse, Reference, ReviewClick, ReviewJumpGesture, SettingChange, Side,
@@ -691,8 +691,8 @@ impl Session {
             Call::SetShares { heights, widths } => self.set_shares(&heights, &widths),
             Call::EvenShares { row } => self.even_shares(row.map(usize::from)),
             Call::StepRow { by } => self.step_row(isize::from(by)),
-            Call::MovePane { pane, onto, zone } => self.move_pane(PaneId(pane), PaneId(onto), zone),
-            Call::DropPane { pane, onto, zone } => self.drop_pane(PaneId(pane), onto.map(PaneId), zone),
+            Call::MovePane { pane, onto, zone } => self.move_pane(&pane, &onto, zone),
+            Call::DropPane { pane, onto, zone } => self.drop_pane(PaneId(pane), onto, zone),
             Call::MoveHeld { dir } => self.move_held(dir),
             Call::FocusTowards { dir } => self.focus_towards(dir),
             Call::Key { key } => self.key(&key),
@@ -1124,7 +1124,7 @@ impl Session {
     /// pane there it is simply shown; otherwise it joins the grid by the
     /// grid rule and is then placed where it was dropped, so a drop on a
     /// pane's edge splits that pane and one on its centre swaps them.
-    fn drop_pane(&mut self, pane: PaneId, onto: Option<PaneId>, zone: Zone) -> Vec<ClientMsg> {
+    fn drop_pane(&mut self, pane: PaneId, onto: Option<Occupant>, zone: Zone) -> Vec<ClientMsg> {
         if self.shown.on(Side::Workspace).is_none() {
             return self.select(pane);
         }
@@ -1134,8 +1134,8 @@ impl Session {
                 None => self.finish(),
             };
         }
-        if let Some(onto) = onto.filter(|&onto| onto != pane) {
-            self.shown.grid_mut().place(pane, onto, zone);
+        if let Some(onto) = onto {
+            self.shown.grid_mut().place(&Occupant::Pane(pane.0), &onto, zone);
         }
         self.finish()
     }
@@ -1157,9 +1157,9 @@ impl Session {
         self.finish()
     }
 
-    /// A pane dropped on another's centre or edge, from its header.
-    fn move_pane(&mut self, pane: PaneId, onto: PaneId, zone: Zone) -> Vec<ClientMsg> {
-        self.shown.grid_mut().place(pane, onto, zone);
+    /// A cell dropped on another's centre or edge, from its header.
+    fn move_pane(&mut self, moved: &Occupant, onto: &Occupant, zone: Zone) -> Vec<ClientMsg> {
+        self.shown.grid_mut().place(moved, onto, zone);
         self.finish()
     }
 
@@ -1986,6 +1986,11 @@ impl Session {
     }
 
     fn dock_gesture(&mut self, gesture: DockGesture) -> Vec<ClientMsg> {
+        // A panel the docks are told to put somewhere leaves the grid first:
+        // a panel is in one place at a time.
+        if let DockGesture::Move { panel, .. } | DockGesture::Show { panel } | DockGesture::Float { panel } | DockGesture::Stage { panel } = &gesture {
+            self.shown.release_panel(panel, &mut self.out);
+        }
         match gesture {
             DockGesture::Move { panel, dock } => self.move_panel(&panel, dock),
             DockGesture::Show { panel } => self.show_panel(&panel),
@@ -1999,8 +2004,28 @@ impl Session {
             DockGesture::Raise { panel } => self.docks.raise(&panel),
             DockGesture::Stage { panel } => self.stage_panel(&panel),
             DockGesture::Close { panel } => self.close_panel(&panel),
+            DockGesture::Grid { panel, onto, zone } => {
+                if let Err(refusal) = self.grid_panel(&panel, &onto, zone) {
+                    return self.note(refusal.to_string());
+                }
+            }
         }
         self.finish()
+    }
+
+    /// A panel dropped on a cell of the grid: it splits off beside that
+    /// cell, out of its dock or dialog, and the Workspace comes back to show
+    /// it. A panel that may not have a cell, or is not there now, stays.
+    fn grid_panel(&mut self, panel: &Panel, onto: &Occupant, zone: Zone) -> Result<(), workspace_grid::Refusal> {
+        if !panel.cells() || !self.present().contains(panel) {
+            return Ok(());
+        }
+        self.shown.open_panel(panel)?;
+        self.docks.put_away(panel);
+        self.leave_stages();
+        self.console.set_fullscreen(false);
+        self.shown.grid_mut().place(&Occupant::Panel(panel.clone()), onto, zone);
+        Ok(())
     }
 
     /// The panel goes to `dock` and is shown there, as if shown from its
@@ -3301,6 +3326,12 @@ impl Session {
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
         let present = self.present();
+        // A panel's cell goes with it: the last browser closing empties it.
+        for panel in self.shown.grid().panels() {
+            if !present.contains(&panel) {
+                self.shown.release_panel(&panel, &mut self.out);
+            }
+        }
         self.docks.set_present(present);
         self.settle_console();
         self.settle_page();
@@ -3316,9 +3347,13 @@ impl Session {
             self.out.extend(self.sessions.read(&self.status, &wanted, request_id));
         }
         if self.status.daemon_can(BROWSERS) {
-            let placed = if self.stages.shows_workspace(self.console.fullscreen()) { self.shown.panes() } else { Vec::new() };
-            // The tiles draw every browser, on the stage or in their panel.
-            let tiled = self.stages.now() == Stage::Browsers || self.docks.shows(&Panel::Browsers);
+            let workspace = self.stages.shows_workspace(self.console.fullscreen());
+            let placed = if workspace { self.shown.panes() } else { Vec::new() };
+            // The tiles draw every browser: on their stage, in their panel,
+            // or in a cell of the grid while the grid is on screen.
+            let tiled = self.stages.now() == Stage::Browsers
+                || self.docks.shows(&Panel::Browsers)
+                || (workspace && self.shown.grid().holds_panel(&Panel::Browsers));
             let drawn = self.browsers.drawn(&placed, tiled);
             self.browsers.watch(drawn, &mut self.out);
         }
@@ -4467,7 +4502,7 @@ mod tests {
     fn a_pane_dragged_from_the_rail_lands_where_it_was_dropped() {
         let mut s = session(without_focus());
         s.select(PaneId(1));
-        s.drop_pane(PaneId(2), Some(PaneId(1)), Zone::Top);
+        s.drop_pane(PaneId(2), Some(Occupant::Pane(1)), Zone::Top);
         assert_eq!(s.rail(0).row.grid, [vec![1], vec![0]], "above the pane it was dropped on");
         assert_eq!(s.shown.pane(), Some(PaneId(2)), "with the keys");
     }
@@ -4485,7 +4520,7 @@ mod tests {
         let mut s = session(without_focus());
         s.select(PaneId(1));
         s.open_beside(PaneId(2));
-        s.move_pane(PaneId(2), PaneId(1), Zone::Top);
+        s.move_pane(&Occupant::Pane(2), &Occupant::Pane(1), Zone::Top);
         assert_eq!(s.rail(0).row.grid, [vec![1], vec![0]]);
         s.move_held(Dir::Down);
         assert_eq!(s.rail(0).row.grid, [vec![0], vec![1]]);
@@ -4665,6 +4700,52 @@ mod tests {
         docks(&mut s, DockGesture::Stage { panel: Panel::Browsers });
         assert_eq!(s.stages.now(), Stage::Browsers, "dropped on the stage it is the Browsers stage");
         assert_eq!(docks_page(&mut s).and_then(|d| d.right.shown), None, "and leaves its dock");
+    }
+
+    #[test]
+    fn the_browsers_dropped_on_a_cell_split_off_beside_it_and_go_with_the_last_browser() {
+        let watched = |sent: &[ClientMsg]| {
+            sent.iter().rev().find_map(|m| match m {
+                ClientMsg::WatchBrowsers { showing } => Some(showing.clone()),
+                _ => None,
+            })
+        };
+        let browsers = || Occupant::Panel(Panel::Browsers);
+        let into_grid = || DockGesture::Grid { panel: Panel::Browsers, onto: Occupant::Pane(2), zone: Zone::Right };
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(2));
+        assert_eq!(docks(&mut s, into_grid()), Vec::<String>::new(), "no browser, no panel to drop");
+        assert!(!s.shown.grid().holds_panel(&Panel::Browsers));
+
+        s.receive(with_tree(tree_with_browser(30)));
+        s.receive(browser_page(30, 1));
+        s.call(Call::ShowBrowsers { pane: None });
+        let sent = s.call(Call::Docks { gesture: into_grid() });
+        assert_eq!(s.stages.now(), Stage::Workspace, "the Workspace comes back to show it");
+        assert_eq!(s.shown.on(Side::Beside(0)), None, "a panel's cell has no pane");
+        assert_eq!(s.rail(0).row.panels, [Some(Panel::Browsers)]);
+        assert_eq!(s.shown.pane(), Some(PaneId(2)), "the keys stay with the pane");
+        assert_eq!(watched(&sent), None, "drawn there, so still watched");
+        let sent = s.call(Call::ShowFeatures { open: true });
+        assert_eq!(watched(&sent), Some(Vec::new()), "the grid is off screen with its stage");
+        s.call(Call::ShowFeatures { open: false });
+
+        s.call(Call::MovePane { pane: Occupant::Pane(2), onto: browsers(), zone: Zone::Centre });
+        assert_eq!(s.shown.grid().sides().len(), 2, "the Workspace's own pane never trades places with a panel");
+        docks(&mut s, DockGesture::Move { panel: Panel::Browsers, dock: Dock::Left });
+        assert!(!s.shown.grid().holds_panel(&Panel::Browsers), "a panel is in one place at a time");
+        assert_eq!(docks_page(&mut s).and_then(|d| d.left.shown), Some(Panel::Browsers));
+
+        docks(&mut s, into_grid());
+        assert_eq!(docks_page(&mut s).and_then(|d| d.left.shown), None, "out of its dock");
+        s.call(Call::CloseBeside { side: Side::Beside(0) });
+        assert!(!s.shown.grid().holds_panel(&Panel::Browsers), "its header's close takes it out");
+
+        docks(&mut s, into_grid());
+        s.receive(ServerMsg::BrowserClosed { pane: PaneId(30) });
+        assert!(!s.shown.grid().holds_panel(&Panel::Browsers), "the last browser closing empties its cell");
+        assert_eq!(s.shown.grid().sides(), [Side::Workspace]);
     }
 
     #[test]

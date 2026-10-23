@@ -9,7 +9,8 @@
 //! carrying began (SHELL-GRID-17: Rust's redraws do not move the cells under a drag).
 //!
 //! The cell's body is [`cells::Kind`]: a terminal, or a browser's view (`browser/pane`), made once for
-//! a browser and kept while it is in a cell or listed. Where the
+//! a browser and kept while it is in a cell or listed. A cell that holds a panel draws the view the
+//! panel's owner offered for it (`layout/bodies`), the one its dock would draw. Where the
 //! cells and the stage were drawn is published for the carried pane to land on (`kit/spots`); the
 //! carrying and the drop are the work area's (`layout/carry`).
 
@@ -19,6 +20,8 @@ pub mod gutters;
 pub mod header;
 
 use argus_desktop_core::connection::page::{Shown, Side};
+use argus_desktop_core::layout::docks::Panel;
+use argus_desktop_core::panes::shown::workspace_grid::Occupant;
 use argus_desktop_core::panes::shown::workspace_grid::rects::cells as placed;
 use argus_desktop_core::panes::shown::workspace_grid::GridPage;
 use gpui_kit::component::v_flex;
@@ -33,6 +36,7 @@ use crate::connection::heard::Heard;
 use crate::kit::area;
 use crate::kit::drag;
 use crate::kit::spots::{publish, Spot, Spots};
+use crate::layout::bodies::Contents;
 use crate::panes::terminal::Terminal;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
@@ -96,6 +100,12 @@ impl SplitView {
             0 => self.drawn.0.as_ref(),
             n => self.drawn.1.beside.get(usize::from(n) - 1).and_then(Option::as_ref),
         }
+    }
+
+    /// The panel in cell `n`, if that cell holds one.
+    fn panel_in(&self, n: u8) -> Option<&Panel> {
+        let beside = usize::from(n).checked_sub(1)?;
+        self.drawn.1.panels.get(beside).and_then(Option::as_ref)
     }
 
     /// The view of the browser in cell `n`, if that cell holds one.
@@ -205,12 +215,24 @@ impl SplitView {
     /// Cell `n`: its card, placed by `rect`, holding its header and its body.
     fn cell(&self, n: u8, rect: argus_desktop_core::panes::shown::workspace_grid::Rect, split: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = self.pane_in(n);
+        let panel = self.panel_in(n).cloned();
         let keyed = split && self.heard.read(cx).keyed_cell().unwrap_or(0) == n;
-        let head = pane.filter(|_| split).map(|pane| self.head(n, pane, keyed, tokens, cx));
+        let named = match (&panel, pane) {
+            (Some(panel), _) => {
+                Some(header::Named { held: Occupant::Panel(panel.clone()), title: header::panel_title(&self.heard.read(cx).docks, panel), status: None })
+            }
+            (None, Some(pane)) => Some(header::Named { held: Occupant::Pane(pane.pane), title: pane.title.clone(), status: Some(pane.status) }),
+            (None, None) => None,
+        };
+        let head = named.filter(|_| split).map(|named| self.head(n, named, keyed, tokens, cx));
         let kind = Kind::of(pane);
-        let body = match (kind, self.screen_of(n), self.browser_in(n)) {
-            (Kind::Browser, _, Some(view)) => div().size_full().child(view.clone()).into_any_element(),
-            (Kind::Terminal, Some(screen), _) => div().size_full().child(screen.clone()).into_any_element(),
+        let body = match (&panel, kind, self.screen_of(n), self.browser_in(n)) {
+            (Some(panel), ..) => match Contents::peek(cx).panel(panel) {
+                Some(view) => div().size_full().child(view).into_any_element(),
+                None => cells::reserved(n, tokens).into_any_element(),
+            },
+            (None, Kind::Browser, _, Some(view)) => div().size_full().child(view.clone()).into_any_element(),
+            (None, Kind::Terminal, Some(screen), _) => div().size_full().child(screen.clone()).into_any_element(),
             _ => cells::reserved(n, tokens).into_any_element(),
         };
         div()

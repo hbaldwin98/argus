@@ -15,6 +15,7 @@ mod carry;
 mod cells;
 mod gutters;
 mod keys;
+mod panels;
 
 pub(super) fn shown(pane: u64, title: &str) -> Shown {
     Shown {
@@ -34,6 +35,7 @@ pub(super) fn shown(pane: u64, title: &str) -> Shown {
 pub(super) fn three() -> GridPage {
     GridPage {
         beside: vec![Some(shown(2, "two")), Some(shown(3, "three"))],
+        panels: vec![None, None],
         grid: vec![vec![0, 1], vec![2]],
         heights: vec![500, 500],
         widths: vec![vec![500, 500], vec![1000]],
@@ -45,7 +47,7 @@ pub(super) fn three() -> GridPage {
 
 /// One pane alone.
 pub(super) fn alone() -> GridPage {
-    GridPage { beside: Vec::new(), grid: vec![vec![0]], heights: vec![1000], widths: vec![vec![1000]], keyed: Some(0), min_cols: 20, min_rows: 6 }
+    GridPage { beside: Vec::new(), panels: Vec::new(), grid: vec![vec![0]], heights: vec![1000], widths: vec![vec![1000]], keyed: Some(0), min_cols: 20, min_rows: 6 }
 }
 
 fn pane(id: u64, title: &str, on: bool) -> Pane {

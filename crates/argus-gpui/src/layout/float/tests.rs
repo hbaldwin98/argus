@@ -23,7 +23,7 @@ fn floating() -> DocksPage {
     let mut page = docks();
     for (name, bounds, closes) in [("a", at(96, 64, 560, 420), true), ("b", at(124, 92, 400, 300), false)] {
         page.floating.push(FloatPage { panel: saved(name), title: format!("View {name}"), bounds });
-        page.present.push(PresentPanel { panel: saved(name), kind: PanelKind::Saved, floats: true, stage: false, closes });
+        page.present.push(PresentPanel { panel: saved(name), kind: PanelKind::Saved, floats: true, stage: false, closes, cell: false });
     }
     page
 }

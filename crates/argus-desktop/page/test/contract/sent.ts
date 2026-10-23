@@ -5383,6 +5383,7 @@ export const sent = [
   },
   "present": [
     {
+      "cell": false,
       "closes": false,
       "floats": false,
       "kind": "console",
@@ -5639,6 +5640,7 @@ export const sent = [
     "keyed": 0,
     "minCols": 20,
     "minRows": 6,
+    "panels": [],
     "widths": [
       [
         1000
@@ -6281,6 +6283,7 @@ export const sent = [
     "keyed": 0,
     "minCols": 20,
     "minRows": 6,
+    "panels": [],
     "widths": [
       [
         1000
@@ -6407,6 +6410,7 @@ export const sent = [
     "keyed": 0,
     "minCols": 20,
     "minRows": 6,
+    "panels": [],
     "widths": [
       [
         1000
@@ -6945,6 +6949,7 @@ export const sent = [
     "keyed": 0,
     "minCols": 20,
     "minRows": 6,
+    "panels": [],
     "widths": [
       [
         1000

@@ -44,7 +44,7 @@ pub(crate) fn tab(panel: &Panel, title: &str) -> DockTab {
 }
 
 pub(crate) fn present(panel: &Panel, kind: PanelKind, stage: bool) -> PresentPanel {
-    PresentPanel { panel: panel.clone(), kind, floats: false, stage, closes: false }
+    PresentPanel { panel: panel.clone(), kind, floats: false, stage, closes: false, cell: false }
 }
 
 pub(crate) fn images() -> Panel {

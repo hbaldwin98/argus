@@ -1,5 +1,6 @@
 //! A pane carried by its header or from the rail: what is carried, and the handle any view
-//! presses it through.
+//! presses it through. A panel that may have a cell (`Panel::cells`) is carried to one too: by its
+//! cell's header, or as a dock panel the work area follows, whose landing on a cell is asked here.
 //!
 //! The drag itself is the work area's (`layout/work`, one `Dragger` for every payload, so the
 //! 5 px threshold and Escape are not written twice); the cell headers are the split grid's and the
@@ -13,6 +14,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use argus_desktop_core::layout::docks::Panel;
+use argus_desktop_core::panes::shown::workspace_grid::Occupant;
 use gpui_kit::{App, Global, Pixels, Point, WeakEntity};
 
 use super::work::{Held, WorkView};
@@ -20,23 +22,28 @@ use super::work::{Held, WorkView};
 /// What a press picked up.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Carried {
-    /// A cell's header: the pane in cell `slot`, which is never its own target.
-    Cell { slot: u8, pane: u64, title: String },
+    /// A cell's header: what cell `slot` holds, which is never its own target.
+    Cell { slot: u8, held: Occupant, title: String },
     /// A pane's row in the rail. `checkout` is where it is now, which makes the other checkouts'
     /// rows targets; none for a pane that cannot move between checkouts.
     Rail { pane: u64, title: String, checkout: Option<u64> },
+    /// A panel carried as a dock panel is, asked where it would land on the grid.
+    Panel { panel: Panel, title: String },
 }
 
 impl Carried {
-    pub fn pane(&self) -> u64 {
+    pub fn title(&self) -> &str {
         match self {
-            Carried::Cell { pane, .. } | Carried::Rail { pane, .. } => *pane,
+            Carried::Cell { title, .. } | Carried::Rail { title, .. } | Carried::Panel { title, .. } => title,
         }
     }
 
-    pub fn title(&self) -> &str {
+    /// What the carried thing is in a cell, which a cell holding it already does not take again.
+    fn occupant(&self) -> Occupant {
         match self {
-            Carried::Cell { title, .. } | Carried::Rail { title, .. } => title,
+            Carried::Cell { held, .. } => held.clone(),
+            Carried::Rail { pane, .. } => Occupant::Pane(*pane),
+            Carried::Panel { panel, .. } => Occupant::Panel(panel.clone()),
         }
     }
 }

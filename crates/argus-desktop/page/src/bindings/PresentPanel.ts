@@ -21,4 +21,8 @@ stage: boolean,
  * Its tab's close takes it out for good; a panel without one is put
  * away only by its dock's hide.
  */
-closes: boolean, };
+closes: boolean, 
+/**
+ * Dropped on a cell of the Workspace's grid it splits off there.
+ */
+cell: boolean, };

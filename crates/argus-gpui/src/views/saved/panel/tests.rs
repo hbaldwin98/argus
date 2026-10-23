@@ -111,7 +111,7 @@ fn a_floating_lone_view_has_no_head_beside_its_frames_title_bar(cx: &mut TestApp
     let mut page = with_tabs(&["z"]);
     let float = Panel::Saved("a".into());
     page.floating.push(FloatPage { panel: float.clone(), title: "Plan".into(), bounds: FloatBounds { x: 40, y: 40, width: 560, height: 400 } });
-    page.present.push(PresentPanel { panel: float, kind: PanelKind::Saved, floats: true, stage: false, closes: true });
+    page.present.push(PresentPanel { panel: float, kind: PanelKind::Saved, floats: true, stage: false, closes: true, cell: false });
     let opened = opened(cx, page, vec![saved("a", "Plan", false), saved("z", "Zed", false)], vec![trail("a", &["a"]), trail("z", &["z"])]);
     assert!(present_id(cx, &opened, "saved-meta-row-saved:a-0"), "the same element, drawn in the frame");
     assert!(!present_id(cx, &opened, "saved-head-saved:a"));
@@ -230,7 +230,7 @@ fn a_floating_frames_bar_wears_the_stale_chip_and_the_column_count(cx: &mut Test
     for name in ["a", "t"] {
         let float = Panel::Saved(name.into());
         page.floating.push(FloatPage { panel: float.clone(), title: name.into(), bounds: FloatBounds { x: 40, y: 40, width: 560, height: 400 } });
-        page.present.push(PresentPanel { panel: float, kind: PanelKind::Saved, floats: true, stage: false, closes: true });
+        page.present.push(PresentPanel { panel: float, kind: PanelKind::Saved, floats: true, stage: false, closes: true, cell: false });
     }
     let views = vec![saved("a", "Plan", true), saved("t", "Trail", false), saved("b", "Detail", false), saved("z", "Zed", false)];
     let opened = opened(cx, page, views, vec![trail("a", &["a"]), trail("t", &["t", "b"]), trail("z", &["z"])]);

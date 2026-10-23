@@ -25,7 +25,7 @@ fn a_header_let_go_on_another_cell_moves_the_pane_there_by_the_zone(cx: &mut Tes
     assert_eq!(label(cx, &opened, "drag-ghost").as_deref(), Some("one"));
     assert_eq!(label(cx, &opened, "drop-zone").as_deref(), Some("Swap places"));
     up(cx, &opened, target);
-    assert_eq!(asked(&opened), ["MovePane { pane: 1, onto: 2, zone: Centre }"]);
+    assert_eq!(asked(&opened), ["MovePane { pane: Pane(1), onto: Pane(2), zone: Centre }"]);
     assert!(!has(cx, &opened, "drag-ghost") && !has(cx, &opened, "drop-zone"), "both go with the drag");
 }
 
@@ -37,7 +37,7 @@ fn near_the_edge_of_a_cell_the_zone_is_that_edge(cx: &mut TestAppContext) {
     lift(cx, &opened, "cell-head-0", near_top);
     assert_eq!(label(cx, &opened, "drop-zone").as_deref(), Some("Place above"));
     up(cx, &opened, near_top);
-    assert_eq!(asked(&opened), ["MovePane { pane: 1, onto: 3, zone: Top }"]);
+    assert_eq!(asked(&opened), ["MovePane { pane: Pane(1), onto: Pane(3), zone: Top }"]);
 }
 
 #[gpui_kit::test]
@@ -106,7 +106,7 @@ fn a_rail_pane_let_go_on_a_cell_is_dropped_there_by_the_zone(cx: &mut TestAppCon
     lift(cx, &opened, "pane-2", target);
     assert_eq!(label(cx, &opened, "drag-ghost").as_deref(), Some("two"));
     up(cx, &opened, target);
-    assert_eq!(asked(&opened), ["DropPane { pane: 2, onto: Some(1), zone: Centre }"]);
+    assert_eq!(asked(&opened), ["DropPane { pane: 2, onto: Some(Pane(1)), zone: Centre }"]);
 }
 
 #[gpui_kit::test]

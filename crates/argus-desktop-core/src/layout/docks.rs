@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::layout::dragged_width::Bounds;
 use crate::connection::page::Event;
 use crate::connection::sent::Sent;
+use crate::panes::shown::workspace_grid::{Occupant, Zone};
 
 /// What was done to the docks.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -47,6 +48,9 @@ pub enum DockGesture {
     /// The panel dropped on the stage: where it goes is the session's —
     /// the Console stage, an extension's page. One that cannot go stays.
     Stage { panel: Panel },
+    /// The panel dropped on a cell of the Workspace's grid, splitting off
+    /// beside it there; only a panel that `cells` may.
+    Grid { panel: Panel, onto: Occupant, zone: Zone },
     /// A panel's close for good, which only a panel that `closes` has;
     /// any other stays where it is.
     Close { panel: Panel },
@@ -157,8 +161,25 @@ impl Panel {
         }
     }
 
+    /// Whether it can split off into a cell of the Workspace's grid, beside
+    /// an agent's pane. The browsers only, for now: each panel joins once
+    /// its body is drawn well at a cell's size.
+    pub fn cells(&self) -> bool {
+        match self {
+            Panel::Browsers => true,
+            Panel::Console | Panel::Views | Panel::Extension(_) | Panel::Saved(_) => false,
+        }
+    }
+
     fn told(&self) -> PresentPanel {
-        PresentPanel { panel: self.clone(), kind: self.kind(), floats: self.floats(), stage: self.stages(), closes: self.closes() }
+        PresentPanel {
+            panel: self.clone(),
+            kind: self.kind(),
+            floats: self.floats(),
+            stage: self.stages(),
+            closes: self.closes(),
+            cell: self.cells(),
+        }
     }
 }
 
@@ -383,6 +404,8 @@ pub struct PresentPanel {
     /// Its tab's close takes it out for good; a panel without one is put
     /// away only by its dock's hide.
     pub closes: bool,
+    /// Dropped on a cell of the Workspace's grid it splits off there.
+    pub cell: bool,
 }
 
 /// A dock as the page draws it: only the panels that exist now.
@@ -554,6 +577,20 @@ impl Docks {
         if let Some(dock) = self.dock_of(panel).filter(|_| self.shows(panel)) {
             self.change(|layout| layout.dock_mut(dock).open = false);
         }
+    }
+
+    /// Takes the panel off screen wherever the docks show it, to go
+    /// somewhere they do not draw: a dialog goes back to its home dock as a
+    /// tab, and a dock showing it closes.
+    pub fn put_away(&mut self, panel: &Panel) {
+        if self.place_of(panel) == Some(Place::Float) {
+            let home = panel.home().unwrap_or(Dock::Right);
+            self.change(|layout| {
+                layout.lift(panel);
+                layout.dock_mut(home).tabs.push(panel.clone());
+            });
+        }
+        self.hide(panel);
     }
 
     /// Moves the panel to the end of `to`'s tabs and shows it there.
@@ -968,7 +1005,7 @@ mod tests {
     fn a_panel_is_told_to_the_page_as_its_kind_and_abilities() {
         assert_eq!(
             serde_json::to_value(plan().told()).unwrap(),
-            serde_json::json!({"panel": "saved:release-plan", "kind": "saved", "floats": true, "stage": false, "closes": true})
+            serde_json::json!({"panel": "saved:release-plan", "kind": "saved", "floats": true, "stage": false, "closes": true, "cell": false})
         );
         assert_eq!(serde_json::to_value(PanelKind::Extension).unwrap(), "extension");
     }

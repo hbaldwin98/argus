@@ -16,6 +16,7 @@ use argus_protocol::panes::view::{Effect, PaneView};
 use argus_protocol::{ClientMsg, KeyboardMode, MouseTracking, PaneId, ServerMsg};
 
 use crate::connection::page::{Frame, Side};
+use crate::layout::docks::Panel;
 use crate::panes::screen::Screen;
 
 pub mod workspace_grid;
@@ -25,6 +26,9 @@ use workspace_grid::{Dir, Refusal, WorkspaceGrid};
 #[derive(Default)]
 struct Slot {
     pane: Option<PaneId>,
+    /// A panel drawn in a grid cell instead of a pane; never beside a pane
+    /// in the same cell, and never on the console's sides.
+    panel: Option<Panel>,
     screen: Option<Screen>,
     /// The rows and columns the page has room for on this side.
     capacity: Option<(u16, u16)>,
@@ -311,14 +315,35 @@ impl ShownPane {
         self.grid.join(pane, out)
     }
 
-    /// Takes the split on `side` out of the grid; its pane keeps running.
-    /// False for any side but a split's: the Workspace's own pane is not
-    /// taken out of its grid.
+    /// Takes the split on `side` out of the grid; its pane keeps running,
+    /// and a panel there goes back to its dock, closed. False for any side
+    /// but a split's: the Workspace's own pane is not taken out of its grid.
     pub fn close_split(&mut self, side: Side, out: &mut Vec<ClientMsg>) -> bool {
-        if !matches!(side, Side::Beside(_)) || self.on(side).is_none() {
+        if !matches!(side, Side::Beside(_)) {
+            return false;
+        }
+        if let Some(panel) = self.grid.cell(side).and_then(|cell| cell.panel.clone()) {
+            return self.release_panel(&panel, out);
+        }
+        if self.on(side).is_none() {
             return false;
         }
         self.close(side, out);
+        true
+    }
+
+    /// Splits `panel` off into the grid, as `open_beside` does a pane. It
+    /// never takes the keys: a panel has no screen to type into.
+    pub fn open_panel(&mut self, panel: &Panel) -> Result<Side, Refusal> {
+        self.grid.join_panel(panel)
+    }
+
+    /// Takes `panel`'s cell out of the grid; false when it has none.
+    pub fn release_panel(&mut self, panel: &Panel, out: &mut Vec<ClientMsg>) -> bool {
+        if !self.grid.release(panel) {
+            return false;
+        }
+        self.vacated(out);
         true
     }
 
@@ -328,9 +353,10 @@ impl ShownPane {
         self.grid.step(self.keys, dir)
     }
 
-    /// The pane next to the keys' in `dir`, which then has them.
+    /// The pane next to the keys' in `dir`, which then has them. A panel's
+    /// cell has no screen to type into, so the keys stay where they are.
     pub fn focus_towards(&mut self, dir: Dir) -> bool {
-        let Some(next) = self.grid.neighbour(self.keys, dir) else { return false };
+        let Some(next) = self.grid.neighbour(self.keys, dir).filter(|&next| self.on(next).is_some()) else { return false };
         self.keys = next;
         self.leader = false;
         true
@@ -474,7 +500,7 @@ impl ShownPane {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use workspace_grid::Zone;
+    use workspace_grid::{Occupant, Zone};
 
     fn names(msgs: &[ClientMsg]) -> Vec<String> {
         msgs.iter()
@@ -742,9 +768,9 @@ mod tests {
     fn a_pane_dropped_on_another_moves_in_the_grid_and_the_keys_read_in_the_new_order() {
         let mut shown = ShownPane::default();
         row(&mut shown);
-        assert!(shown.grid_mut().place(PaneId(6), PaneId(1), Zone::Left));
+        assert!(shown.grid_mut().place(&Occupant::Pane(6), &Occupant::Pane(1), Zone::Left));
         assert_eq!(shown.grid().sides(), [Side::Beside(2), Side::Workspace, Side::Beside(0), Side::Beside(1)]);
-        assert!(!shown.grid_mut().place(PaneId(9), PaneId(1), Zone::Left), "not in the grid");
+        assert!(!shown.grid_mut().place(&Occupant::Pane(9), &Occupant::Pane(1), Zone::Left), "not in the grid");
         shown.focus(PaneId(6));
         assert!(shown.step_keys(1) && shown.keys() == Side::Workspace, "reading order, not opening order");
     }

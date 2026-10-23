@@ -157,7 +157,7 @@ fn the_tail_comes_after_every_built_in_item_and_a_held_rail_sends_nothing_from_i
 
 fn docks_with_present(panel: Panel, stage: bool) -> Event {
     use argus_desktop_core::layout::docks::{PanelKind, PresentPanel};
-    let docks = DocksPage { present: vec![PresentPanel { panel, kind: PanelKind::Extension, floats: false, stage, closes: false }], ..DocksPage::default() };
+    let docks = DocksPage { present: vec![PresentPanel { panel, kind: PanelKind::Extension, floats: false, stage, closes: false, cell: false }], ..DocksPage::default() };
     Event::Docks(Box::new(docks))
 }
 

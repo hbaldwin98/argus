@@ -33,7 +33,7 @@ use crate::board::tracker::link_dialog::{LinkGesture, LinkPage};
 use crate::board::tracker::reconcile_dialog::{ReconcileGesture, ReconcilePage};
 use crate::agents::sessions_dialog::{SessionPreview, SessionsPage};
 use crate::views::saved::{SavedColumn, SavedViewsPage};
-use crate::panes::shown::workspace_grid::{Dir, GridPage, Zone};
+use crate::panes::shown::workspace_grid::{Dir, GridPage, Occupant, Zone};
 use crate::settings::remembered::{Backdrop, EditorMode, Preferences, SavedLinks, Theme};
 
 /// Something the page asks of the window. It answers nothing: what a call
@@ -61,13 +61,14 @@ pub enum Call {
     /// Evens one row's panes out, or with none the rows' heights, as a
     /// double click on a gutter does.
     EvenShares { row: Option<u8> },
-    /// A pane's header dropped on another pane: on its centre they swap, on
+    /// A cell's header dropped on another cell: on its centre they swap, on
     /// a side it joins that row there, on the top or bottom it starts a row.
-    MovePane { pane: u64, onto: u64, zone: Zone },
+    /// `pane` is what the dragged cell holds, a panel's cell's too.
+    MovePane { pane: Occupant, onto: Occupant, zone: Zone },
     /// A pane dragged from the rail onto the Workspace: shown there when it
     /// holds nothing, else into the grid where it landed, as a header's
-    /// drop would put it; `onto` is none for a drop on no pane.
-    DropPane { pane: u64, onto: Option<u64>, zone: Zone },
+    /// drop would put it; `onto` is none for a drop on no cell.
+    DropPane { pane: u64, onto: Option<Occupant>, zone: Zone },
     /// The pane with the keys trades places with its neighbour in `dir`.
     MoveHeld { dir: Dir },
     /// The keys go to the pane next to the one that has them in `dir`.

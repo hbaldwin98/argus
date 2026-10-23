@@ -24,6 +24,7 @@ export const state = {
         codeOutlineWidth: null,
         row: {
             beside: [],
+            panels: [],
             grid: [[0]],
             heights: [1000],
             widths: [[1000]],
