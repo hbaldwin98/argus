@@ -152,6 +152,20 @@ foreground to the syntax colours.
 
 In the desktop window, `o` reads the file under the cursor whole in the Code stage, at that line.
 
+The desktop window's review of working changes also stages and commits, against a daemon that
+can (0.41 or later):
+
+- **Lists:** Staged, Changes and Untracked are listed together. Double-click a file, press its
+  arrow, or drag it onto the other list to stage or unstage it; each list's button moves all of it.
+  A file that is partly staged is in both lists, marked as such.
+- **Lines:** every added or removed line has a box, ticked when the line is staged. Click one, or
+  Shift-click to take every changed line since the last one; a hunk's button takes the whole hunk.
+  Staging happens at once, and the boxes change when Git says the index did.
+- **Commit:** the box under the lists runs `git commit` with your message and your hooks.
+- **Drafts:** with a review of working changes, the comment box says **Add to review**: comments
+  are held as drafts, shown under their lines, until the **Review** button sends them all to the
+  chosen agent as one message, with an optional summary, or discards them.
+
 Comments are stored in `runtime.db` before Argus notifies the selected live agent. They remain
 visible to every live agent in that checkout through `argus-hook comments`; the command returns the
 newest 100 comments in order. If terminal delivery fails after the save, the comment remains stored.
