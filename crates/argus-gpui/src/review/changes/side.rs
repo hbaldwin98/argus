@@ -41,7 +41,7 @@ use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 pub struct Files {
-    heard: Entity<Heard>,
+    pub(super) heard: Entity<Heard>,
     caller: Caller,
     jump: Entity<InputState>,
     /// The find field, which narrows the lists to the files whose path holds its words: the

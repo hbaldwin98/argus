@@ -114,6 +114,24 @@ pub struct CodeTreeRow {
     pub ignored: bool,
 }
 
+impl CodeTreeRow {
+    /// `row` as a tree draws it, `on` when it is the file being read.
+    pub fn of(row: code::tree::TreeRow, on: bool) -> CodeTreeRow {
+        CodeTreeRow {
+            path: row.path,
+            name: row.name,
+            depth: row.depth,
+            folder: row.folder,
+            open: row.open,
+            changed: row.changed,
+            added: row.added,
+            removed: row.removed,
+            on,
+            ignored: row.ignored,
+        }
+    }
+}
+
 /// A file the version changed, named and placed as a list reads it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
@@ -1185,17 +1203,9 @@ impl CodeStage {
             tree: self
                 .tree_rows()
                 .into_iter()
-                .map(|r| CodeTreeRow {
-                    ignored: r.ignored,
-                    on: !r.folder && Some(&r.path) == self.path.as_ref(),
-                    path: r.path,
-                    name: r.name,
-                    depth: r.depth,
-                    folder: r.folder,
-                    open: r.open,
-                    changed: r.changed,
-                    added: r.added,
-                    removed: r.removed,
+                .map(|r| {
+                    let on = !r.folder && Some(&r.path) == self.path.as_ref();
+                    CodeTreeRow::of(r, on)
                 })
                 .collect(),
             tree_loading: self.tree_asked.is_some() && self.files.is_empty(),

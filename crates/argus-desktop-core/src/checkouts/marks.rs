@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use super::files_page::{FileMark, FileRow};
-use crate::code::stage::{CodeChangedFile, CodeTreeRow};
+use crate::code::stage::CodeTreeRow;
 
 /// Which colour the mark is drawn in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,10 +34,10 @@ pub fn of_file(row: &FileRow) -> Option<Mark> {
 }
 
 /// How many changed files are under each folder, for the count a folder carries.
-pub fn changed_under(changed: &[CodeChangedFile]) -> HashMap<&str, usize> {
+pub fn changed_under<'a>(changed: impl IntoIterator<Item = &'a str>) -> HashMap<&'a str, usize> {
     let mut under = HashMap::new();
-    for file in changed {
-        for folder in crate::code::tree::folders_of(&file.path) {
+    for path in changed {
+        for folder in crate::code::tree::folders_of(path) {
             *under.entry(folder).or_insert(0) += 1;
         }
     }
@@ -61,6 +61,7 @@ pub fn of_code(row: &CodeTreeRow, under: &HashMap<&str, usize>) -> Option<Mark> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code::stage::CodeChangedFile;
 
     fn file(path: &str) -> CodeChangedFile {
         CodeChangedFile { path: path.into(), name: path.rsplit('/').next().unwrap().into(), dir: String::new(), added: 1, removed: 0 }
@@ -85,7 +86,7 @@ mod tests {
     #[test]
     fn a_folder_counts_the_changed_files_under_it_at_every_depth() {
         let changed = [file("crates/a/x.rs"), file("crates/a/y.rs"), file("crates/b.rs"), file("top.md")];
-        let under = changed_under(&changed);
+        let under = changed_under(changed.iter().map(|f| f.path.as_str()));
         assert_eq!(under.get("crates"), Some(&3));
         assert_eq!(under.get("crates/a"), Some(&2));
         assert_eq!(under.get("top.md"), None);
@@ -94,7 +95,7 @@ mod tests {
     #[test]
     fn a_code_folder_says_how_many_files_and_a_file_how_much() {
         let changed = [file("crates/a.rs"), file("crates/b.rs"), file("docs/c.md")];
-        let under = changed_under(&changed);
+        let under = changed_under(changed.iter().map(|f| f.path.as_str()));
         let many = of_code(&row("crates", true, true), &under).unwrap();
         assert_eq!((many.text.as_str(), many.title.as_str()), ("2", "2 changed files under it"));
         assert_eq!(of_code(&row("docs", true, true), &under).unwrap().title, "1 changed file under it");

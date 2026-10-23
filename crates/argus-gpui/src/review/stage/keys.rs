@@ -3,6 +3,7 @@
 //! session's bindings, the sideways scroll of the diff on screen, and the copy of what a drag
 //! selected. A field of the stage has its own keys (`keys/field`), and is a layer above these.
 
+use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::keys::keymap::{Action, Layer, Place};
 use gpui_kit::{App, Context, WeakEntity, Window};
 
@@ -94,6 +95,13 @@ impl GitStage {
             Tab::History if historical => keys::history(key),
             _ => keys::review(key).filter(|pressed| matches!(pressed, Gesture::Close)),
         };
+        // The Files tab steps through its own files rather than the diff's lines.
+        if let Some(Gesture::Ask(Call::ReviewAction { action: action @ (Action::Next | Action::Previous) })) = &pressed {
+            let forward = *action == Action::Next;
+            if tab == Tab::Changes && self.changes.update(cx, |changes, cx| changes.step_files(forward, cx)) {
+                return;
+            }
+        }
         match pressed {
             Some(Gesture::Ask(call)) => self.ask(call, cx),
             Some(Gesture::Close) => self.close(cx),

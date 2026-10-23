@@ -246,6 +246,11 @@ impl Changes {
         self.submit.update(cx, |submit, cx| submit.follow(page.drafts.as_ref(), window, cx));
     }
 
+    /// `j` or `k` to the Files tab while it is shown; whether it took the key.
+    pub fn step_files(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
+        self.files.update(cx, |files, cx| files.step(forward, cx))
+    }
+
     /// Sends the diff's selected text to Rust to copy; whether there was any.
     pub fn copy(&self, cx: &mut Context<Self>) -> bool {
         let Some(text) = self.diff.read(cx).selection_text() else { return false };

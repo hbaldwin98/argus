@@ -55,7 +55,7 @@ impl CodeStage {
 
     pub(super) fn tree(&self, page: &CodePage, _window: &mut Window, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
         let folded = fold_ignored(&page.tree);
-        let under = marks::changed_under(&page.changed_files);
+        let under = marks::changed_under(page.changed_files.iter().map(|f| f.path.as_str()));
         let me = cx.weak_entity();
         let toggle = move |_: &mut Window, cx: &mut App| {
             me.update(cx, |stage, cx| {
