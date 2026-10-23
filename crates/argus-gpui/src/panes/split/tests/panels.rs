@@ -127,12 +127,13 @@ fn a_cell_holding_the_changes_draws_the_review_beside_the_pane(cx: &mut TestAppC
 }
 
 /// Git carried from the rail with no review open opens the review of the checkout here, and the
-/// changes split off where it is let go.
+/// changes split off where it is let go: a cell beside the pane, even at the area's edge, where a
+/// dock's tab would dock.
 #[gpui_kit::test]
 fn the_git_item_carried_onto_a_cell_opens_the_review_there(cx: &mut TestAppContext) {
     let opened = opened(cx, alone());
     let cell = bounds(cx, &opened, "cell-0");
-    let near_right = point(cell.origin.x + cell.size.width - px(60.0), cell.center().y);
+    let near_right = point(cell.origin.x + cell.size.width - px(8.0), cell.center().y);
     let from = centre(cx, &opened, "nav-git");
     down(cx, &opened, from);
     drag_to(cx, &opened, near_right);

@@ -153,7 +153,7 @@ impl DockView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                    let held = Held::Panel { panel: held_panel.clone(), title: held_title.clone(), stage, click: true, absent: None };
+                    let held = Held::Panel { panel: held_panel.clone(), title: held_title.clone(), stage, click: true, rail: None };
                     this.press(event.position, held, cx);
                 }),
             )
@@ -295,7 +295,7 @@ impl DockView {
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                     // A head is dragged, never clicked.
-                    let held = Held::Panel { panel: panel.clone(), title: held_title.clone(), stage, click: false, absent: None };
+                    let held = Held::Panel { panel: panel.clone(), title: held_title.clone(), stage, click: false, rail: None };
                     this.press(event.position, held, cx);
                 }),
             )
@@ -439,7 +439,7 @@ impl Render for DockView {
                             MouseButton::Left,
                             cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                                 if event.position.y - this.panel.get().origin.y < pixels(tokens.strip_h, window.rem_size()) {
-                                    let held = Held::Panel { panel: carried.clone(), title: title.clone(), stage, click: false, absent: None };
+                                    let held = Held::Panel { panel: carried.clone(), title: title.clone(), stage, click: false, rail: None };
                                     this.press(event.position, held, cx);
                                 }
                             }),

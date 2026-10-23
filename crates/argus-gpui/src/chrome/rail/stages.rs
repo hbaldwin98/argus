@@ -22,7 +22,7 @@ use argus_desktop_core::layout::docks::{DockGesture, Panel};
 use crate::chrome::nav::Nav;
 use crate::keys::over::run_over;
 use crate::layout::carry::Carrier;
-use crate::layout::work::Absent;
+use crate::layout::work::FromRail;
 use crate::kit::keycap::keycap;
 use crate::kit::tip::tip;
 use crate::review::entry::checkout_here;
@@ -61,12 +61,18 @@ impl RailView {
     /// A press of Git that may travel: the changes' panel as it is while a review is open, or one
     /// its drop opens. History open, or no checkout to review, it is Git's click only.
     fn carry_git(&self, event: &MouseDownEvent, held: bool, cx: &mut Context<Self>) {
+        if held {
+            return;
+        }
         let heard = self.heard.read(cx);
         let open = heard.open();
-        if open.review {
-            self.carry_panel(event, &Panel::Changes, "Changes", held, cx);
-        } else if let (false, false, Some(checkout)) = (held, open.history, checkout_here(&heard.rail, self.slice.rail.cursor.pick.map(|pick| pick.checkout))) {
-            Carrier::of(cx).press_absent(event.position, Panel::Changes, "Changes".into(), true, Some(Absent::Review { checkout }), cx);
+        let rail = if open.review {
+            Some(FromRail::There)
+        } else {
+            checkout_here(&heard.rail, self.slice.rail.cursor.pick.map(|pick| pick.checkout)).filter(|_| !open.history).map(|checkout| FromRail::Review { checkout })
+        };
+        if let Some(rail) = rail {
+            Carrier::of(cx).press_rail(event.position, Panel::Changes, "Changes".into(), rail, cx);
         }
     }
 
@@ -156,16 +162,12 @@ impl RailView {
                     // none open, a cell for the next.
                     .when(nav == Nav::Browsers, |row| {
                         let none = slice.subs.is_empty();
-                        row.on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                                if !none {
-                                    this.carry_panel(event, &Panel::Browsers, nav.label(), held, cx);
-                                } else if !held {
-                                    Carrier::of(cx).press_absent(event.position, Panel::Browsers, nav.label().into(), false, Some(Absent::Empty), cx);
-                                }
-                            }),
-                        )
+                        row.on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
+                            if !held {
+                                let rail = if none { FromRail::Empty } else { FromRail::There };
+                                Carrier::of(cx).press_rail(event.position, Panel::Browsers, nav.label().into(), rail, cx);
+                            }
+                        })
                     })
                     .child(icon)
                     .when(!ctx.icons, |row| row.child(div().flex_1().min_w_0().truncate().child(nav.label())))

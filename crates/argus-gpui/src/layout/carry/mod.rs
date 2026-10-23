@@ -17,7 +17,7 @@ use argus_desktop_core::layout::docks::Panel;
 use argus_desktop_core::panes::shown::workspace_grid::Occupant;
 use gpui_kit::{App, Global, Pixels, Point, WeakEntity};
 
-use super::work::{Absent, Held, WorkView};
+use super::work::{FromRail, Held, WorkView};
 
 /// What a press picked up.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,13 +75,17 @@ impl Carrier {
     /// stage it lands as its kind does when `stage` says it can. A press that never travels is the
     /// row's own click.
     pub fn press_panel(&self, at: Point<Pixels>, panel: Panel, title: String, stage: bool, cx: &mut App) {
-        self.press_absent(at, panel, title, stage, None, cx);
+        self.press_held(at, panel, title, stage, None, cx);
     }
 
-    /// Follows a press of a panel from the rail that is not there yet (`Absent`): Git with no
-    /// review open, or the browsers with none. A press that never travels is the row's own click.
-    pub fn press_absent(&self, at: Point<Pixels>, panel: Panel, title: String, stage: bool, absent: Option<Absent>, cx: &mut App) {
+    /// Follows a press of a sidebar item that carries a panel to a cell (`FromRail`): Git, or the
+    /// browsers. A press that never travels is the item's own click.
+    pub fn press_rail(&self, at: Point<Pixels>, panel: Panel, title: String, rail: FromRail, cx: &mut App) {
+        self.press_held(at, panel, title, false, Some(rail), cx);
+    }
+
+    fn press_held(&self, at: Point<Pixels>, panel: Panel, title: String, stage: bool, rail: Option<FromRail>, cx: &mut App) {
         let Some(work) = self.0.borrow().clone() else { return };
-        work.update(cx, |work, cx| work.press(at, Held::Panel { panel, title, stage, click: false, absent }, cx)).ok();
+        work.update(cx, |work, cx| work.press(at, Held::Panel { panel, title, stage, click: false, rail }, cx)).ok();
     }
 }
