@@ -4,14 +4,16 @@
 //! What the view can do is the extension's: its table says the actions, which answer to a key, and
 //! the row selected. The menu lists the view-wide actions, then every action that answers to a key,
 //! run on the selected row, so the keys are listed once here and not on every row; the ones that
-//! need a row are refused while none is selected. A view that is already a page has no tools here
-//! (it carries its way back on its own head). Choosing sends the call and changes nothing itself.
+//! need a row are refused while none is selected, and it ends with Hide, which a tabbed dock would
+//! otherwise keep in the tab's own menu, so a view with no actions has a menu all the same. A view
+//! that is already a page has no tools here (it carries its way back on its own head). Choosing sends
+//! the call and changes nothing itself.
 
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::extensions::row_actions;
 use argus_desktop_core::extensions::views::{ExtTable, ExtensionGesture};
 use argus_desktop_core::keys::keymap::{Action, Group, Place};
-use argus_desktop_core::layout::docks::Panel;
+use argus_desktop_core::layout::docks::{DockGesture, Panel};
 use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, AnyElement, Anchor, App, Entity, MouseButton, Role, SharedString};
@@ -67,6 +69,10 @@ pub fn of(panel: &Panel, tables: &[ExtTable], keymap: &[Group]) -> Option<Tools>
             .keyed(action.key.iter().map(|key| vec![key.clone()]).collect())
             .refused_when(refused.is_some(), refused.unwrap_or_default())
     }));
+    if !menu.is_empty() {
+        menu.push(MenuItem::Rule);
+    }
+    menu.push(MenuItem::choice(format!("Hide {}", view.title), Call::Docks { gesture: DockGesture::Hide { panel: panel.clone() } }));
     Some(Tools {
         panel: panel.clone(),
         title: view.title.clone(),

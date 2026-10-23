@@ -36,7 +36,7 @@ fn table(page: bool, selected: Option<&str>) -> ExtTable {
 #[test]
 fn the_menu_lists_the_view_wide_actions_then_the_keyed_ones_for_the_selected_row() {
     let tools = of(&images(), &[table(false, Some("a"))], &[]).expect("a docked view has tools");
-    assert_eq!(lines(&tools.menu), ["Pull", "---", "# Keys, on the selected row", "Remove", "Run"], "an action with no key is not listed on its own");
+    assert_eq!(lines(&tools.menu), ["Pull", "---", "# Keys, on the selected row", "Remove", "Run", "---", "Hide Images"], "an action with no key is not listed on its own");
     let keyed = |at: usize| match tools.menu[at].as_choice().map(|choice| &choice.hint) {
         Some(Hint::Keys(keys)) => keys.clone(),
         other => panic!("{other:?}"),
@@ -51,8 +51,17 @@ fn the_menu_lists_the_view_wide_actions_then_the_keyed_ones_for_the_selected_row
 #[test]
 fn the_keys_need_a_row_and_are_refused_while_none_is_selected() {
     let tools = of(&images(), &[table(false, None)], &[]).unwrap();
-    assert_eq!(lines(&tools.menu)[3..], ["Remove (no row selected)", "Run (no row selected)"]);
+    assert_eq!(lines(&tools.menu)[3..5], ["Remove (no row selected)", "Run (no row selected)"]);
     assert!(tools.menu[0].as_choice().unwrap().reason.is_none(), "a view-wide action needs no row");
+}
+
+#[test]
+fn a_view_with_no_actions_has_a_menu_that_hides_it() {
+    let mut bare = table(false, None);
+    bare.actions.clear();
+    let tools = of(&images(), &[bare], &[]).unwrap();
+    assert_eq!(lines(&tools.menu), ["Hide Images"], "never an empty menu");
+    assert_eq!(format!("{:?}", tools.menu[0].as_choice().unwrap().does), "Docks { gesture: Hide { panel: Extension(\"docker/images\") } }");
 }
 
 #[test]
