@@ -56,6 +56,7 @@ use crate::board::capture_note::{CaptureGesture, Capturing};
 use crate::checkouts::files::{Daemon, FilesGesture, Then as FilesThen};
 use crate::checkouts::stage::{CheckoutsStage, Opened};
 use crate::panes::console::{Console, ConsoleGesture, ConsolePlace, OnScreen};
+use crate::layout::docks::expand::From;
 use crate::layout::docks::{Dock, DockGesture, Docks, Panel, Place};
 use crate::review::Dialogs;
 use crate::board::feature_cards;
@@ -138,6 +139,9 @@ pub struct Session {
     shown: ShownPane,
     console: Console,
     docks: Docks,
+    /// Whether a review or a history was open at the last change, so the
+    /// Git panel is shown where it sits as one opens.
+    git_present: bool,
     awaited: Awaited<Made>,
     /// An older daemon's refusals, read as this one's.
     older: OlderDaemon,
@@ -227,6 +231,7 @@ impl Session {
             shown: ShownPane::default(),
             console: Console::default(),
             docks: Docks::new(settings.docks.unwrap_or_default()),
+            git_present: false,
             awaited: Awaited::default(),
             older: OlderDaemon::default(),
             agents: Agents::new(settings.last_agent),
@@ -2028,6 +2033,7 @@ impl Session {
             DockGesture::Raise { panel } => self.docks.raise(&panel),
             DockGesture::Stage { panel } => self.stage_panel(&panel),
             DockGesture::Close { panel } => self.close_panel(&panel),
+            DockGesture::Collapse { panel } => self.collapse_panel(&panel),
             DockGesture::Grid { panel, onto, zone } => {
                 if let Err(refusal) = self.grid_panel(&panel, &onto, zone) {
                     return self.note(refusal.to_string());
@@ -2065,7 +2071,7 @@ impl Session {
                 self.docks.move_to(panel, dock);
                 self.show_views_panel();
             }
-            Panel::Saved(_) => self.docks.move_to(panel, dock),
+            Panel::Saved(_) | Panel::Git => self.docks.move_to(panel, dock),
             // Moved there to be watched beside the work: the stage goes back
             // to the Workspace the browsers were taken from.
             Panel::Browsers => {
@@ -2109,6 +2115,27 @@ impl Session {
                 self.go(Stage::Browsers);
             }
             Panel::Extension(_) => self.extension_mode(panel, true),
+            Panel::Git => self.docks.stage(panel),
+            Panel::Views | Panel::Saved(_) => {}
+        }
+    }
+
+    /// A panel on the stage sent back beside the work: to the dock or the
+    /// dialog it was put on the stage from, or the dock it stayed in.
+    fn collapse_panel(&mut self, panel: &Panel) {
+        match panel {
+            Panel::Console => self.dock_console(),
+            Panel::Browsers => {
+                self.docks.show(panel);
+                if self.stages.now() == Stage::Browsers {
+                    self.go(Stage::Workspace);
+                }
+            }
+            Panel::Extension(_) => match self.docks.way_back(panel) {
+                Some(From::Dock { dock }) => self.dock_extension(panel, Some(dock)),
+                _ => self.extension_mode(panel, false),
+            },
+            Panel::Git => self.docks.collapse(panel),
             Panel::Views | Panel::Saved(_) => {}
         }
     }
@@ -2119,6 +2146,7 @@ impl Session {
     fn close_panel(&mut self, panel: &Panel) {
         match panel {
             Panel::Saved(owner) => self.close_saved_column(owner, 0),
+            Panel::Git => self.dialogs.close_all(),
             Panel::Console | Panel::Views | Panel::Browsers | Panel::Extension(_) => {}
         }
     }
@@ -2144,6 +2172,9 @@ impl Session {
         }
         present.extend(self.extension_views.present(&self.here()));
         present.extend(self.saved.present());
+        if self.dialogs.any_open() {
+            present.push(Panel::Git);
+        }
         present
     }
 
@@ -3356,7 +3387,14 @@ impl Session {
                 self.shown.release_panel(&panel, &mut self.out);
             }
         }
+        let git = present.contains(&Panel::Git);
         self.docks.set_present(present);
+        // Git was pressed to see what it opens: a docked panel's dock opens
+        // on it, and a dialog comes in front.
+        if git && !self.git_present {
+            self.docks.show(&Panel::Git);
+        }
+        self.git_present = git;
         self.settle_console();
         self.settle_page();
         debug_assert!(
@@ -3430,6 +3468,7 @@ impl Session {
             Panel::Console => "Console".into(),
             Panel::Views => "Views".into(),
             Panel::Browsers => "Browsers".into(),
+            Panel::Git => "Git".into(),
             Panel::Extension(_) => views.get(panel, &here).map(|v| v.title.clone()).unwrap_or_default(),
             Panel::Saved(id) => saved.title(id),
         }));
@@ -7091,6 +7130,44 @@ mod tests {
             Event::Docks(page) => Some(*page),
             _ => None,
         })
+    }
+
+    /// Git moved beside the work stays there: the panel is there while a
+    /// review or a history is open, a review opening shows it where it was
+    /// put, and the stage and back return it to that dock.
+    #[test]
+    fn the_git_panel_is_there_while_a_review_is_open_and_opens_where_it_was_put() {
+        let mut s = session(without_focus());
+        let git = |s: &mut Session| docks_page(s).is_some_and(|d| d.present.iter().any(|p| p.panel == Panel::Git));
+        assert!(!git(&mut s), "no review, no panel");
+        s.call(Call::OpenReview { checkout: 100 });
+        assert!(git(&mut s));
+        docks(&mut s, DockGesture::Move { panel: Panel::Git, dock: Dock::Left });
+        docks(&mut s, DockGesture::Hide { panel: Panel::Git });
+        s.call(Call::ReviewAction { action: Action::CloseLayer });
+        assert!(!git(&mut s), "the review closed takes the panel");
+        s.call(Call::OpenReview { checkout: 100 });
+        assert_eq!(docks_page(&mut s).and_then(|d| d.left.shown), Some(Panel::Git), "opened, its dock opens on it");
+        docks(&mut s, DockGesture::Stage { panel: Panel::Git });
+        assert_eq!(s.docks.place_of(&Panel::Git), Some(Place::Stage));
+        docks(&mut s, DockGesture::Collapse { panel: Panel::Git });
+        assert_eq!(s.docks.dock_of(&Panel::Git), Some(Dock::Left), "back to the dock it left");
+        assert!(s.docks.shows(&Panel::Git));
+        docks(&mut s, DockGesture::Close { panel: Panel::Git });
+        assert!(!git(&mut s), "its close ends the review");
+        assert_eq!(s.docks.dock_of(&Panel::Git), Some(Dock::Left), "and keeps its place");
+    }
+
+    /// The console and the browsers have stages of their own and stay in
+    /// their docks while there, so the way back is their dock.
+    #[test]
+    fn collapsing_the_console_stage_docks_the_console() {
+        let mut s = with_consoles();
+        docks(&mut s, DockGesture::Stage { panel: Panel::Console });
+        assert_eq!(s.stages.now(), Stage::Console);
+        docks(&mut s, DockGesture::Collapse { panel: Panel::Console });
+        assert_ne!(s.stages.now(), Stage::Console);
+        assert!(s.docks.shows(&Panel::Console));
     }
 
     #[test]

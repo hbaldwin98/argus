@@ -97,6 +97,8 @@ impl Shell {
         // The same tiles, docked or floating beside the work.
         let docked = cx.new(|cx| BrowsersStage::new(heard.clone(), caller.clone(), crate::browser::stage::Place::Panel, cx));
         crate::layout::bodies::Contents::of(cx).offer_panel(|panel| *panel == argus_desktop_core::layout::docks::Panel::Browsers, docked.into());
+        // Git beside the work is the Git stage's own view, moved: one element wherever it is.
+        crate::layout::bodies::Contents::of(cx).offer_panel(|panel| *panel == argus_desktop_core::layout::docks::Panel::Git, git.clone().into());
         let split = cx.new(|cx| SplitView::new(heard.clone(), caller.clone(), terminal.clone(), window, cx));
         let stage = cx.new(|cx| StageView::new(heard.clone(), caller.clone(), Bodies { pane: split.clone().into(), git: git.into(), checkouts: checkouts.into(), code: code.into(), browsers: browsers.into() }, cx));
         let work = cx.new(|cx| WorkView::new(heard.clone(), caller.clone(), stage.into(), console.into(), cx));

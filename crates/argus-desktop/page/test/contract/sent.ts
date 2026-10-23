@@ -7023,6 +7023,48 @@ export const sent = [
   "type": "addProject"
 },
 {
+  "bottom": {
+    "shown": null,
+    "size": 280,
+    "tabs": [
+      {
+        "panel": "console",
+        "title": "Console"
+      }
+    ]
+  },
+  "floating": [],
+  "left": {
+    "shown": null,
+    "size": 560,
+    "tabs": []
+  },
+  "present": [
+    {
+      "cell": false,
+      "closes": false,
+      "floats": false,
+      "kind": "console",
+      "panel": "console",
+      "stage": true
+    },
+    {
+      "cell": false,
+      "closes": true,
+      "floats": true,
+      "kind": "git",
+      "panel": "git",
+      "stage": true
+    }
+  ],
+  "right": {
+    "shown": null,
+    "size": 560,
+    "tabs": []
+  },
+  "type": "docks"
+},
+{
   "added": 0,
   "base": "unstaged",
   "branch": "main",

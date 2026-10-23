@@ -89,7 +89,7 @@ impl GitStage {
     fn follow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (up, review, history) = {
             let heard = self.heard.read(cx);
-            (heard.git_up(), heard.review.clone(), heard.history.clone())
+            (heard.git_open(), heard.review.clone(), heard.history.clone())
         };
         if up && !self.was_up {
             window.focus(&self.focus, cx);

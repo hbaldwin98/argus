@@ -17,7 +17,8 @@ use super::row::{line, Ctx};
 use super::slice::Slice;
 use super::RailView;
 use argus_desktop_core::keys::keymap::Action;
-use argus_desktop_core::layout::docks::Panel;
+use argus_desktop_core::connection::page::Call;
+use argus_desktop_core::layout::docks::{DockGesture, Panel};
 use crate::chrome::nav::Nav;
 use crate::keys::over::run_over;
 use crate::kit::keycap::keycap;
@@ -38,6 +39,8 @@ impl RailView {
         }
         let picked = self.slice.rail.cursor.pick.map(|pick| pick.checkout);
         let calls = match nav {
+            // Git beside the work, open, comes in sight where it sits: its dock opens on it.
+            Nav::Git if self.heard.read(cx).git_beside() => vec![Call::Docks { gesture: DockGesture::Show { panel: Panel::Git } }],
             Nav::Git => self.heard.update(cx, |heard, cx| {
                 let (open, here) = (heard.open(), checkout_here(&heard.rail, picked));
                 let calls = heard.git.enter(open, here);

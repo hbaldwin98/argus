@@ -20,9 +20,13 @@ impl RailView {
     }
 
     /// The close of whatever the session has open of Git, for a press that
-    /// goes somewhere else.
+    /// goes somewhere else. Git beside the work stays: it was put there to
+    /// be kept while the stage changes.
     pub(super) fn leave_git(&mut self, cx: &mut Context<Self>) -> Vec<Call> {
         self.heard.update(cx, |heard, cx| {
+            if heard.git_beside() {
+                return Vec::new();
+            }
             let open = heard.open();
             let calls = heard.git.leave(open);
             cx.notify();

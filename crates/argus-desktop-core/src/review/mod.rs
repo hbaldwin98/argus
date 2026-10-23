@@ -540,6 +540,19 @@ impl Dialogs {
         true
     }
 
+    /// The Git panel closed: whatever it showed goes, the review's layout
+    /// kept for the next.
+    pub fn close_all(&mut self) {
+        self.remember_layout();
+        self.review = None;
+        self.history = None;
+    }
+
+    /// Whether a review or a history is open: the Git panel is there.
+    pub fn any_open(&self) -> bool {
+        self.review.is_some() || self.history.is_some()
+    }
+
     #[cfg(test)]
     pub fn history_open(&self) -> bool {
         self.history.is_some()

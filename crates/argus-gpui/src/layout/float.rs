@@ -98,6 +98,8 @@ impl FloatsView {
         let panel = float.panel.clone();
         let present: Option<PresentPanel> = docks.present.iter().find(|present| present.panel == panel).cloned();
         let closes = present.as_ref().is_some_and(|present| present.closes);
+        let stage = present.as_ref().is_some_and(|present| present.stage);
+        let expanded = panel.clone();
         let entries = dock_menu::moves(&panel, false, docks, present.as_ref());
         let (caller, heard, menu_tokens) = (self.caller.clone(), self.heard.clone(), *tokens);
         let pressed = panel.clone();
@@ -139,6 +141,14 @@ impl FloatsView {
             .child(div().min_w_0().truncate().child(float.title.clone()))
             .children(saved_marks)
             .child(div().flex_1())
+            .when(stage, |head| {
+                head.child(keep(div()).child(
+                    strip::menu_button(SharedString::from(format!("float-expand-{panel}")), Glyph::Expand, tokens.icon_xs, tokens, cx)
+                        .tooltip("Expand to the stage")
+                        .disabled(held)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.ask(dock_menu::expand(&expanded), cx))),
+                ))
+            })
             .child(keep(div()).child(
                 strip::menu_button(SharedString::from(format!("float-menu-{panel}")), Glyph::Down, tokens.icon_menu, tokens, cx)
                     .tooltip("Move to another dock")

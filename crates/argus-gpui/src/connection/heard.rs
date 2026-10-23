@@ -498,9 +498,23 @@ impl Heard {
         Open { review: self.review.is_some(), history: self.history.is_some() }
     }
 
-    /// Whether the Git stage is up: the work area draws it in the pane's place.
+    /// Whether the Git stage is up: the work area draws it in the pane's place. Git sitting beside
+    /// the work, in a dock or a dialog, leaves the pane where it is.
     pub fn git_up(&self) -> bool {
+        self.git.up(self.open()) && !self.git_beside()
+    }
+
+    /// Whether Git is open anywhere: over the pane, or beside it.
+    pub fn git_open(&self) -> bool {
         self.git.up(self.open())
+    }
+
+    /// Whether the Git panel is in a dock or a dialog. The docks list it only while a review or a
+    /// history is open, so a Git pressed with nothing to open is up over the pane, saying so.
+    pub fn git_beside(&self) -> bool {
+        let docks = &self.docks;
+        let docked = [&docks.left, &docks.right, &docks.bottom].into_iter().any(|dock| dock.tabs.iter().any(|tab| tab.panel == Panel::Git));
+        docked || docks.floating.iter().any(|float| float.panel == Panel::Git)
     }
 
     pub fn connection(&self) -> Connection {

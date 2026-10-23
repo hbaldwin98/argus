@@ -184,6 +184,12 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
 - **Console** (`4`, or `` ` `` to dock or hide it) holds shells that belong to no checkout. It docks
   at the bottom until moved, splits in two (the leader then `\`), and the leader then `z` fills the
   window with it.
+- **Git** opens the review, with History beside it, in place of the pane. Its **Back to the side
+  pane** button docks it on the right (or where it last sat), so the pane stays beside it; from
+  there its dock menu moves it to another dock or floats it, and **Expand** puts it back on the
+  stage. Docked or floating, it stays open while you go elsewhere, and Git brings it in sight.
+  Narrower than 760px, the files and the diff take turns. Expand works the same way for any panel
+  that can fill the stage, such as the browsers and extensions' views.
 - **Recent sessions**: the clock on a repository's rail row lists its agent sessions across every
   checkout, with each transcript beside it. Enter goes to a live one or resumes an ended one; `O`
   reads the whole transcript.

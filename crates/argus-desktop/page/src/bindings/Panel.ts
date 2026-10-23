@@ -4,7 +4,7 @@
  * What can be docked: the console, the views agents showed, every agent's
  * browser, each extension's view by its extension and name, and each saved
  * view by its id. Named in the file and to the page as one string —
- * `console`, `views`, `browsers`, `extension:docker/images`,
+ * `console`, `views`, `browsers`, `git`, `extension:docker/images`,
  * `saved:release-plan` — since the last two are any of an open-ended set.
  */
 export type Panel = string;

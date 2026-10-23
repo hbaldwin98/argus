@@ -2,6 +2,7 @@
 //! buttons, and the filter field while History is the tab.
 
 use argus_desktop_core::connection::page::Call;
+use argus_desktop_core::layout::docks::{DockGesture, Panel};
 use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, Context, Role, SharedString};
@@ -36,6 +37,9 @@ impl GitStage {
     pub(super) fn strip(&self, tab: Tab, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let heard = self.heard.read(cx);
         let (review, history) = (heard.review.clone(), heard.history.clone());
+        // Only what is open has a panel to go back as; beside the work already, the dock's head
+        // holds the way to the stage.
+        let heard_open = (review.is_some() || history.is_some()) && !heard.git_beside();
         let branch = match tab {
             Tab::Changes => review.as_ref().map(|page| (page.branch.clone(), page.name.clone())),
             Tab::History => history.as_ref().map(|page| (page.branch.clone(), page.name.clone())),
@@ -116,6 +120,17 @@ impl GitStage {
                             // are heard only on the stage itself.
                             window.focus(&this.focus, cx);
                             this.ask(Call::ReviewRefresh, cx)
+                        })),
+                )
+            })
+            // Git on the stage goes back beside the work, to the dock or dialog it came from.
+            .when(heard_open, |strip| {
+                strip.child(
+                    icon_button("git-collapse", "Back to the side pane", false, tokens)
+                        .tooltip(tip("Back to the side pane"))
+                        .child(Glyph::DockRight.at(14.0))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.ask(Call::Docks { gesture: DockGesture::Collapse { panel: Panel::Git } }, cx)
                         })),
                 )
             })

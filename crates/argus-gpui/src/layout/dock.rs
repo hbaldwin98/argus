@@ -235,6 +235,26 @@ impl DockView {
             )
     }
 
+    /// A lone panel's Expand, for a panel that can take the stage: it fills the stage, and its
+    /// way back is the dock it left.
+    fn expand_button(&self, panel: &Panel, title: &str, held: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let expanded = panel.clone();
+        div()
+            .id(SharedString::from(format!("dock-expand-{}", self.name())))
+            .role(Role::Button)
+            .test_support()
+            .aria_label(SharedString::from(format!("Expand {title}")))
+            .flex_shrink_0()
+            // The head's press, which would begin a drag of the panel.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                strip::menu_button(SharedString::from(format!("dock-expand-button-{}", self.name())), Glyph::Expand, 14.0, tokens, cx)
+                    .tooltip("Expand to the stage")
+                    .disabled(held)
+                    .on_click(cx.listener(move |this, _, _, cx| this.ask(dock_menu::expand(&expanded), cx))),
+            )
+    }
+
     /// The shown panel's own tools, which only an extension's docked view has.
     fn tools(&self, shown: &Panel, cx: &App) -> Vec<AnyElement> {
         let heard = self.heard.read(cx);
@@ -281,6 +301,7 @@ impl DockView {
             )
             .child(div().flex_1().truncate().child(title.to_owned()))
             .children(self.tools(shown, cx))
+            .when(stage, |head| head.child(self.expand_button(shown, title, held, tokens, cx)))
             .child(self.menu_button(shown, docks, held, tokens, cx))
             .child(self.hide_button(shown, title, held, tokens, cx))
     }

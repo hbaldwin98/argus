@@ -8,4 +8,4 @@ import type { Zone } from "./Zone";
 /**
  * What was done to the docks.
  */
-export type DockGesture = { "on": "move", panel: Panel, dock: Dock, } | { "on": "show", panel: Panel, } | { "on": "hide", panel: Panel, } | { "on": "size", dock: Dock, size: number, } | { "on": "float", panel: Panel, } | { "on": "bounds", panel: Panel, bounds: FloatBounds, } | { "on": "raise", panel: Panel, } | { "on": "stage", panel: Panel, } | { "on": "grid", panel: Panel, onto: Occupant, zone: Zone, } | { "on": "close", panel: Panel, };
+export type DockGesture = { "on": "move", panel: Panel, dock: Dock, } | { "on": "show", panel: Panel, } | { "on": "hide", panel: Panel, } | { "on": "size", dock: Dock, size: number, } | { "on": "float", panel: Panel, } | { "on": "bounds", panel: Panel, bounds: FloatBounds, } | { "on": "raise", panel: Panel, } | { "on": "stage", panel: Panel, } | { "on": "grid", panel: Panel, onto: Occupant, zone: Zone, } | { "on": "close", panel: Panel, } | { "on": "collapse", panel: Panel, };

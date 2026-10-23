@@ -9,6 +9,7 @@ pub mod files;
 pub mod filter;
 pub mod history;
 pub mod keys;
+pub mod narrow;
 pub mod sections;
 pub mod stage;
 pub mod submit;

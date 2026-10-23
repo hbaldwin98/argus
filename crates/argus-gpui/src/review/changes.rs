@@ -41,9 +41,13 @@ use crate::kit::diff::{DiffEvent, DiffView, Slot};
 use crate::review::comment::{self, ways, CommentBox};
 use crate::review::draft_card::{self, DraftCard};
 use crate::review::files::Files;
+use crate::review::narrow::Narrow;
 use crate::review::submit::Submit;
 use crate::kit::ghosts::ghosts;
 use crate::kit::hints;
+use crate::kit::icon_button::icon_button;
+use crate::kit::icons::Glyph;
+use crate::kit::tip::tip;
 use crate::kit::segment;
 use crate::kit::split::{self, Split};
 use crate::style::Typed as _;
@@ -85,6 +89,7 @@ pub struct Changes {
     cards: HashMap<u64, (Entity<DraftCard>, Subscription)>,
     /// The row of the last box ticked, which a Shift-tick ranges from.
     last_tick: Option<usize>,
+    narrow: Narrow,
     _subscriptions: [Subscription; 2],
 }
 
@@ -126,7 +131,7 @@ impl Changes {
             };
             this.ask(Call::ReviewClick { target }, cx);
         });
-        Self { heard, caller, files, diff, comment, split, submit, cards: HashMap::new(), last_tick: None, _subscriptions: [pressed, resized] }
+        Self { heard, caller, files, diff, comment, split, submit, cards: HashMap::new(), last_tick: None, narrow: Narrow::new(), _subscriptions: [pressed, resized] }
     }
 
     /// A box ticked: its line, or with Shift every changed line from the last box ticked to it.
@@ -191,6 +196,7 @@ impl Changes {
     /// that lets an open jump field win the keys over an open comment box
     /// (REVIEW-17).
     pub fn follow(&mut self, page: &ReviewPage, window: &mut Window, cx: &mut Context<Self>) {
+        self.narrow.follow(page);
         self.comment.update(cx, |comment, cx| comment.follow(page.comment.as_ref(), window, cx));
         self.files.update(cx, |files, cx| files.follow(page, window, cx));
         let slot = page.comment.as_ref().map(|c| Slot { view: self.comment.clone().into(), height: comment::height(c, zoom(window.rem_size())) });
@@ -218,7 +224,7 @@ impl Changes {
     }
 
     /// The file on screen, and the layout the diff is read in.
-    fn head(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+    fn head(&self, page: &ReviewPage, back: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let file = page.file.and_then(|i| page.files.get(i));
         let layout = |id: &'static str, label: &'static str, on: bool, split: bool, cx: &mut Context<Self>| {
             segment::pill(id, Role::RadioButton, on, tokens).child(label).on_click(cx.listener(move |this, _, _, cx| {
@@ -239,6 +245,18 @@ impl Changes {
             .bg(tokens.bg_chrome)
             .border_b_1()
             .border_color(tokens.line)
+            // Narrow, the files are a screen of their own, and the diff goes back to them.
+            .when(back, |head| {
+                head.child(
+                    icon_button("review-back", "Back to the files", false, tokens)
+                        .tooltip(tip("Back to the files"))
+                        .child(Glyph::List.at(14.0))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.narrow.back();
+                            cx.notify();
+                        })),
+                )
+            })
             .when_some(file, |head, file| {
                 head.child(div().flex_shrink_0().weighted(tokens.weight_bold).child(SharedString::from(file.name.clone())))
                     .child(
@@ -339,30 +357,39 @@ fn page_split(heard: &Entity<Heard>, cx: &Context<Changes>) -> bool {
 }
 
 impl Render for Changes {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
         let Some(page) = self.heard.read(cx).review.clone() else {
             return div().into_any_element();
         };
+        let narrow = self.narrow.narrow(window.rem_size());
         let diff = v_flex()
             .id("review-diff-pane")
             .relative()
             .size_full()
             .min_w_0()
-            .child(self.head(&page, &tokens, cx))
+            .child(self.head(&page, narrow, &tokens, cx))
             .child(div().flex_1().min_h_0().child(self.body(&page, &tokens)))
             .child(self.submit.clone());
+        // Narrow, the files and the diff take turns; wide, the files stand beside the diff.
+        let body = if !narrow {
+            h_flex()
+                .flex_1()
+                .min_h_0()
+                .child(split::side(&self.split, "review-column", self.files.clone(), &tokens, cx))
+                .child(div().flex_1().min_w_0().h_full().child(diff))
+        } else if self.narrow.listing() {
+            h_flex().flex_1().min_h_0().child(div().size_full().child(self.files.clone()))
+        } else {
+            h_flex().flex_1().min_h_0().child(diff)
+        };
         v_flex()
             .id("review")
             .test_support()
+            .relative()
             .size_full()
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(split::side(&self.split, "review-column", self.files.clone(), &tokens, cx))
-                    .child(div().flex_1().min_w_0().h_full().child(diff)),
-            )
+            .child(self.narrow.measure())
+            .child(body)
             .child(hints::bar("review-hints", &HINTS, &tokens))
             .into_any_element()
     }

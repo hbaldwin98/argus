@@ -41,6 +41,12 @@ pub fn dock_of(docks: &DocksPage, panel: &Panel) -> Option<Dock> {
         .map(|(dock, _)| dock)
 }
 
+/// The head's Expand: the panel on the stage at full size, as a drop there puts it, and Rust keeps
+/// where it came from for the way back (`DockGesture::Collapse`).
+pub fn expand(panel: &Panel) -> Call {
+    gesture(DockGesture::Stage { panel: panel.clone() })
+}
+
 /// The moves to each dock, the one the panel is shown in marked, and for a
 /// panel that floats, floating it as a dialog. `docked` is whether the panel
 /// is on screen in a dock now; a panel on the stage or floating is in none.
@@ -59,6 +65,10 @@ pub fn moves(panel: &Panel, docked: bool, docks: &DocksPage, present: Option<&Pr
         items.push(
             MenuItem::choice("Float as a dialog", gesture(DockGesture::Float { panel: panel.clone() })).refused_when(floating, HERE),
         );
+    }
+    if present.is_some_and(|present| present.stage) {
+        items.push(MenuItem::Rule);
+        items.push(MenuItem::choice("Expand to the stage", expand(panel)));
     }
     items
 }
