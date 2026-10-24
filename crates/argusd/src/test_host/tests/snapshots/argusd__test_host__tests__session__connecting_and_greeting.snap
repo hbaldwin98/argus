@@ -81,7 +81,9 @@ expression: text
     "files",
     "request-refusals",
     "browsers",
-    "browser-pointer"
+    "browser-pointer",
+    "index-writes",
+    "review-drafts"
   ],
   "protocol": 1,
   "version": "[version]"
@@ -111,7 +113,9 @@ expression: text
     "files",
     "request-refusals",
     "browsers",
-    "browser-pointer"
+    "browser-pointer",
+    "index-writes",
+    "review-drafts"
   ],
   "protocol": 1,
   "version": "[version]"
