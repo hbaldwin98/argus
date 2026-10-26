@@ -199,6 +199,7 @@ mod tests {
                 checkout: CheckoutId(2),
                 base: ReviewBase::Commit,
                 commit: Some("abcdef0123456789".to_string()),
+                lazy: false,
             },
             ClientMsg::ReviewComment {
                 checkout: CheckoutId(2),

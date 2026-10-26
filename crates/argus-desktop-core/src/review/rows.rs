@@ -7,6 +7,10 @@ use argus_protocol::{ChangeKind, DiffLine, HighlightKind, HighlightSpan, LineKin
 
 use crate::connection::page::{DiffRow, DiffSide, ReviewFile};
 
+/// What a file of a lazy side says while it is read: the cursor on it is
+/// what asked for it.
+const READING: &str = "Reading this file\u{2026}";
+
 /// The rows of one file of `view`, the cursor's marked.
 pub fn file_rows(view: &ReviewView, file: usize, cursor: Option<usize>, picked: impl Fn(usize) -> bool) -> Vec<DiffRow> {
     view.rows
@@ -63,6 +67,7 @@ fn diff_row(view: &ReviewView, index: usize, row: Row, cursor: bool, picked: boo
     let (kind, text, left, right) = match row {
         Row::Hunk { file, hunk } => ("hunk", files[file].hunks[hunk].header.clone(), None, None),
         Row::Note { file } => ("note", files[file].note.clone().unwrap_or_default(), None, None),
+        Row::Pending { .. } => ("note", READING.to_owned(), None, None),
         Row::Line { file, hunk, line: l } => ("line", String::new(), Some(line(file, hunk, l)), None),
         Row::Pair { file, hunk, left, right } => (
             "pair",

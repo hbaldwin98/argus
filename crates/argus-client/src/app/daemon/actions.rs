@@ -172,7 +172,7 @@ impl App {
     pub(in crate::app) fn start_review(&mut self, checkout: CheckoutId) {
         let next = &mut self.next_review_request;
         let (session, msgs) =
-            ReviewSession::working(checkout, self.review_base, self.review_split, || next_id(next));
+            ReviewSession::working(checkout, self.review_base, self.review_split, false, || next_id(next));
         self.review = Some(session);
         self.history = None;
         self.history_request.clear();

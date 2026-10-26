@@ -2,7 +2,7 @@
 //! its review and history, its files and their search, and the agent
 //! sessions recorded against it.
 
-use argus_protocol::{ClientMsg, CodeVersion, DraftAction, IndexChange, LineKind, PickedLine, ReviewAnchor, ReviewBase, SearchOptions, TextChange};
+use argus_protocol::{ChangeKind, ClientMsg, CodeVersion, DraftAction, IndexChange, LineKind, PickedLine, ReviewAnchor, ReviewBase, SearchOptions, TextChange};
 use proptest::prelude::*;
 
 use super::values::{checkout, checkout_path, commit, maybe_text, pane, repository, request_id, text};
@@ -52,8 +52,21 @@ pub fn remove_checkout(k: &Known) -> BoxedStrategy<ClientMsg> {
 }
 
 pub fn review(k: &Known) -> BoxedStrategy<ClientMsg> {
-    (request_id(), checkout(k), base(), proptest::option::of(commit(k)))
-        .prop_map(|(request_id, checkout, base, commit)| ClientMsg::Review { request_id, checkout, base, commit })
+    (request_id(), checkout(k), base(), proptest::option::of(commit(k)), any::<bool>())
+        .prop_map(|(request_id, checkout, base, commit, lazy)| ClientMsg::Review { request_id, checkout, base, commit, lazy })
+        .boxed()
+}
+
+pub fn review_file(k: &Known) -> BoxedStrategy<ClientMsg> {
+    let kind = prop_oneof![
+        Just(ChangeKind::Modified),
+        Just(ChangeKind::Added),
+        Just(ChangeKind::Deleted),
+        Just(ChangeKind::Renamed),
+        Just(ChangeKind::Untracked),
+    ];
+    (request_id(), checkout(k), base(), checkout_path(k), proptest::option::of(checkout_path(k)), kind)
+        .prop_map(|(request_id, checkout, base, path, old_path, kind)| ClientMsg::ReviewFile { request_id, checkout, base, path, old_path, kind })
         .boxed()
 }
 

@@ -36,13 +36,15 @@ pub struct ReviewDialog {
 }
 
 /// What the daemon lets a review do beyond reading: write the index and
-/// commit, keep the review's comments as drafts until they are sent, and
-/// list and read the checkout's files for the Files tab.
+/// commit, keep the review's comments as drafts until they are sent, list
+/// and read the checkout's files for the Files tab, and list working
+/// changes before reading each file.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Abilities {
     pub index_writes: bool,
     pub drafts: bool,
     pub files: bool,
+    pub lazy: bool,
 }
 
 impl ReviewDialog {
@@ -55,7 +57,7 @@ impl ReviewDialog {
     /// layout last chosen.
     pub fn working(checkout: &CheckoutInfo, layout: ReviewLayout, abilities: Abilities, mut id: impl FnMut() -> u64) -> (ReviewDialog, Vec<ClientMsg>) {
         let base = if layout.staged { ReviewBase::Staged } else { ReviewBase::Unstaged };
-        let (mut session, mut msgs) = ReviewSession::working(checkout.id, base, layout.split, &mut id);
+        let (mut session, mut msgs) = ReviewSession::working(checkout.id, base, layout.split, abilities.lazy, &mut id);
         session.follow(checkout.git.as_ref().map(|g| g.changes));
         let mut dialog = ReviewDialog::new(checkout, session, layout);
         dialog.abilities = abilities;
@@ -185,6 +187,23 @@ impl ReviewDialog {
     /// Whether a fold that could not be read was this dialog's to say so.
     pub fn context_failed(&mut self, request_id: u64) -> bool {
         self.session.context_failed(request_id)
+    }
+
+    /// The read of the file the cursor came to, when it is listed and not
+    /// yet read.
+    pub fn load(&mut self, id: impl FnOnce() -> u64) -> Option<ClientMsg> {
+        self.session.load(id)
+    }
+
+    /// A file's read, put in place if it is still wanted.
+    pub fn receive_file(&mut self, read: argus_protocol::ReviewFile) -> bool {
+        self.session.receive_file(read)
+    }
+
+    /// Whether a file that could not be read was this dialog's, which then
+    /// says why where its lines would be.
+    pub fn file_failed(&mut self, request_id: u64, message: String) -> bool {
+        self.session.file_failed(request_id, message)
     }
 
     fn view(&self) -> Option<&ReviewView> {
@@ -556,6 +575,7 @@ mod tests {
                 note: None,
                 new_blob: None,
                 new_lines: None,
+                pending: false,
             }],
             commit: None,
         }

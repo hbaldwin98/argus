@@ -90,6 +90,7 @@ mod tests {
             note: None,
             new_blob: None,
             new_lines: None,
+            pending: false,
         };
         let review = Review {
             request_id: 1,

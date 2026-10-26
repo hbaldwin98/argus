@@ -252,6 +252,7 @@ pub fn diff_of(request_id: u64, path: &str) -> Review {
             note: None,
             new_blob: None,
             new_lines: None,
+            pending: false,
         }],
         commit: None,
     }

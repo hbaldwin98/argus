@@ -83,7 +83,8 @@ expression: text
     "browsers",
     "browser-pointer",
     "index-writes",
-    "review-drafts"
+    "review-drafts",
+    "lazy-reviews"
   ],
   "protocol": 1,
   "version": "[version]"
@@ -115,7 +116,8 @@ expression: text
     "browsers",
     "browser-pointer",
     "index-writes",
-    "review-drafts"
+    "review-drafts",
+    "lazy-reviews"
   ],
   "protocol": 1,
   "version": "[version]"

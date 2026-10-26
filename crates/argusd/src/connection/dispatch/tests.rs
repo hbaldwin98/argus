@@ -410,6 +410,7 @@ async fn a_review_request_answers_with_that_checkouts_diff() {
         checkout,
         base: ReviewBase::Unstaged,
         commit: None,
+        lazy: false,
     });
 
     // The diff runs on a blocking thread, so the reply is not immediate.
@@ -547,6 +548,7 @@ async fn a_fold_is_read_from_the_blob_the_review_named() {
         checkout,
         base: ReviewBase::Unstaged,
         commit: None,
+        lazy: false,
     });
     let Some(ServerMsg::Review(review)) = tokio::time::timeout(wait, h.rx.recv()).await.unwrap() else {
         panic!("no review");
@@ -594,7 +596,7 @@ async fn hold_the_review_turn(
     let (release, held) = std::sync::mpsc::channel::<()>();
     let (started, mut generating) = tokio::sync::mpsc::unbounded_channel::<()>();
     other.submit(
-        ReviewAsk::new(checkout, ReviewBase::Unstaged, None),
+        ReviewAsk::new(checkout, ReviewBase::Unstaged, None, false),
         move || {
             let _ = started.send(());
             let _ = held.recv();
@@ -622,6 +624,7 @@ async fn a_review_asked_again_while_queued_is_answered_under_both_ids() {
             checkout,
             base: ReviewBase::Unstaged,
             commit: None,
+            lazy: false,
         });
     }
     release.send(()).unwrap();
@@ -676,6 +679,7 @@ async fn two_commits_diffs_asked_back_to_back_are_both_answered() {
             checkout,
             base: ReviewBase::Commit,
             commit: Some(commit.clone()),
+            lazy: false,
         });
     }
     release.send(()).unwrap();
@@ -712,6 +716,7 @@ async fn both_sides_asked_together_are_both_answered() {
             checkout,
             base,
             commit: None,
+            lazy: false,
         });
     }
 
@@ -739,6 +744,7 @@ async fn a_review_of_a_checkout_that_is_gone_is_refused_under_its_id() {
         checkout: CheckoutId(9999),
         base: ReviewBase::Unstaged,
         commit: None,
+        lazy: false,
     });
     let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
         .await
@@ -796,7 +802,7 @@ async fn a_read_of_a_checkout_that_is_gone_is_refused_by_its_id() {
     let gone = CheckoutId(9999);
     h.send(ClientMsg::ListCode { request_id: 1, checkout: gone, version: argus_protocol::CodeVersion::WorkingTree });
     h.send(ClientMsg::ListCommits { request_id: 2, checkout: gone });
-    h.send(ClientMsg::Review { request_id: 3, checkout: gone, base: ReviewBase::Unstaged, commit: None });
+    h.send(ClientMsg::Review { request_id: 3, checkout: gone, base: ReviewBase::Unstaged, commit: None, lazy: false });
     let mut refused = Vec::new();
     for _ in 0..3 {
         let refusal = h.refusal().await;

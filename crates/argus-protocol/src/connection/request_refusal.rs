@@ -79,7 +79,7 @@ impl Asked {
             | M::Stage { request_id, .. }
             | M::Commit { request_id, .. }
             | M::Draft { request_id, .. } => (*request_id, false, Older::Error),
-            M::Review { request_id, checkout, .. } => (*request_id, true, Older::Review(*checkout)),
+            M::Review { request_id, checkout, .. } | M::ReviewFile { request_id, checkout, .. } => (*request_id, true, Older::Review(*checkout)),
             M::ReviewContext { request_id, checkout, .. } => (*request_id, true, Older::ReviewContext(*checkout)),
             M::ListCode { request_id, checkout, .. }
             | M::ReadCode { request_id, checkout, .. }
@@ -219,7 +219,7 @@ mod tests {
     }
 
     fn review(request_id: u64) -> ClientMsg {
-        ClientMsg::Review { request_id, checkout: CO, base: ReviewBase::Unstaged, commit: None }
+        ClientMsg::Review { request_id, checkout: CO, base: ReviewBase::Unstaged, commit: None, lazy: false }
     }
 
     fn review_context(request_id: u64) -> ClientMsg {

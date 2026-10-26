@@ -151,6 +151,10 @@ pub struct FileDiff {
     /// last hunk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_lines: Option<u32>,
+    /// Listed and not yet read: `hunks` is empty, or holds an earlier read
+    /// kept on screen, until `ClientMsg::ReviewFile` brings this one's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pending: bool,
 }
 
 impl FileDiff {
@@ -238,6 +242,15 @@ pub struct ReviewContext {
     pub request_id: u64,
     pub checkout: CheckoutId,
     pub lines: Vec<DiffLine>,
+}
+
+/// One file of a lazy review, read: the answer to `ClientMsg::ReviewFile`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewFile {
+    pub request_id: u64,
+    pub checkout: CheckoutId,
+    pub base: ReviewBase,
+    pub file: FileDiff,
 }
 
 /// The exact reviewed lines a comment refers to. Both sides are retained:

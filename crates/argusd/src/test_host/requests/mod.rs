@@ -99,7 +99,7 @@ macro_rules! kinds {
 kinds! {
     Subscribe, Unsubscribe, Input, Paste, PasteFile, Scrollback, Resize, SpawnShell, SpawnAgent,
     SpawnConsole, Kill, RenamePane, MoveToCheckout, CreateWorktree, RemoveCheckout, OpenWorkspace,
-    CreateWorkspace, Review, ReviewContext, ListCode, ReadCode, SearchCode, OpenEdit, Edit, CloseEdit,
+    CreateWorkspace, Review, ReviewFile, ReviewContext, ListCode, ReadCode, SearchCode, OpenEdit, Edit, CloseEdit,
     ListDir, ListCommits,
     ListCommitFiles, ListSessions, ReadSession, ListResumes, ResumeSession, ReviewComment, Stage, Commit, Draft,
     GetDecisions, Feature, TrackerMap, Reconcile, Task, Decide, ChangeDecision, SequenceDiagram,
@@ -132,6 +132,7 @@ pub fn kind(msg: &ClientMsg) -> Kind {
         M::OpenWorkspace { .. } => Kind::OpenWorkspace,
         M::CreateWorkspace { .. } => Kind::CreateWorkspace,
         M::Review { .. } => Kind::Review,
+        M::ReviewFile { .. } => Kind::ReviewFile,
         M::ReviewContext { .. } => Kind::ReviewContext,
         M::ListCode { .. } => Kind::ListCode,
         M::ReadCode { .. } => Kind::ReadCode,
@@ -218,6 +219,7 @@ pub fn generate(kind: Kind, k: &Known) -> BoxedStrategy<ClientMsg> {
         K::CreateWorktree => git::create_worktree(k),
         K::RemoveCheckout => git::remove_checkout(k),
         K::Review => git::review(k),
+        K::ReviewFile => git::review_file(k),
         K::ReviewContext => git::review_context(k),
         K::ListCode => git::list_code(k),
         K::ReadCode => git::read_code(k),
@@ -305,6 +307,7 @@ pub fn request_id_mut(msg: &mut ClientMsg) -> Option<&mut u64> {
         | M::SpawnConsole { request_id }
         | M::CreateWorktree { request_id, .. }
         | M::Review { request_id, .. }
+        | M::ReviewFile { request_id, .. }
         | M::ReviewContext { request_id, .. }
         | M::ListCode { request_id, .. }
         | M::ReadCode { request_id, .. }

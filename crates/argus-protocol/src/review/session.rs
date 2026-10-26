@@ -12,9 +12,14 @@
 //! A review of working changes follows them: the tree says when they moved
 //! (`GitStatus::changes`), and the review reads them again without being
 //! asked, keeping the person's place in what it held.
+//!
+//! Against a daemon that lists them lazily (`LAZY_REVIEWS`), working changes
+//! come as a list first and each file is read when the cursor comes to it:
+//! a large checkout's changes are thousands of files, and reading every one
+//! before showing any was most of the wait.
 
 use crate::review::view::ReviewView;
-use crate::{CheckoutId, ClientMsg, Review, ReviewAnchor, ReviewBase, ReviewContext};
+use crate::{CheckoutId, ClientMsg, Review, ReviewAnchor, ReviewBase, ReviewContext, ReviewFile};
 
 /// What an answer from the daemon came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +67,18 @@ pub struct ReviewSession {
     changes: Option<u64>,
     /// They moved since the sides were last asked for.
     behind: bool,
+    /// Working changes are asked for listed, each file read when wanted.
+    lazy: bool,
+    /// The file whose read is on its way. One at a time, like a fold.
+    loading: Option<Loading>,
+}
+
+/// What a file's read was asked for against.
+struct Loading {
+    request_id: u64,
+    base: ReviewBase,
+    file: usize,
+    path: String,
 }
 
 /// What a fold's lines were asked for against, to know on arrival that they
@@ -81,10 +98,11 @@ impl ReviewSession {
         checkout: CheckoutId,
         prefer: ReviewBase,
         split: bool,
+        lazy: bool,
         mut id: impl FnMut() -> u64,
     ) -> (ReviewSession, Vec<ClientMsg>) {
         let base = if prefer == ReviewBase::Commit { ReviewBase::Unstaged } else { prefer };
-        let mut session = ReviewSession::new(checkout, base, None, split);
+        let mut session = ReviewSession::new(checkout, base, None, split).lazily(lazy);
         let msgs = session.bases().into_iter().map(|b| session.ask(b, id())).collect();
         (session, msgs)
     }
@@ -117,7 +135,17 @@ impl ReviewSession {
             unfolding: None,
             changes: None,
             behind: false,
+            lazy: false,
+            loading: None,
         }
+    }
+
+    /// Asks for working changes listed, each file read when the cursor
+    /// comes to it: for a daemon that listed `LAZY_REVIEWS`. Before the
+    /// first ask, which it changes.
+    pub fn lazily(mut self, lazy: bool) -> ReviewSession {
+        self.lazy = lazy && self.commit.is_none();
+        self
     }
 
     /// The sides this review is made of, the one on screen first.
@@ -132,7 +160,7 @@ impl ReviewSession {
         let side = self.side_mut(base);
         side.asked = Some(request_id);
         side.failed = None;
-        ClientMsg::Review { request_id, checkout: self.checkout, base, commit: self.commit.clone() }
+        ClientMsg::Review { request_id, checkout: self.checkout, base, commit: self.commit.clone(), lazy: self.lazy }
     }
 
     /// Reads every side again: the agent kept working. What was on screen
@@ -185,6 +213,9 @@ impl ReviewSession {
             return Answered::Stale;
         };
         let (split, jump_to) = (self.split, self.jump_to.take());
+        // A read out for this side was of the listing before: the cursor's
+        // file is asked for again against this one.
+        self.loading.take_if(|l| l.base == base);
         let side = self.side_mut(base);
         side.asked = None;
         match &mut side.view {
@@ -312,6 +343,55 @@ impl ReviewSession {
         same && view.reveal(asked.file, context.lines)
     }
 
+    /// The read of the cursor's file on the side on screen, when it is
+    /// listed and not yet read and no read is already out.
+    pub fn load(&mut self, request_id: impl FnOnce() -> u64) -> Option<ClientMsg> {
+        if self.loading.is_some() {
+            return None;
+        }
+        let base = self.base;
+        let view = self.view()?;
+        let file = view.wanted()?;
+        let diff = &view.review.files[file];
+        let (path, old_path, kind) = (diff.path.clone(), diff.old_path.clone(), diff.kind);
+        let request_id = request_id();
+        self.loading = Some(Loading { request_id, base, file, path: path.clone() });
+        Some(ClientMsg::ReviewFile { request_id, checkout: self.checkout, base, path, old_path, kind })
+    }
+
+    /// A file's read, put in place when it is the latest asked for and the
+    /// file is still where it was.
+    pub fn receive_file(&mut self, read: ReviewFile) -> bool {
+        if read.checkout != self.checkout {
+            return false;
+        }
+        let Some(asked) = self.loading.take_if(|l| l.request_id == read.request_id) else {
+            return false;
+        };
+        let Some(view) = self.side_mut(asked.base).view.as_mut() else {
+            return false;
+        };
+        let mut file = read.file;
+        file.pending = false;
+        file.path == asked.path && view.fill(asked.file, file)
+    }
+
+    /// A file that could not be read: it stands as a note saying why, read
+    /// no further until the side is listed again. False when it was not
+    /// this review's latest ask.
+    pub fn file_failed(&mut self, request_id: u64, message: String) -> bool {
+        let Some(asked) = self.loading.take_if(|l| l.request_id == request_id) else {
+            return false;
+        };
+        if let Some(view) = self.side_mut(asked.base).view.as_mut() {
+            if let Some(held) = view.review.files.get(asked.file).filter(|f| f.path == asked.path).cloned() {
+                let failed = crate::FileDiff { hunks: Vec::new(), note: Some(message), pending: false, ..held };
+                view.fill(asked.file, failed);
+            }
+        }
+        true
+    }
+
     /// Whether a fold that could not be read was this review's latest ask.
     pub fn context_failed(&mut self, request_id: u64) -> bool {
         self.unfolding.take_if(|u| u.request_id == request_id).is_some()
@@ -425,6 +505,7 @@ mod tests {
             note: None,
             new_blob: None,
             new_lines: None,
+            pending: false,
         }
     }
 
@@ -435,7 +516,7 @@ mod tests {
     /// A working review asked with ids 1 (unstaged) and 2 (staged).
     fn working() -> (ReviewSession, Vec<ClientMsg>) {
         let mut ids = 0;
-        ReviewSession::working(CO, Unstaged, false, || {
+        ReviewSession::working(CO, Unstaged, false, false, || {
             ids += 1;
             ids
         })
@@ -448,9 +529,94 @@ mod tests {
         s
     }
 
+    /// A lazy working review asked with ids 1 (unstaged) and 2 (staged),
+    /// each side listed with `paths` not yet read.
+    fn listed(unstaged: &[&str], staged: &[&str]) -> (ReviewSession, Vec<ClientMsg>) {
+        let mut ids = 0;
+        let (mut s, sent) = ReviewSession::working(CO, Unstaged, false, true, || {
+            ids += 1;
+            ids
+        });
+        s.receive(pending(1, Unstaged, unstaged));
+        s.receive(pending(2, Staged, staged));
+        (s, sent)
+    }
+
+    fn pending(request_id: u64, base: ReviewBase, paths: &[&str]) -> Review {
+        let stub = |p: &&str| FileDiff { hunks: Vec::new(), pending: true, ..file(p) };
+        Review { request_id, checkout: CO, base, files: paths.iter().map(stub).collect(), commit: None }
+    }
+
+    fn read(request_id: u64, path: &str) -> ReviewFile {
+        ReviewFile { request_id, checkout: CO, base: Unstaged, file: file(path) }
+    }
+
+    fn asked_file(msg: Option<ClientMsg>) -> Option<(u64, String)> {
+        match msg? {
+            ClientMsg::ReviewFile { request_id, path, base: Unstaged, .. } => Some((request_id, path)),
+            other => panic!("not a file read: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_lazy_review_asks_for_its_sides_listed() {
+        let (_, sent) = listed(&[], &[]);
+        assert!(sent.iter().all(|m| matches!(m, ClientMsg::Review { lazy: true, .. })), "{sent:?}");
+        let (_, sent) = working();
+        assert!(sent.iter().all(|m| matches!(m, ClientMsg::Review { lazy: false, .. })), "a daemon that cannot list is asked for all");
+    }
+
+    #[test]
+    fn the_file_the_cursor_comes_to_is_read_once_and_put_in_place() {
+        let (mut s, _) = listed(&["a.rs", "b.rs"], &[]);
+        assert_eq!(asked_file(s.load(|| 10)), Some((10, "a.rs".into())), "the cursor opens on the first file");
+        assert!(s.load(|| 11).is_none(), "one read out at a time");
+        assert!(s.receive_file(read(10, "a.rs")));
+        let view = s.view().unwrap();
+        assert!(view.rows[view.sel].is_selectable(), "the cursor is on its first line once it is read");
+        assert!(!view.review.files[0].pending);
+        assert!(s.load(|| 12).is_none(), "the file on screen is read");
+        s.view_mut().unwrap().jump_file(true);
+        assert_eq!(asked_file(s.load(|| 13)), Some((13, "b.rs".into())), "the next file, once the cursor is on it");
+    }
+
+    #[test]
+    fn a_read_for_a_listing_since_replaced_is_dropped_and_asked_again() {
+        let (mut s, _) = listed(&["a.rs"], &[]);
+        assert!(asked_file(s.load(|| 10)).is_some());
+        s.refresh(|| 20);
+        s.receive(pending(20, Unstaged, &["a.rs"]));
+        assert!(!s.receive_file(read(10, "a.rs")), "read against the listing before");
+        assert_eq!(asked_file(s.load(|| 30)), Some((30, "a.rs".into())));
+    }
+
+    #[test]
+    fn a_file_read_before_stays_on_screen_while_a_new_listing_reads_it_again() {
+        let (mut s, _) = listed(&["a.rs"], &[]);
+        s.load(|| 10);
+        s.receive_file(read(10, "a.rs"));
+        s.refresh(|| 20);
+        s.receive(pending(20, Unstaged, &["a.rs"]));
+        let view = s.view().unwrap();
+        assert!(view.review.files[0].pending && !view.review.files[0].hunks.is_empty(), "its lines kept, to be read again");
+        assert!(view.rows[view.sel].is_selectable(), "the cursor stays on its line");
+        assert_eq!(asked_file(s.load(|| 30)), Some((30, "a.rs".into())));
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_says_why_and_is_not_asked_for_again() {
+        let (mut s, _) = listed(&["a.rs"], &[]);
+        s.load(|| 10);
+        assert!(!s.file_failed(99, "not ours".into()));
+        assert!(s.file_failed(10, "gone".into()));
+        let view = s.view().unwrap();
+        assert_eq!(view.review.files[0].note.as_deref(), Some("gone"));
+        assert!(s.load(|| 11).is_none());
+    }
+
     #[test]
     fn working_changes_ask_for_both_sides_the_preferred_one_first() {
-        let (_, sent) = ReviewSession::working(CO, Staged, false, || 7);
+        let (_, sent) = ReviewSession::working(CO, Staged, false, false, || 7);
         assert!(matches!(
             sent.as_slice(),
             [ClientMsg::Review { base: Staged, commit: None, .. }, ClientMsg::Review { base: Unstaged, .. }]

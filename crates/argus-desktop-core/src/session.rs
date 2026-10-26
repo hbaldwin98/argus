@@ -343,6 +343,7 @@ impl Session {
             index_writes: self.status.daemon_can(argus_protocol::connection::hello::INDEX_WRITES),
             drafts: self.status.daemon_can(argus_protocol::connection::hello::REVIEW_DRAFTS),
             files: self.status.daemon_can(CODE),
+            lazy: self.status.daemon_can(argus_protocol::connection::hello::LAZY_REVIEWS),
         });
         self.sessions = Sessions::default();
         self.older = OlderDaemon::default();
@@ -3450,6 +3451,9 @@ impl Session {
             let drawn = self.browsers.drawn(&placed, tiled);
             self.browsers.watch(drawn, &mut self.out);
         }
+        if self.status.is_connected() {
+            self.dialogs.load(|| self.awaited.name(), &mut self.out);
+        }
         let reads_board = matches!(self.stages.now(), Stage::Feature | Stage::Checkouts) || self.palette;
         self.features.set_board_wanted(reads_board);
         // Whatever changed may have changed which board the stage reads.
@@ -4021,9 +4025,36 @@ mod tests {
                 note: None,
                 new_blob: None,
                 new_lines: None,
+                pending: false,
             }],
             commit: None,
         })
+    }
+
+    #[test]
+    fn a_daemon_that_lists_lazily_is_asked_for_each_file_as_the_cursor_comes_to_it() {
+        use argus_protocol::connection::hello::LAZY_REVIEWS;
+        use argus_protocol::{FileDiff, ReviewBase, ReviewFile};
+        let mut s = session(Hello { capabilities: vec![LAZY_REVIEWS.into()], ..Hello::this_build() });
+        s.show_checkouts(true);
+        let sent = s.open_review(CheckoutId(100));
+        let [ClientMsg::Review { request_id: unstaged, lazy: true, .. }, ClientMsg::Review { request_id: staged, lazy: true, .. }] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        let ServerMsg::Review(mut listed) = reviewed(ReviewBase::Unstaged, *unstaged) else { unreachable!() };
+        let read = listed.files[0].clone();
+        listed.files = vec![FileDiff { hunks: Vec::new(), pending: true, ..read.clone() }];
+        let sent = s.receive(ServerMsg::Review(listed));
+        let [ClientMsg::ReviewFile { request_id, base: ReviewBase::Unstaged, path, .. }] = sent.as_slice() else {
+            panic!("the file under the cursor is read: {:?}", names(&sent));
+        };
+        assert_eq!(path, "src/brief.rs");
+        let request_id = *request_id;
+        s.receive(reviewed(ReviewBase::Staged, *staged));
+        let sent = s.receive(ServerMsg::ReviewFile(ReviewFile { request_id, checkout: CheckoutId(100), base: ReviewBase::Unstaged, file: read }));
+        assert!(sent.iter().all(|m| !matches!(m, ClientMsg::ReviewFile { .. })), "read once: {:?}", names(&sent));
+        let sent = s.review_action(Action::OpenEditor);
+        assert!(matches!(sent.as_slice(), [ClientMsg::OpenInEditor { line: Some(4), .. }]), "its lines are in place: {:?}", names(&sent));
     }
 
     #[test]

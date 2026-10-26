@@ -117,7 +117,7 @@ pub(in crate::ui) fn review_line<'a>(
             format!("{pad}{}", file.hunks[hunk].header),
             Style::default().fg(th.muted),
         )],
-        Row::Note { .. } => vec![Span::styled(
+        Row::Note { .. } | Row::Pending { .. } => vec![Span::styled(
             format!("{pad}{}", file.note.as_deref().unwrap_or("")),
             Style::default().fg(th.dim).add_modifier(Modifier::ITALIC),
         )],

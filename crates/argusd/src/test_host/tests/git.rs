@@ -16,7 +16,7 @@ async fn a_change_reviewed() {
     let mut t = Transcript::greeted(&host).await;
 
     t.ask(
-        ClientMsg::Review { request_id: 1, checkout, base: ReviewBase::Unstaged, commit: None },
+        ClientMsg::Review { request_id: 1, checkout, base: ReviewBase::Unstaged, commit: None, lazy: false },
         |m| matches!(m, ServerMsg::Review(_)),
     )
     .await;

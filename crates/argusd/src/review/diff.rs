@@ -14,9 +14,9 @@ use argus_protocol::{
 
 const MAX_LINES_PER_FILE: usize = 5_000;
 const MAX_TOTAL_LINES: usize = 20_000;
-const MAX_DIFF_BYTES: i64 = 1024 * 1024;
-const BINARY_NOTE: &str = "binary file";
-const TOO_LARGE_NOTE: &str = "too large to display";
+pub(super) const MAX_DIFF_BYTES: i64 = 1024 * 1024;
+pub(super) const BINARY_NOTE: &str = "binary file";
+pub(super) const TOO_LARGE_NOTE: &str = "too large to display";
 
 #[derive(Clone)]
 pub struct GeneratedReview {
@@ -335,7 +335,7 @@ fn capture_blobs(
         .collect()
 }
 
-fn capture_blob(repo: &git2::Repository, path: &Path) -> anyhow::Result<(git2::Oid, u32)> {
+pub(super) fn capture_blob(repo: &git2::Repository, path: &Path) -> anyhow::Result<(git2::Oid, u32)> {
     #[cfg(unix)]
     if path.symlink_metadata()?.file_type().is_symlink() {
         let data = file_bytes(path)?;
@@ -474,7 +474,7 @@ fn render_diff(
 /// Fills `file` with `patch`'s hunks, or notes it too large once it passes the
 /// per-file cap or the review passes the total one; how many lines it kept.
 /// A file cut short still counts the lines it kept before the cut.
-fn render_patch(patch: &git2::Patch<'_>, file: &mut FileDiff, before: usize) -> anyhow::Result<usize> {
+pub(super) fn render_patch(patch: &git2::Patch<'_>, file: &mut FileDiff, before: usize) -> anyhow::Result<usize> {
     let mut kept = 0usize;
     for h in 0..patch.num_hunks() {
         let (hunk, count) = patch.hunk(h)?;
@@ -529,12 +529,7 @@ fn highlight_files(
         if file.note.is_some() || file.hunks.is_empty() {
             continue;
         }
-        let lines = || file.hunks.iter().flat_map(|hunk| &hunk.lines);
-        // A pure addition has no old side to read, and a deletion no new one.
-        // Skipping the parse is worth the two passes over the lines.
-        let wants_old = lines().any(|line| line.kind == LineKind::Removed);
-        let wants_new = lines().any(|line| line.kind != LineKind::Removed);
-
+        let (wants_old, wants_new) = wanted_sides(file);
         let new_spans = wants_new
             .then(|| blob_spans(repo, Some(new_tree), &file.path, &file.path))
             .flatten();
@@ -542,24 +537,38 @@ fn highlight_files(
         let old_spans = wants_old
             .then(|| blob_spans(repo, old_tree, &old_path, &file.path))
             .flatten();
+        hang_spans(file, old_spans.as_ref(), new_spans.as_ref());
+    }
+}
 
-        for line in file.hunks.iter_mut().flat_map(|hunk| &mut hunk.lines) {
-            // Context lines exist on both sides and read the same on both, so
-            // the new side answers for everything except an outright removal.
-            let (spans, lineno) = match line.kind {
-                LineKind::Removed => (old_spans.as_ref(), line.old_lineno),
-                _ => (new_spans.as_ref(), line.new_lineno),
-            };
-            let (Some(spans), Some(lineno)) = (spans, lineno) else {
-                continue;
-            };
-            // Git numbers lines from one. A span reaching past the text the
-            // diff carries means the blob and the hunk disagree about this
-            // line, and an offset into the wrong line is worse than no colour.
-            if let Some(found) = spans.get(lineno.saturating_sub(1) as usize) {
-                let width = line.text.len() as u32;
-                line.spans = found.iter().copied().filter(|s| s.end <= width).collect();
-            }
+type Spans = Vec<Vec<argus_protocol::HighlightSpan>>;
+
+/// Which sides of `file` its lines need highlighted: a pure addition has no
+/// old side to read, and a deletion no new one. Skipping the parse is worth
+/// the two passes over the lines.
+pub(super) fn wanted_sides(file: &FileDiff) -> (bool, bool) {
+    let lines = || file.hunks.iter().flat_map(|hunk| &hunk.lines);
+    (lines().any(|line| line.kind == LineKind::Removed), lines().any(|line| line.kind != LineKind::Removed))
+}
+
+/// Puts each side's spans on the lines of `file` that side holds.
+pub(super) fn hang_spans(file: &mut FileDiff, old_spans: Option<&Spans>, new_spans: Option<&Spans>) {
+    for line in file.hunks.iter_mut().flat_map(|hunk| &mut hunk.lines) {
+        // Context lines exist on both sides and read the same on both, so
+        // the new side answers for everything except an outright removal.
+        let (spans, lineno) = match line.kind {
+            LineKind::Removed => (old_spans, line.old_lineno),
+            _ => (new_spans, line.new_lineno),
+        };
+        let (Some(spans), Some(lineno)) = (spans, lineno) else {
+            continue;
+        };
+        // Git numbers lines from one. A span reaching past the text the
+        // diff carries means the blob and the hunk disagree about this
+        // line, and an offset into the wrong line is worse than no colour.
+        if let Some(found) = spans.get(lineno.saturating_sub(1) as usize) {
+            let width = line.text.len() as u32;
+            line.spans = found.iter().copied().filter(|s| s.end <= width).collect();
         }
     }
 }
@@ -575,8 +584,12 @@ fn blob_spans(
 ) -> Option<Vec<Vec<argus_protocol::HighlightSpan>>> {
     let tree = repo.find_tree(tree?).ok()?;
     let entry = tree.get_path(Path::new(blob_path)).ok()?;
-    let object = entry.to_object(repo).ok()?;
-    let blob = object.as_blob()?;
+    blob_id_spans(repo, entry.id(), syntax_path)
+}
+
+/// One blob highlighted as `syntax_path`, when it is text.
+pub(super) fn blob_id_spans(repo: &git2::Repository, blob: git2::Oid, syntax_path: &str) -> Option<Spans> {
+    let blob = repo.find_blob(blob).ok()?;
     if blob.is_binary() {
         return None;
     }
@@ -612,10 +625,11 @@ fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {
         note: too_large
             .then(|| TOO_LARGE_NOTE.to_string())
             .or_else(|| delta.flags().is_binary().then(|| BINARY_NOTE.to_string())),
+        pending: false,
     }
 }
 
-fn slashed(path: &Path) -> String {
+pub(super) fn slashed(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 

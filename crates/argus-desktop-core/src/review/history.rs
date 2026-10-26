@@ -313,6 +313,7 @@ impl HistoryDialog {
             checkout: self.checkout,
             base: ReviewBase::Commit,
             commit: Some(oid),
+            lazy: false,
         }))
     }
 

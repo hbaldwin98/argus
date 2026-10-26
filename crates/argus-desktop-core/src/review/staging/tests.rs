@@ -7,7 +7,7 @@ fn line(kind: LineKind, old: Option<u32>, new: Option<u32>, text: &str) -> DiffL
 }
 
 fn file(path: &str, kind: ChangeKind, hunks: Vec<Hunk>) -> FileDiff {
-    FileDiff { path: path.into(), old_path: None, kind, hunks, note: None, new_blob: None, new_lines: None }
+    FileDiff { path: path.into(), old_path: None, kind, hunks, note: None, new_blob: None, new_lines: None, pending: false }
 }
 
 fn hunk(lines: Vec<DiffLine>) -> Hunk {
@@ -18,7 +18,7 @@ fn hunk(lines: Vec<DiffLine>) -> Hunk {
 /// `r.rs` staged, read in that order.
 fn session() -> ReviewSession {
     let mut ids = 0;
-    let (mut s, _) = ReviewSession::working(CheckoutId(1), ReviewBase::Unstaged, false, || {
+    let (mut s, _) = ReviewSession::working(CheckoutId(1), ReviewBase::Unstaged, false, false, || {
         ids += 1;
         ids
     });

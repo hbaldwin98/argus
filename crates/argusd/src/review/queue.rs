@@ -23,12 +23,14 @@ pub struct ReviewAsk {
     checkout: CheckoutId,
     base: ReviewBase,
     commit: Option<String>,
+    /// A listing, which a full read of the same side does not answer.
+    lazy: bool,
 }
 
 impl ReviewAsk {
-    pub fn new(checkout: CheckoutId, base: ReviewBase, commit: Option<String>) -> ReviewAsk {
+    pub fn new(checkout: CheckoutId, base: ReviewBase, commit: Option<String>, lazy: bool) -> ReviewAsk {
         let base = if commit.is_some() { ReviewBase::Commit } else { base };
-        ReviewAsk { checkout, base, commit }
+        ReviewAsk { checkout, base, commit, lazy }
     }
 }
 
@@ -176,7 +178,7 @@ mod tests {
     use super::*;
 
     fn ask(checkout: u64, base: ReviewBase, commit: Option<&str>) -> ReviewAsk {
-        ReviewAsk::new(CheckoutId(checkout), base, commit.map(str::to_string))
+        ReviewAsk::new(CheckoutId(checkout), base, commit.map(str::to_string), false)
     }
 
     /// A review that generates only once `release` is sent, and says when

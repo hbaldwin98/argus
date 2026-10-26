@@ -680,7 +680,7 @@ fn hunks(path: &str, patch: &str) -> Vec<Hunk> {
 }
 
 fn file_diff(path: &str, kind: ChangeKind, patch: &str) -> FileDiff {
-    FileDiff { path: path.into(), old_path: None, kind, hunks: hunks(path, patch), note: None, new_blob: None, new_lines: None }
+    FileDiff { path: path.into(), old_path: None, kind, hunks: hunks(path, patch), note: None, new_blob: None, new_lines: None, pending: false }
 }
 
 const BRIEF_RS: &str = "@@ -0,0 +1,31 @@
@@ -1703,7 +1703,7 @@ fn reply(msg: &ClientMsg) -> Vec<ServerMsg> {
                 .collect();
             vec![ServerMsg::CodeMatches(CodeMatches { request_id: *request_id, checkout: *checkout, query: query.clone(), options: options.clone(), matches, truncated: false })]
         }
-        ClientMsg::Review { request_id, checkout, base, commit } => {
+        ClientMsg::Review { request_id, checkout, base, commit, .. } => {
             let (files, info) = match commit {
                 Some(oid) => (commit_changes(), history().into_iter().find(|c| &c.oid == oid)),
                 None => (working_changes(*base), None),

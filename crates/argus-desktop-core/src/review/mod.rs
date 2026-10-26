@@ -88,6 +88,11 @@ impl Dialogs {
                     dialog.receive_context(context);
                 }
             }
+            ServerMsg::ReviewFile(read) => {
+                if let Some(dialog) = self.review_mut() {
+                    dialog.receive_file(read);
+                }
+            }
             // Every review hears the save and takes it only when it names
             // the comment its box sent, open or parked.
             ServerMsg::ReviewCommentSaved { id, delivered, request_id } => {
@@ -159,7 +164,7 @@ impl Dialogs {
         let Some(review) = self.review_mut() else {
             return false;
         };
-        if review.files_refused(id, reason) {
+        if review.files_refused(id, reason) || review.file_failed(id, reason.clone()) {
             return true;
         }
         if review.context_failed(id) || review.change_refused(id) {
@@ -332,6 +337,16 @@ impl Dialogs {
             dialog.follow(tree.checkout(dialog.checkout()));
         }
         self.catch_up(id, out);
+    }
+
+    /// The review on screen reads the file its cursor came to, when its side
+    /// was listed and that file is not yet read. After every call and every
+    /// answer, so the cursor arriving any way — a key, a click, a jump, the
+    /// review opening — is what reads it.
+    pub fn load(&mut self, id: impl FnOnce() -> u64, out: &mut Vec<ClientMsg>) {
+        if let Some(msg) = self.review_mut().and_then(|dialog| dialog.load(id)) {
+            out.push(msg);
+        }
     }
 
     /// The review answers go to reads its sides again if its checkout's

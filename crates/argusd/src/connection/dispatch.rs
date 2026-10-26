@@ -486,7 +486,21 @@ pub(super) fn dispatch(
             checkout,
             base,
             commit,
-        } => review(daemon, &reply, &mut conn.reviews, request_id, checkout, base, commit),
+            lazy,
+        } => review(daemon, &reply, &mut conn.reviews, request_id, checkout, base, commit, lazy),
+        // One file of a lazy review, read off the review queue: it is one
+        // file, and the viewer waits on it with the cursor already there.
+        ClientMsg::ReviewFile {
+            request_id,
+            checkout,
+            base,
+            path,
+            old_path,
+            kind,
+        } => reply_with(daemon, &reply, checkout, move |repo| {
+            let file = crate::review::lazy::read(&repo, base, &path, old_path.as_deref(), kind)?;
+            Ok(ServerMsg::ReviewFile(argus_protocol::ReviewFile { request_id, checkout, base, file }))
+        }),
         // The Code stage: a version's files, one file of it, and a search.
         ClientMsg::ListCode {
             request_id,
@@ -766,6 +780,7 @@ fn delete_branch(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn review(
     daemon: &Arc<Daemon>,
     reply: &Reply,
@@ -774,12 +789,15 @@ fn review(
     checkout: argus_protocol::CheckoutId,
     base: ReviewBase,
     commit: Option<String>,
+    lazy: bool,
 ) -> anyhow::Result<()> {
     let path = daemon.checkout_path(checkout)?;
     let reply = reply.clone();
-    let ask = ReviewAsk::new(checkout, base, commit.clone());
+    let lazy = lazy && commit.is_none();
+    let ask = ReviewAsk::new(checkout, base, commit.clone(), lazy);
     let generate = move || match commit.as_deref() {
         Some(rev) => crate::review::diff::generate_commit(&path, rev),
+        None if lazy => crate::review::lazy::list(&path, base),
         None => crate::review::diff::generate(&path, base),
     }
     .map_err(|error| error.to_string());

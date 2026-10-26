@@ -113,7 +113,7 @@ pub use review::drafts::{DraftAction, ReviewDraft, MAX_REVIEW_DRAFTS};
 pub use review::staging::{IndexChange, PickedLine};
 pub use review::{
     ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,
-    LineKind, Review, ReviewAnchor, ReviewBase, ReviewComment, ReviewContext, MAX_HISTORY_COMMITS,
+    LineKind, Review, ReviewAnchor, ReviewBase, ReviewComment, ReviewContext, ReviewFile, MAX_HISTORY_COMMITS,
     MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
 };
 pub use board::tasks::{

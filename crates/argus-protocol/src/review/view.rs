@@ -46,6 +46,12 @@ pub enum Row {
     Note {
         file: usize,
     },
+    /// Stands in for a file of a lazy side listed and not yet read. The
+    /// cursor lands on it as on a file's first line, which is what asks for
+    /// it to be read.
+    Pending {
+        file: usize,
+    },
     /// Lines the diff did not carry, before hunk `gap` — or after the last
     /// one, when `gap` is the number of hunks. See [`fold_of`].
     Fold {
@@ -62,6 +68,7 @@ impl Row {
             | Row::Line { file, .. }
             | Row::Pair { file, .. }
             | Row::Note { file }
+            | Row::Pending { file }
             | Row::Fold { file, .. } => file,
         }
     }
@@ -75,7 +82,14 @@ impl Row {
     /// Whether the cursor stops here: on lines, and on a fold, which takes
     /// no comment but has to be reached to be opened.
     pub fn is_stop(self) -> bool {
-        self.is_selectable() || matches!(self, Row::Fold { .. })
+        self.is_entry() || matches!(self, Row::Fold { .. })
+    }
+
+    /// Whether the cursor can come to a file here: its lines, or the one
+    /// row a file with none to show stands as — its note, or a file of a
+    /// lazy side not yet read — which a file opened has to land on too.
+    pub fn is_entry(self) -> bool {
+        self.is_selectable() || matches!(self, Row::Note { .. } | Row::Pending { .. })
     }
 
     /// The diff lines this row covers, removed side first, in the order a
@@ -154,11 +168,13 @@ pub fn fold_of(file: &FileDiff, gap: usize) -> Option<Fold> {
 }
 
 /// Where a row was, said in a way that survives the rows being rebuilt: a
-/// line by its file and numbers, a fold by its file and place.
+/// line by its file and numbers, a fold by its file and place, a file not
+/// yet read by its file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Spot {
     Line(usize, Option<u32>, Option<u32>),
     Fold(usize, usize),
+    Pending(usize),
 }
 
 pub struct ReviewView {
@@ -179,7 +195,7 @@ pub struct ReviewView {
 impl ReviewView {
     pub fn new(review: Review, split: bool) -> Self {
         let rows = flatten(&review.files, split);
-        let sel = rows.iter().position(|r| r.is_selectable()).unwrap_or(0);
+        let sel = rows.iter().position(|r| r.is_entry()).unwrap_or(0);
         ReviewView {
             read: review.files.clone(),
             review,
@@ -205,13 +221,14 @@ impl ReviewView {
         self.mark = None;
         self.sel = was
             .and_then(|at| self.find(at))
-            .or_else(|| self.rows.iter().position(|r| r.is_selectable()))
+            .or_else(|| self.rows.iter().position(|r| r.is_entry()))
             .unwrap_or(0);
     }
 
     fn spot(&self, row: usize) -> Option<Spot> {
         match *self.rows.get(row)? {
             Row::Fold { file, gap } => Some(Spot::Fold(file, gap)),
+            Row::Pending { file } => Some(Spot::Pending(file)),
             row => {
                 let (file, hunk, line) = row.lines().next()?;
                 let line = &self.review.files[file].hunks[hunk].lines[line];
@@ -223,6 +240,7 @@ impl ReviewView {
     fn find(&self, spot: Spot) -> Option<usize> {
         self.rows.iter().position(|&row| match (spot, row) {
             (Spot::Fold(f, g), Row::Fold { file, gap }) => (f, g) == (file, gap),
+            (Spot::Pending(f), Row::Pending { file }) => f == file,
             (Spot::Line(f, old, new), row) => row.lines().any(|(file, hunk, line)| {
                 let line = &self.review.files[file].hunks[hunk].lines[line];
                 file == f && line.old_lineno == old && line.new_lineno == new
@@ -237,8 +255,13 @@ impl ReviewView {
     /// path and numbers. The cursor on a line that is gone goes to the next
     /// one left in its file; a range that lost an end is let go. False,
     /// changing nothing, when the read is the one already held.
+    ///
+    /// A lazy listing is always taken: it cannot say whether a file moved,
+    /// so each file read before keeps its hunks on screen, `pending` again,
+    /// until it is read anew.
     pub fn reread(&mut self, review: Review) -> bool {
-        if review.files == self.read && review.commit == self.review.commit {
+        let listed = review.files.iter().any(|f| f.pending);
+        if review.files == self.read && review.commit == self.review.commit && !listed {
             return false;
         }
         let sel = self.place(self.sel);
@@ -247,7 +270,9 @@ impl ReviewView {
         let mut review = review;
         for file in &mut review.files {
             if let Some(held) = self.read.iter().position(|old| old == file) {
+                let pending = file.pending;
                 *file = self.review.files[held].clone();
+                file.pending |= pending;
             }
         }
         self.read = read;
@@ -256,10 +281,37 @@ impl ReviewView {
         self.sel = sel
             .as_ref()
             .and_then(|p| self.found(p).or_else(|| self.after(p)))
-            .or_else(|| self.rows.iter().position(|r| r.is_selectable()))
+            .or_else(|| self.rows.iter().position(|r| r.is_entry()))
             .unwrap_or(0);
         self.mark = mark.and_then(|p| self.found(&p));
         true
+    }
+
+    /// One file of a lazy side, read: its hunks in place of what was listed
+    /// or read before, the cursor and a picked range kept on the lines they
+    /// were on, and on its first line when the cursor was on its note. False,
+    /// changing nothing, when the file at `file` is no longer `read`'s path.
+    pub fn fill(&mut self, file: usize, read: FileDiff) -> bool {
+        if self.review.files.get(file).is_none_or(|held| held.path != read.path) {
+            return false;
+        }
+        let sel = self.place(self.sel);
+        let mark = self.mark.and_then(|m| self.place(m));
+        self.review.files[file] = read;
+        self.rows = flatten(&self.review.files, self.split);
+        self.sel = sel
+            .as_ref()
+            .and_then(|p| self.found(p).or_else(|| self.after(p)))
+            .or_else(|| self.rows.iter().position(|r| r.is_entry()))
+            .unwrap_or(0);
+        self.mark = mark.and_then(|p| self.found(&p));
+        true
+    }
+
+    /// The file a lazy side wants read: the cursor's, while it is pending.
+    pub fn wanted(&self) -> Option<usize> {
+        let file = self.rows.get(self.sel)?.file();
+        self.review.files.get(file).filter(|f| f.pending).map(|_| file)
     }
 
     /// Where a row is, by its file's path rather than its index: a file
@@ -267,7 +319,7 @@ impl ReviewView {
     fn place(&self, row: usize) -> Option<(String, Spot)> {
         let spot = self.spot(row)?;
         let file = match spot {
-            Spot::Line(f, ..) | Spot::Fold(f, _) => f,
+            Spot::Line(f, ..) | Spot::Fold(f, _) | Spot::Pending(f) => f,
         };
         Some((self.review.files[file].path.clone(), spot))
     }
@@ -277,6 +329,7 @@ impl ReviewView {
         self.find(match *spot {
             Spot::Line(_, old, new) => Spot::Line(file, old, new),
             Spot::Fold(_, gap) => Spot::Fold(file, gap),
+            Spot::Pending(_) => Spot::Pending(file),
         })
     }
 
@@ -286,7 +339,7 @@ impl ReviewView {
         let file = self.review.files.iter().position(|f| &f.path == path)?;
         let from = match *spot {
             Spot::Line(_, old, new) => new.or(old).unwrap_or(0),
-            Spot::Fold(..) => 0,
+            Spot::Fold(..) | Spot::Pending(_) => 0,
         };
         let in_file = |r: &Row| r.is_stop() && r.file() == file;
         let at_or_after = |r: &Row| {
@@ -429,7 +482,7 @@ impl ReviewView {
             .rows
             .iter()
             .enumerate()
-            .filter(|(_, r)| r.is_selectable() && Some(r.file()) != here)
+            .filter(|(_, r)| r.is_entry() && Some(r.file()) != here)
             .map(|(i, _)| i)
             .collect();
         let next = if forward {
@@ -444,7 +497,7 @@ impl ReviewView {
                 .and_then(|f| {
                     self.rows
                         .iter()
-                        .position(|r| r.is_selectable() && r.file() == f)
+                        .position(|r| r.is_entry() && r.file() == f)
                 })
         };
         if let Some(i) = next {
@@ -458,7 +511,7 @@ impl ReviewView {
         if let Some(i) = self
             .rows
             .iter()
-            .position(|r| r.is_selectable() && r.file() == file)
+            .position(|r| r.is_entry() && r.file() == file)
         {
             self.sel = i;
             self.mark = None;
@@ -469,7 +522,7 @@ impl ReviewView {
         self.sel = self
             .rows
             .iter()
-            .position(|r| r.is_selectable())
+            .position(|r| r.is_entry())
             .unwrap_or(0);
         self.mark = None;
     }
@@ -478,7 +531,7 @@ impl ReviewView {
         self.sel = self
             .rows
             .iter()
-            .rposition(|r| r.is_selectable())
+            .rposition(|r| r.is_entry())
             .unwrap_or(0);
         self.mark = None;
     }
@@ -584,6 +637,10 @@ fn flatten(files: &[FileDiff], split: bool) -> Vec<Row> {
         rows.push(Row::File { file: f });
         if file.note.is_some() {
             rows.push(Row::Note { file: f });
+            continue;
+        }
+        if file.pending && file.hunks.is_empty() {
+            rows.push(Row::Pending { file: f });
             continue;
         }
         for (h, hunk) in file.hunks.iter().enumerate() {
@@ -692,6 +749,7 @@ mod tests {
             note: None,
             new_blob: None,
             new_lines: None,
+            pending: false,
         }
     }
 
@@ -1284,6 +1342,7 @@ mod tests {
             note: None,
             new_blob: Some("b10b".into()),
             new_lines: Some(60),
+            pending: false,
         }])
     }
 

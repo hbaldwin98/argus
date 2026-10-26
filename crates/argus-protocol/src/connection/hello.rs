@@ -48,6 +48,7 @@ pub const CAPABILITIES: &[&str] = &[
     BROWSER_POINTER,
     INDEX_WRITES,
     REVIEW_DRAFTS,
+    LAZY_REVIEWS,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
@@ -163,6 +164,11 @@ pub const FILES: &str = "files";
 /// `ServerMsg::Written`: the index taken whole files or picked lines, and a
 /// commit made of it.
 pub const INDEX_WRITES: &str = "index-writes";
+
+/// A review of working changes listed before it is read: `ClientMsg::Review`
+/// with `lazy`, answered with every file `pending`, and `ClientMsg::ReviewFile`
+/// for one file's hunks, answered by `ServerMsg::ReviewFile`.
+pub const LAZY_REVIEWS: &str = "lazy-reviews";
 
 /// `ClientMsg::Draft`, answered by `ServerMsg::Drafts` and
 /// `ServerMsg::ReviewSubmitted`: review comments held as drafts and sent

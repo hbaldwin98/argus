@@ -175,6 +175,8 @@ impl App {
             | ServerMsg::CodeMatches(_)
             | ServerMsg::CheckoutDir(_)
             | ServerMsg::CodeFailed { .. } => {}
+            // Never asked for: this client reads every file of a review at once.
+            ServerMsg::ReviewFile(_) => {}
             ServerMsg::ReviewContext(context) => {
                 if let Some(session) = &mut self.review {
                     session.receive_context(context);

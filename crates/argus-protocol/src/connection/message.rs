@@ -18,7 +18,7 @@ use crate::tree::focus::{Focus, View};
 use crate::connection::hello::Hello;
 use crate::panes::keys::KeyboardMode;
 use crate::tree::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
-use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext};
+use crate::review::{ChangeKind, CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase, ReviewContext, ReviewFile};
 use crate::review::drafts::{DraftAction, ReviewDraft};
 use crate::review::staging::IndexChange;
 use crate::board::diagrams::{DiagramAction, DiagramList};
@@ -180,6 +180,27 @@ pub enum ClientMsg {
         /// ignoring `base` except as the flag [`ReviewBase::Commit`].
         #[serde(default)]
         commit: Option<String>,
+        /// Working changes listed without their hunks, every file
+        /// [`pending`](crate::FileDiff::pending), each read by
+        /// `ReviewFile` once it is wanted. Only to a daemon that listed
+        /// `LAZY_REVIEWS`; ignored for a commit, whose diff is bounded by
+        /// what it touched.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        lazy: bool,
+    },
+    /// One file of a lazy review of working changes, read now: its hunks
+    /// as the working tree or the index holds it at this moment, which the
+    /// review's next listing follows if it has moved since. `old_path` is
+    /// a rename's, `kind` what the listing said, both sent back as they
+    /// came. Answered by `ServerMsg::ReviewFile`, or refused like a review.
+    ReviewFile {
+        request_id: u64,
+        checkout: CheckoutId,
+        base: ReviewBase,
+        path: String,
+        #[serde(default)]
+        old_path: Option<String>,
+        kind: ChangeKind,
     },
     /// Lines `start..=end` of a reviewed file's new side, for a fold the
     /// viewer opened. Sent only for a file whose diff named its
@@ -762,6 +783,8 @@ pub enum ServerMsg {
     },
     /// The answer to `ClientMsg::Review`.
     Review(Review),
+    /// The answer to `ClientMsg::ReviewFile`.
+    ReviewFile(ReviewFile),
     /// A review that could not be read, a checkout that is gone included,
     /// correlated so stale failures are dropped. To a client that did not
     /// list `REQUEST_REFUSALS`; one that did is sent `Refused`.

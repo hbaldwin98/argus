@@ -534,7 +534,7 @@ fn showing_file(
             argus_protocol::ReviewBase::Commit,
         ),
         None => (
-            ReviewSession::working(CheckoutId(1), argus_protocol::ReviewBase::Unstaged, split, || 1).0,
+            ReviewSession::working(CheckoutId(1), argus_protocol::ReviewBase::Unstaged, split, false, || 1).0,
             argus_protocol::ReviewBase::Unstaged,
         ),
     };
@@ -553,6 +553,7 @@ fn showing_file(
             note: None,
             new_blob: new_lines.map(|_| "b10b".to_string()),
             new_lines,
+            pending: false,
         }],
         commit,
     });

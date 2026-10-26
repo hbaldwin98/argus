@@ -3,5 +3,6 @@
 //! `connection::dispatch`'s.
 
 pub mod diff;
+pub mod lazy;
 pub mod picked;
 pub mod queue;
