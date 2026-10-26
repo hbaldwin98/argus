@@ -22,7 +22,9 @@
 //! diff opens the panel that sends them (`submit`).
 
 pub mod commit;
+pub mod flat;
 pub mod head;
+pub mod lines;
 pub mod lists;
 pub mod narrow;
 pub mod side;

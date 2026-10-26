@@ -117,3 +117,14 @@ fn the_list_shows_when_it_comes_in_with_no_input_after_it(cx: &mut TestAppContex
     cx.run_until_parked();
     assert!(present(cx, &opened, ("review-tree-row", 0usize)), "drawn without a press");
 }
+
+#[gpui_kit::test]
+fn a_checkout_of_thousands_of_files_draws_only_the_rows_in_view(cx: &mut TestAppContext) {
+    let opened = on_main(cx);
+    let files: Vec<String> = (0..20_000).map(|i| format!("f{i:05}.rs")).collect();
+    let listed: Vec<&str> = files.iter().map(String::as_str).collect();
+    hear(cx, &opened, vec![reviewing(tree(&listed, None))]);
+    click(cx, &opened, "review-list-files");
+    assert!(present(cx, &opened, ("review-tree-row", 0usize)));
+    assert!(!present(cx, &opened, ("review-tree-row", 19_000usize)), "a row far below the window was drawn");
+}

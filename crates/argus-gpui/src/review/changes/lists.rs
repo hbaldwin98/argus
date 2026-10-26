@@ -21,6 +21,9 @@ use crate::kit::counts::counts;
 use crate::kit::icons::Glyph;
 use crate::kit::drag::{Dragger, Step};
 use crate::kit::tip::tip;
+use crate::kit::long_list::long_list;
+use crate::review::changes::lines::{change_id, height, lines, shown, Line, EMPTY_BOX, HEAD};
+use crate::review::changes::flat::FILE_ROW;
 use crate::review::changes::side::{folder, Files};
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
@@ -132,54 +135,102 @@ pub fn drafted(page: &ReviewPage) -> Vec<(String, usize)> {
 }
 
 impl Files {
-    /// The three lists, staged always (a file is dropped on it) and the others while they hold a
-    /// file; by folder, each folder's files under its name, when the list is a tree.
-    pub(super) fn sections(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The lists, drawn only where they are in view: a large checkout's changes run to thousands.
+    pub(super) fn sections(&self, page: &ReviewPage, tokens: &Tokens, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.areas.borrow_mut().clear();
         let found = found(&page.sections, &self.query);
         let finding = !self.query.is_empty();
-        let shown: Vec<(usize, &ReviewSection)> =
-            found.iter().enumerate().filter(|(_, s)| (s.side == "staged" && !finding) || !s.files.is_empty()).collect();
-        let none = finding && shown.is_empty();
+        let shown = shown(&found, finding);
+        let list = v_flex().id("review-sections").test_support().flex_1().min_h_0();
+        if finding && shown.is_empty() {
+            return list.child(
+                div()
+                    .id("review-find-none")
+                    .test_support()
+                    .px(rem(tokens.sp_16))
+                    .py(rem(tokens.sp_24))
+                    .typed(tokens.type_small)
+                    .text_color(tokens.fg_faint)
+                    .text_center()
+                    .child("No changed file matches."),
+            );
+        }
+        let lines = lines(&found, &shown, self.tree);
+        let heights: Vec<f32> = lines.iter().map(|line| height(line, tokens)).collect();
         let talked = drafted(page);
-        v_flex()
-            .id("review-sections")
-            .test_support()
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .track_scroll(&self.scroll)
-            .pt(rem(tokens.sp_4))
-            .pb(rem(10.0))
-            .children(shown.into_iter().map(|(k, section)| self.section(k, section, &talked, tokens, cx)))
-            .when(none, |list| {
-                list.child(
-                    div()
-                        .id("review-find-none")
-                        .test_support()
-                        .px(rem(tokens.sp_16))
-                        .py(rem(tokens.sp_24))
-                        .typed(tokens.type_small)
-                        .text_color(tokens.fg_faint)
-                        .text_center()
-                        .child("No changed file matches."),
-                )
+        list.child(
+            long_list(cx.entity(), "review-section-lines", &heights, window.rem_size(), &self.scroll, move |this, at, _, cx| {
+                let tokens = *Tokens::global(cx);
+                let line = &lines[at];
+                let section = &found[line.list()];
+                let last = lines.get(at + 1).is_none_or(|next| matches!(next, Line::Head(_)));
+                let drawn = match line {
+                    Line::Head(k) => this.head(*k, section, &tokens, cx).into_any_element(),
+                    Line::Empty(_) => this.empty(section, &tokens).into_any_element(),
+                    Line::Folder(_, dir) => dirhead(dir, &tokens, cx).into_any_element(),
+                    Line::File { list, at, folders } => {
+                        this.change(change_id(*list, *at), &section.files[*at], section.side == "staged", *folders, &talked, &tokens, cx).into_any_element()
+                    }
+                };
+                this.framed(at, line, section, last, drawn, &tokens).into_any_element()
             })
+            .size_full()
+            .pt(rem(tokens.sp_4))
+            .pb(rem(10.0)),
+        )
     }
 
-    /// `.group`: a list's head, then its rows, lit as a drop target while a file from the other
-    /// list is carried over it.
-    fn section(&self, k: usize, section: &ReviewSection, talked: &[(String, usize)], tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The line of the lists the file on screen is drawn in.
+    pub(super) fn sections_lit_row(&self, page: &ReviewPage) -> Option<usize> {
+        let found = found(&page.sections, &self.query);
+        let shown = shown(&found, !self.query.is_empty());
+        lines(&found, &shown, self.tree).iter().position(|line| matches!(line, Line::File { list, at, .. } if found[*list].files[*at].on))
+    }
+
+    /// Whether a file carried from the other list is over `staged`'s, which lights it as a target.
+    fn targeted(&self, staged: bool) -> bool {
+        self.drag_over().filter(|over| *over == staged && self.carried().is_some_and(|c| c.staged != staged)).is_some()
+    }
+
+    /// `.group`: a line in its list's frame, lit as a drop target while a file from the other list
+    /// is carried over it. The frame is drawn a line at a time, opened by the head and closed by
+    /// the list's last line, and each line says where it was laid out, for a drop.
+    #[allow(clippy::too_many_arguments)]
+    fn framed(&self, at: usize, line: &Line, section: &ReviewSection, last: bool, drawn: gpui_kit::AnyElement, tokens: &Tokens) -> impl IntoElement {
         let staged = section.side == "staged";
+        let target = self.targeted(staged);
         let areas = self.areas.clone();
-        let target = self.drag_over().filter(|over| *over == staged && self.carried().is_some_and(|c| c.staged != staged)).is_some();
-        let paths: Vec<String> = section.files.iter().map(|f| f.file.path.clone()).collect();
+        let first = matches!(line, Line::Head(_));
+        let corner = rem(tokens.r_md);
+        let edge = if target { tokens.accent.opacity(0.55) } else { gpui_kit::transparent_black() };
+        // The head carries the list's id, which the rest of its lines cannot share.
+        let frame = if first { div().id(("review-section", line.list())) } else { div().id(("review-section-line", at)) };
+        frame
+            .test_support()
+            .when(first, |frame| frame.aria_label(SharedString::from(title(section.side))))
+            .relative()
+            .size_full()
+            .mx(rem(tokens.sp_4))
+            .border_l_1()
+            .border_r_1()
+            .when(first, |frame| frame.border_t_1().rounded_t(corner))
+            .when(last, |frame| frame.border_b_1().rounded_b(corner))
+            .border_color(edge)
+            .when(target, |frame| frame.bg(tokens.accent.opacity(0.09)))
+            .child(canvas(move |bounds, _, _| areas.borrow_mut().push((staged, bounds)), |_, _, _, _| {}).absolute().size_full())
+            .child(drawn)
+    }
+
+    /// `.section`: the list's type in capitals, its count fainter, the move of all at its end.
+    fn head(&self, k: usize, section: &ReviewSection, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let staged = section.side == "staged";
+        let target = self.targeted(staged);
         let all = if staged { "Unstage all" } else { "Stage all" };
-        // `.section`: the label's type in capitals, its count fainter, the move of all at its end.
-        let head = h_flex()
+        let paths: Vec<String> = section.files.iter().map(|f| f.file.path.clone()).collect();
+        h_flex()
             .gap(rem(tokens.sp_8))
             .items_center()
-            .h(rem(30.0))
+            .h(rem(HEAD))
             .pl(rem(tokens.sp_12))
             .pr(rem(6.0))
             .typed(tokens.type_label)
@@ -195,58 +246,27 @@ impl Files {
                             this.ask(Call::Stage { gesture: StageGesture::Files { staged: !staged, paths: paths.clone() } }, cx);
                         })),
                 )
-            });
-        let rows: Vec<gpui_kit::AnyElement> = if self.tree {
-            let mut folders: Vec<(&str, Vec<(usize, &SectionFile)>)> = Vec::new();
-            for (i, file) in section.files.iter().enumerate() {
-                let dir = folder(&file.file.dir);
-                match folders.iter_mut().find(|(d, _)| *d == dir) {
-                    Some((_, files)) => files.push((i, file)),
-                    None => folders.push((dir, vec![(i, file)])),
-                }
-            }
-            folders.sort_by(|a, b| a.0.cmp(b.0));
-            folders
-                .into_iter()
-                .flat_map(|(dir, files)| {
-                    let head = dirhead(dir, tokens, cx).into_any_element();
-                    std::iter::once(head).chain(files.into_iter().map(|(i, file)| self.change(k * 10_000 + i, file, staged, false, talked, tokens, cx).into_any_element()).collect::<Vec<_>>())
-                })
-                .collect()
-        } else {
-            section.files.iter().enumerate().map(|(i, file)| self.change(k * 10_000 + i, file, staged, true, talked, tokens, cx).into_any_element()).collect()
-        };
-        v_flex()
-            .id(("review-section", k))
-            .test_support()
-            .aria_label(SharedString::from(title(section.side)))
-            .relative()
-            .flex_shrink_0()
-            .mx(rem(tokens.sp_4))
-            .rounded(rem(tokens.r_md))
-            .border_1()
-            .border_color(if target { tokens.accent.opacity(0.55) } else { gpui_kit::transparent_black() })
-            .when(target, |list| list.bg(tokens.accent.opacity(0.09)))
-            .child(canvas(move |bounds, _, _| areas.borrow_mut().push((staged, bounds)), |_, _, _, _| {}).absolute().size_full())
-            .child(head)
-            .when(section.files.is_empty(), |list| {
-                list.child(
-                    div()
-                        .mx(rem(tokens.sp_6))
-                        .mt(rem(tokens.sp_2))
-                        .mb(rem(tokens.sp_6))
-                        .p(rem(10.0))
-                        .rounded(rem(tokens.r_sm))
-                        .border_1()
-                        .border_dashed()
-                        .border_color(if target { tokens.accent } else { tokens.line_strong })
-                        .typed(tokens.type_small)
-                        .text_color(if target { tokens.accent } else { tokens.fg_fainter })
-                        .text_center()
-                        .child("Drag a file here, or double-click it, to stage it"),
-                )
             })
-            .children(rows)
+    }
+
+    /// The box an empty list shows, saying how a file comes to it.
+    fn empty(&self, section: &ReviewSection, tokens: &Tokens) -> impl IntoElement {
+        let target = self.targeted(section.side == "staged");
+        div().pt(rem(tokens.sp_2)).pb(rem(tokens.sp_6)).px(rem(tokens.sp_6)).child(
+            div()
+                .h(rem(EMPTY_BOX))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(rem(tokens.r_sm))
+                .border_1()
+                .border_dashed()
+                .border_color(if target { tokens.accent } else { tokens.line_strong })
+                .typed(tokens.type_small)
+                .text_color(if target { tokens.accent } else { tokens.fg_fainter })
+                .text_center()
+                .child("Drag a file here, or double-click it, to stage it"),
+        )
     }
 
     /// `.row`: one file of a list — its status, name, folder and counts — and, hovered or lit, the
@@ -270,7 +290,7 @@ impl Files {
             .aria_selected(file.on)
             .aria_label(SharedString::from(format!("{} {}", title(if staged { "staged" } else { file.file.kind }), path)))
             .flex_shrink_0()
-            .h(rem(28.0))
+            .h(rem(FILE_ROW))
             .mx(rem(tokens.sp_2))
             .pl(rem(tokens.sp_8))
             .pr(rem(tokens.sp_6))

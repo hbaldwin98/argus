@@ -917,6 +917,17 @@ fn the_lit_file_is_brought_into_view_in_a_long_list(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_commit_of_thousands_of_files_draws_only_the_rows_in_view(cx: &mut TestAppContext) {
+    let opened = reviewed(cx);
+    let mut page = review();
+    page.files = (0..20_000).map(|i| file(&format!("src/file_{i:05}.rs"), 1, 0)).collect();
+    page.file = Some(0);
+    hear(cx, &opened, vec![reviewing(page)]);
+    assert!(present(cx, &opened, ("review-file", 0usize)));
+    assert!(!present(cx, &opened, ("review-file", 19_000usize)), "a file far below the window was drawn");
+}
+
+#[gpui_kit::test]
 fn the_reviews_keys_are_still_heard_after_a_stage_button_is_clicked(cx: &mut TestAppContext) {
     let opened = reviewed(cx);
     click(cx, &opened, "review-refresh");

@@ -12,16 +12,17 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use argus_desktop_core::checkouts::marks;
+use argus_desktop_core::checkouts::marks::{self, Mark};
 use argus_desktop_core::code::stage::CodeTreeRow;
 use argus_desktop_core::code::tree::{self as code_tree, folders_of};
 use argus_desktop_core::connection::page::{Call, ReviewPage};
 use argus_protocol::CodeChange;
 use gpui_kit::component::v_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, Context};
+use gpui_kit::{div, prelude::*, Context, Window};
 
 use crate::kit::ghosts::ghosts;
+use crate::kit::long_list::long_list;
 use crate::kit::tree::{self, Row};
 use crate::review::changes::side::{Files, Opened};
 use crate::style::Typed as _;
@@ -79,44 +80,62 @@ pub fn lit(page: &ReviewPage) -> Option<String> {
 }
 
 impl Files {
-    /// The tab's list: loading bars until the first list is in, then the rows.
-    pub(super) fn checkout(&self, page: &ReviewPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let list = v_flex()
-            .id("review-tree")
-            .test_support()
-            .role(gpui_kit::Role::Tree)
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .px(rem(tokens.sp_6))
-            .pt(rem(tokens.sp_4))
-            .pb(rem(10.0))
-            .gap(rem(tokens.hairline));
+    /// The tab's list: loading bars until the first list is in, then the rows, drawn only where
+    /// they are in view, since a large checkout's open tree runs to thousands.
+    pub(super) fn checkout(&self, page: &ReviewPage, tokens: &Tokens, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let list = v_flex().id("review-tree").test_support().role(gpui_kit::Role::Tree).flex_1().min_h_0();
+        let padded = |said: gpui_kit::AnyElement| div().px(rem(tokens.sp_6)).pt(rem(tokens.sp_4)).child(said);
         let Some(tree) = page.tree.as_ref().filter(|tree| tree.listed) else {
-            return list.child(ghosts("review-tree-loading", &[0.6, 0.8, 0.5, 0.7], tokens));
+            return list.child(padded(ghosts("review-tree-loading", &[0.6, 0.8, 0.5, 0.7], tokens).into_any_element()));
         };
         let changes = changes(page);
         let lit = lit(page);
         let rows = rows(&tree.files, &changes, &self.folders, self.changed_only, &self.query, lit.as_deref());
         if rows.is_empty() {
             let words = if self.query.is_empty() { "No file here." } else { "No file in the checkout matches." };
-            return list.child(said("review-tree-none", words, tokens));
+            return list.child(padded(said("review-tree-none", words, tokens).into_any_element()));
         }
         let under = marks::changed_under(changes.keys().map(String::as_str));
-        list.children(rows.iter().enumerate().map(|(at, row)| {
-            let entry = Row { path: &row.path, name: &row.name, depth: row.depth, dir: row.folder, open: row.open, on: row.on, ignored: false, ringed: false, mark: marks::of_code(row, &under) };
-            let (path, folder, change) = (row.path.clone(), row.folder, changes.get(&row.path).copied());
-            tree::row(("review-tree-row", at), &entry, None, tokens)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if !folder {
-                        this.open(&path, change, cx);
-                    } else if !this.folders.remove(&path) {
-                        this.folders.insert(path.clone());
-                    }
-                    cx.notify();
-                }))
-                .into_any_element()
-        }))
+        let drawn: Vec<(CodeTreeRow, Option<Mark>, Option<Change>)> = rows
+            .into_iter()
+            .map(|row| {
+                let mark = marks::of_code(&row, &under);
+                let change = changes.get(&row.path).copied();
+                (row, mark, change)
+            })
+            .collect();
+        // The gap between rows is the foot of each, so every row is one height.
+        let heights = vec![tokens.row_h + tokens.hairline; drawn.len()];
+        list.child(
+            long_list(cx.entity(), "review-tree-rows", &heights, window.rem_size(), &self.scroll, move |_, at, _, cx| {
+                let tokens = *Tokens::global(cx);
+                let (row, mark, change) = &drawn[at];
+                let entry = Row { path: &row.path, name: &row.name, depth: row.depth, dir: row.folder, open: row.open, on: row.on, ignored: false, ringed: false, mark: mark.clone() };
+                let (path, folder, change) = (row.path.clone(), row.folder, *change);
+                div()
+                    .pb(rem(tokens.hairline))
+                    .child(tree::row(("review-tree-row", at), &entry, None, &tokens).on_click(cx.listener(move |this, _, _, cx| {
+                        if !folder {
+                            this.open(&path, change, cx);
+                        } else if !this.folders.remove(&path) {
+                            this.folders.insert(path.clone());
+                        }
+                        cx.notify();
+                    })))
+                    .into_any_element()
+            })
+            .size_full()
+            .px(rem(tokens.sp_6))
+            .pt(rem(tokens.sp_4))
+            .pb(rem(10.0)),
+        )
+    }
+
+    /// The row of the tab the lit file is drawn in.
+    pub(super) fn tree_lit_row(&self, page: &ReviewPage) -> Option<usize> {
+        let tree = page.tree.as_ref()?;
+        let lit = lit(page)?;
+        rows(&tree.files, &changes(page), &self.folders, self.changed_only, &self.query, Some(&lit)).iter().position(|row| row.on)
     }
 
     /// A file opened from the tab: its change, or the file read whole.

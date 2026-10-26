@@ -5,6 +5,7 @@
 use super::*;
 use argus_desktop_core::review::drafts::{DraftView, DraftsPage};
 use argus_desktop_core::review::staging::{ReviewSection, SectionFile, StagingPage};
+use crate::review::changes::lines::change_id;
 
 fn listed(path: &str, kind: &'static str, on: bool, partly: bool) -> SectionFile {
     SectionFile { file: ReviewFile { kind, ..file(path, 2, 1) }, partly, on }
@@ -51,7 +52,7 @@ fn a_working_review_lists_both_sides_and_the_commit_box_and_says_what_is_in_both
     assert!(present(cx, &opened, ("review-section", 1usize)), "changed");
     assert!(present(cx, &opened, ("review-section", 2usize)), "untracked, since it holds a file");
     assert!(!present(cx, &opened, "review-side-staged"), "both sides are listed, so there is no side to pick");
-    assert_eq!(selected(cx, &opened, ("review-change", 10_000usize)), Some(true), "the file on screen, from its own list");
+    assert_eq!(selected(cx, &opened, ("review-change", change_id(1, 0))), Some(true), "the file on screen, from its own list");
     assert_eq!(selected(cx, &opened, ("review-change", 1usize)), Some(false), "the same file in the other list is not lit");
     assert!(present(cx, &opened, ("review-change-partly", 1usize)), "partly staged");
     assert!(present(cx, &opened, "review-commit-box"));
@@ -64,7 +65,7 @@ fn a_click_opens_a_file_on_its_side_and_the_lists_buttons_move_files_across(cx: 
     hear(cx, &opened, vec![reviewing(changes())]);
     click(cx, &opened, ("review-change", 0usize));
     assert_eq!(asked(&opened), [r#"OpenChange { staged: true, path: "README.md" }"#]);
-    click(cx, &opened, ("review-change-move", 10_000usize));
+    click(cx, &opened, ("review-change-move", change_id(1, 0)));
     assert_eq!(asked(&opened), [r#"Stage { gesture: File { staged: false, path: "src/lib.rs" } }"#]);
     click(cx, &opened, ("review-section-all", 0usize));
     assert_eq!(asked(&opened), [r#"Stage { gesture: Files { staged: false, paths: ["README.md", "src/lib.rs"] } }"#], "unstage all");
@@ -175,4 +176,46 @@ fn the_ruler_marks_each_run_of_changed_rows_and_a_press_only_scrolls(cx: &mut Te
     forget(&opened);
     click(cx, &opened, ("review-mark", 0usize));
     assert!(asked(&opened).is_empty());
+}
+
+/// Lists of `n` files each, past ten thousand so a list's rows cannot borrow the next one's ids:
+/// a large checkout's changes, with the file `on` of the changed list lit if there is one.
+fn thousands(n: usize, on: Option<usize>) -> ReviewPage {
+    let many = |side: &'static str, kind: &'static str, lit: Option<usize>| ReviewSection {
+        side,
+        files: (0..n).map(|i| listed(&format!("dir{}/file{i}.rs", i % 40), kind, Some(i) == lit, false)).collect(),
+    };
+    ReviewPage { sections: vec![many("staged", "modified", None), many("unstaged", "modified", on), many("untracked", "untracked", None)], ..changes() }
+}
+
+#[gpui_kit::test]
+fn thousands_of_changed_files_draw_only_the_rows_in_view(cx: &mut TestAppContext) {
+    let opened = on_main(cx);
+    hear(cx, &opened, vec![reviewing(thousands(12_000, None))]);
+    assert!(present(cx, &opened, ("review-section", 0usize)), "the first list's head");
+    assert!(present(cx, &opened, ("review-change", change_id(0, 0))), "the first file in view");
+    assert!(!present(cx, &opened, ("review-change", change_id(0, 11_000))), "a file far below the window was drawn");
+    assert!(!present(cx, &opened, ("review-section", 2usize)), "the last list's head is far below");
+}
+
+#[gpui_kit::test]
+fn the_lit_change_far_down_its_list_is_brought_into_view(cx: &mut TestAppContext) {
+    let opened = on_main(cx);
+    hear(cx, &opened, vec![reviewing(thousands(12_000, Some(11_500)))]);
+    cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    assert_eq!(selected(cx, &opened, ("review-change", change_id(1, 11_500))), Some(true), "the file on screen, in view and lit");
+    assert!(!present(cx, &opened, ("review-change", change_id(0, 0))), "the top of the lists scrolled away");
+}
+
+#[gpui_kit::test]
+fn a_file_dragged_from_the_changes_and_let_go_over_the_staged_list_is_staged(cx: &mut TestAppContext) {
+    let opened = on_main(cx);
+    hear(cx, &opened, vec![reviewing(changes())]);
+    let bounds = |cx: &mut TestAppContext, id: (&'static str, usize)| cx.update_window(opened.handle, |_, window, _| window.find(id).bounds()).unwrap();
+    let (from, onto) = (bounds(cx, ("review-change", change_id(1, 0))).center(), bounds(cx, ("review-change", change_id(0, 0))).center());
+    pointer(cx, &opened, from, "down");
+    pointer(cx, &opened, point(from.x, from.y - px(8.0)), "move");
+    pointer(cx, &opened, onto, "move");
+    pointer(cx, &opened, onto, "up");
+    assert_eq!(asked(&opened), [r#"Stage { gesture: Files { staged: true, paths: ["src/lib.rs"] } }"#]);
 }
