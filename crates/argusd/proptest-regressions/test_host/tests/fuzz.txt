@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 466e17e0a58ea8ddc46ef0e6d829eadf38f5d658c75393cd52087a848016cbac # shrinks to [Review { request_id: 1, checkout: CheckoutId(3), base: Unstaged, commit: None }, Restart]
+cc 660bfdc9bbd74651a01316a679e204a22221c5bd7f9a0eb1f561974267b7fdb0 # shrinks to [ReviewFile { request_id: 0, checkout: CheckoutId(3), base: Unstaged, path: "../outside.txt", old_path: None, kind: Modified }]

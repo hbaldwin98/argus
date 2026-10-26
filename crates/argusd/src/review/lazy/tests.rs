@@ -140,3 +140,17 @@ fn a_file_gone_since_it_was_listed_reads_as_deleted() {
     assert_eq!(removed, ["fn a() {}"], "what the index holds, against nothing");
     assert_eq!(read.new_blob, None);
 }
+
+#[test]
+fn a_file_named_outside_the_checkout_is_refused_and_nothing_is_read() {
+    let (_dir, path) = repo_with(&[("a.rs", b"fn a() {}
+")]);
+    let outside = path.parent().unwrap().join("secret.txt");
+    std::fs::write(&outside, "secret
+").unwrap();
+    let absolute = outside.to_string_lossy().into_owned();
+    for (file, old_path) in [(absolute.as_str(), None), ("../secret.txt", None), ("a.rs", Some("/etc/passwd"))] {
+        let refused = read(&path, ReviewBase::Unstaged, file, old_path, ChangeKind::Renamed).unwrap_err();
+        assert!(refused.to_string().contains("not a path in the checkout"), "{file}: {refused}");
+    }
+}

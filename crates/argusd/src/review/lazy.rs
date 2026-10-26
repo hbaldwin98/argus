@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use anyhow::Context;
-use argus_protocol::{ChangeKind, FileDiff, ReviewBase};
+use argus_protocol::{is_checkout_relative, ChangeKind, FileDiff, ReviewBase};
 
 use crate::review::diff::{
     blob_id_spans, capture_blob, hang_spans, render_patch, slashed, wanted_sides, GeneratedReview, BINARY_NOTE, MAX_DIFF_BYTES, TOO_LARGE_NOTE,
@@ -84,6 +84,11 @@ fn listed(delta: &git2::DiffDelta) -> Option<FileDiff> {
 /// for the folds. The new side of an unstaged file is written to the object
 /// database, as the full review writes it, so a fold reads what was diffed.
 pub fn read(path: &Path, base: ReviewBase, file: &str, old_path: Option<&str>, kind: ChangeKind) -> anyhow::Result<FileDiff> {
+    // The paths are the client's: one outside the checkout would be read
+    // from wherever it named, and git2 panics on one that is not relative.
+    if let Some(outside) = [Some(file), old_path].into_iter().flatten().find(|p| !is_checkout_relative(p)) {
+        anyhow::bail!("{outside} is not a path in the checkout");
+    }
     let repo = git2::Repository::open(path).with_context(|| format!("could not open Git repository at {}", path.display()))?;
     let index = repo.index().context("could not read Git index")?;
     let from = old_path.filter(|_| kind == ChangeKind::Renamed).unwrap_or(file);
