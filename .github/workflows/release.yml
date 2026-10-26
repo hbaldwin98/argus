@@ -136,6 +136,10 @@ jobs:
           Compress-Archive -Path $packageDir -DestinationPath $archive
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
           "$hash  $package.zip" | Set-Content -Encoding ascii "$archive.sha256"
+          # The symbols, apart so an update does not download them: a crash log's offsets are read
+          # against them by `scripts/symbolize.ps1`.
+          $symbols = Join-Path "dist" "$package-symbols.zip"
+          Compress-Archive -Path "target/$env:TARGET/release/*.pdb" -DestinationPath $symbols
 
       - name: Upload packaged release
         uses: actions/upload-artifact@v5

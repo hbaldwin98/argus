@@ -40,9 +40,48 @@ pub fn init(stem: &str) {
 fn log_panics() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        tracing::error!("{}\n{}", panic_words(info), Backtrace::force_capture());
+        tracing::error!("{}\n{}{}", panic_words(info), Backtrace::force_capture(), offsets());
         default(info);
     }));
+}
+
+/// Where each frame sits in this executable, as an offset from where it was loaded. A Windows
+/// release ships its `.pdb` files apart from the executables, so its backtrace is every frame
+/// `<unknown>`; these offsets are the same on every machine, and `scripts/symbolize.ps1` reads
+/// them against that release's symbols archive. Elsewhere the line tables are in the executable
+/// and the backtrace above already names each line.
+#[cfg(windows)]
+fn offsets() -> String {
+    let mut frames = Vec::new();
+    backtrace::trace(|frame| {
+        frames.push((frame.ip() as usize, frame.module_base_address().map(|base| base as usize)));
+        true
+    });
+    let exe = std::env::current_exe().ok().and_then(|exe| exe.file_name().map(|name| name.to_string_lossy().into_owned()));
+    offsets_in(exe.as_deref().unwrap_or("the executable"), &frames)
+}
+
+#[cfg(not(windows))]
+fn offsets() -> String {
+    String::new()
+}
+
+/// The line `frames` make, each an instruction pointer and the base of the module it is in. The
+/// first frame is this hook's own, so its module is the executable; a frame in any other module
+/// is `-`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn offsets_in(exe: &str, frames: &[(usize, Option<usize>)]) -> String {
+    let Some(ours) = frames.first().and_then(|(_, base)| *base) else {
+        return String::new();
+    };
+    let each: Vec<String> = frames
+        .iter()
+        .map(|(ip, base)| match base {
+            Some(base) if *base == ours => format!("{:#x}", ip - base),
+            _ => "-".to_owned(),
+        })
+        .collect();
+    format!("offsets in {exe}: {}\n", each.join(" "))
 }
 
 fn panic_words(info: &PanicHookInfo<'_>) -> String {
@@ -105,5 +144,18 @@ mod tests {
         assert!(log.contains("ERROR"), "{log}");
         assert!(log.contains("the tree had no project 7"), "{log}");
         assert!(log.contains(&format!("logging.rs:{line}")), "{log}");
+        #[cfg(windows)]
+        assert!(log.contains("offsets in "), "{log}");
+    }
+
+    #[test]
+    fn a_frame_is_an_offset_into_the_executable_and_one_elsewhere_is_a_dash() {
+        let frames = [(0x1400_1234, Some(0x1400_0000)), (0x7ff0_0010, Some(0x7ff0_0000)), (0x9, None), (0x1400_2000, Some(0x1400_0000))];
+        assert_eq!(offsets_in("argus-desktop-next.exe", &frames), "offsets in argus-desktop-next.exe: 0x1234 - - 0x2000\n");
+    }
+
+    #[test]
+    fn no_offsets_are_said_when_the_executable_cannot_be_placed() {
+        assert_eq!(offsets_in("argus-desktop-next.exe", &[(0x10, None)]), "");
     }
 }

@@ -49,6 +49,11 @@ png = { version = "0.18", optional = true }
 # A browser's picture as bytes, decoded once from the base64 the daemon sends (`browser/picture`).
 base64 = { workspace = true }
 
+# Where a panic's frames sit in the executable, which a release without its symbols still logs
+# (`system::logging`); the version std's own backtrace is built on.
+[target.'cfg(windows)'.dependencies.backtrace]
+version = "0.3.76"
+
 # The build, which says whether Mica and Acrylic are there to offer
 # (`settings::backdrop`).
 [target.'cfg(windows)'.dependencies]

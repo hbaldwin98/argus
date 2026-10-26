@@ -87,6 +87,10 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+# A panic's backtrace is the only record of a crash on someone else's machine, and without line
+# tables every frame is `<unknown>`. On Windows they live in the `.pdb` files, which a release
+# ships as an archive of their own (`scripts/symbolize.ps1`).
+debug = "line-tables-only"
 
 # gpui-kit pins gpui-base, whose editor has no way to apply an agent's edit without moving the
 # person's cursor or entering undo, and no gutter marks: `patches/gpui-base` is 0.8.0 plus those
