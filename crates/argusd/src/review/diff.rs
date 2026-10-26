@@ -2,7 +2,7 @@
 //! Git object database, but never changes HEAD, branches, the real index, or
 //! the working directory.
 
-use std::cell::{Cell as ValueCell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -251,6 +251,7 @@ fn capture(repo: &git2::Repository) -> anyhow::Result<Snapshot> {
         .statuses(Some(&mut opts))
         .context("could not inspect working tree")?;
     let mut untracked = HashSet::new();
+    let mut changed: Vec<(String, std::path::PathBuf)> = Vec::new();
     for status in statuses.iter() {
         let path = status.path().context("review path is not valid UTF-8")?;
         let flags = status.status();
@@ -266,25 +267,72 @@ fn capture(repo: &git2::Repository) -> anyhow::Result<Snapshot> {
                 // worktree is a separate repository and review boundary.
                 continue;
             }
-            let (id, file_size) = capture_blob(repo, &full)
-                .with_context(|| format!("could not capture {}", full.display()))?;
-            let mut entry = source
-                .get_path(Path::new(path), 0)
-                .unwrap_or_else(|| new_entry(path, &full));
-            entry.path = path.as_bytes().to_vec();
-            entry.mode = worktree_mode(&full, entry.mode);
-            entry.id = id;
-            entry.file_size = file_size;
-            synthetic.add(&entry)?;
             if flags.contains(git2::Status::WT_NEW) {
                 untracked.insert(path.replace('\\', "/"));
             }
+            changed.push((path.to_owned(), full));
         }
+    }
+    let blobs = capture_blobs(repo, &changed)?;
+    for ((path, full), (id, file_size)) in changed.iter().zip(blobs) {
+        let mut entry = source
+            .get_path(Path::new(path), 0)
+            .unwrap_or_else(|| new_entry(path, full));
+        entry.path = path.as_bytes().to_vec();
+        entry.mode = worktree_mode(full, entry.mode);
+        entry.id = id;
+        entry.file_size = file_size;
+        synthetic.add(&entry)?;
     }
     let tree = synthetic
         .write_tree_to(repo)
         .context("could not write review snapshot")?;
     Ok(Snapshot { tree, untracked })
+}
+
+/// Writes each changed file's content to the object database, in `changed`'s
+/// order. Each write costs a millisecond or two, which a large checkout's
+/// thousands of changes made the most of a review's time, so past a handful
+/// they are shared among threads, each with its own handle on the repository,
+/// since a `Repository` is not to be shared. Two files of the same content
+/// can race to rename onto one object, which Windows refuses once the first
+/// is in place; a write that failed is tried again alone, when the object it
+/// wanted is there to be reused.
+fn capture_blobs(
+    repo: &git2::Repository,
+    changed: &[(String, std::path::PathBuf)],
+) -> anyhow::Result<Vec<(git2::Oid, u32)>> {
+    let capture = |repo: &git2::Repository, full: &Path| {
+        capture_blob(repo, full).with_context(|| format!("could not capture {}", full.display()))
+    };
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(8);
+    if changed.len() < 64 || threads == 1 {
+        return changed.iter().map(|(_, full)| capture(repo, full)).collect();
+    }
+    let git_dir = repo.path().to_path_buf();
+    let chunk = changed.len().div_ceil(threads);
+    let tried: Vec<Option<(git2::Oid, u32)>> = std::thread::scope(|scope| {
+        let workers: Vec<_> = changed
+            .chunks(chunk)
+            .map(|part| {
+                let git_dir = &git_dir;
+                scope.spawn(move || {
+                    let Ok(repo) = git2::Repository::open(git_dir) else { return vec![None; part.len()] };
+                    part.iter().map(|(_, full)| capture_blob(&repo, full).ok()).collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        // A worker that panicked answers none of its part, which is then written here.
+        workers.into_iter().zip(changed.chunks(chunk)).flat_map(|(worker, part)| worker.join().unwrap_or_else(|_| vec![None; part.len()])).collect()
+    });
+    changed
+        .iter()
+        .enumerate()
+        .map(|(i, (_, full))| match tried.get(i).copied().flatten() {
+            Some(blob) => Ok(blob),
+            None => capture(repo, full),
+        })
+        .collect()
 }
 
 fn capture_blob(repo: &git2::Repository, path: &Path) -> anyhow::Result<(git2::Oid, u32)> {
@@ -392,71 +440,76 @@ fn render_diff(
     untracked: &HashSet<String>,
 ) -> anyhow::Result<Vec<FileDiff>> {
     with_diff(repo, old, target, |diff| {
-        let files: RefCell<Vec<FileDiff>> = RefCell::new(Vec::new());
-        let rendered_lines = ValueCell::new(0usize);
-        diff.foreach(
-            &mut |delta, _| {
+        let mut files = Vec::with_capacity(diff.deltas().len());
+        let mut rendered_lines = 0usize;
+        for index in 0..diff.deltas().len() {
+            // Past the cap a file is listed from its delta alone. Its patch is
+            // never made: a large checkout's changes run to hundreds of
+            // thousands of lines, and making them all to keep the first
+            // twenty thousand was most of a review's time.
+            if rendered_lines >= MAX_TOTAL_LINES {
+                let delta = diff.get_delta(index).context("a review delta went missing")?;
                 let mut file = new_file(&delta, untracked);
-                if rendered_lines.get() >= MAX_TOTAL_LINES && file.note.is_none() {
-                    file.note = Some(TOO_LARGE_NOTE.to_string());
-                }
-                files.borrow_mut().push(file);
-                true
-            },
-            None,
-            Some(&mut |_, hunk| {
-                if let Some(file) = files.borrow_mut().last_mut() {
-                    if file.note.is_none() {
-                        file.hunks.push(Hunk {
-                            header: String::from_utf8_lossy(hunk.header())
-                                .trim_end()
-                                .to_string(),
-                            lines: Vec::new(),
-                        });
-                    }
-                }
-                true
-            }),
-            Some(&mut |_, _, line| {
-                let mut files = files.borrow_mut();
-                let Some(file) = files.last_mut() else {
-                    return true;
-                };
-                if file.note.is_some() {
-                    return true;
-                }
-                if rendered_lines.get() >= MAX_TOTAL_LINES {
-                    file.hunks.clear();
-                    file.note = Some(TOO_LARGE_NOTE.to_string());
-                    return true;
-                }
-                let kind = match line.origin() {
-                    '+' => LineKind::Added,
-                    '-' => LineKind::Removed,
-                    ' ' => LineKind::Context,
-                    _ => return true,
-                };
-                if let Some(hunk) = file.hunks.last_mut() {
-                    hunk.lines.push(DiffLine {
-                        kind,
-                        old_lineno: line.old_lineno(),
-                        new_lineno: line.new_lineno(),
-                        text: String::from_utf8_lossy(line.content())
-                            .trim_end_matches(['\n', '\r'])
-                            .to_string(),
-                        spans: Vec::new(),
-                    });
-                    rendered_lines.set(rendered_lines.get() + 1);
-                }
-                if total_lines(file) > MAX_LINES_PER_FILE {
-                    file.hunks.clear();
-                    file.note = Some(TOO_LARGE_NOTE.to_string());
-                }
-                true
-            }),
-        )?;
-        Ok(files.into_inner())
+                file.note.get_or_insert_with(|| TOO_LARGE_NOTE.to_string());
+                files.push(file);
+                continue;
+            }
+            let Some(patch) = git2::Patch::from_diff(diff, index)? else {
+                let delta = diff.get_delta(index).context("a review delta went missing")?;
+                files.push(new_file(&delta, untracked));
+                continue;
+            };
+            // The patch's delta, not the diff's: only making the patch reads
+            // the content that says a file is binary.
+            let mut file = new_file(&patch.delta(), untracked);
+            if file.note.is_none() {
+                rendered_lines += render_patch(&patch, &mut file, rendered_lines)?;
+            }
+            files.push(file);
+        }
+        Ok(files)
     })
+}
+
+/// Fills `file` with `patch`'s hunks, or notes it too large once it passes the
+/// per-file cap or the review passes the total one; how many lines it kept.
+/// A file cut short still counts the lines it kept before the cut.
+fn render_patch(patch: &git2::Patch<'_>, file: &mut FileDiff, before: usize) -> anyhow::Result<usize> {
+    let mut kept = 0usize;
+    for h in 0..patch.num_hunks() {
+        let (hunk, count) = patch.hunk(h)?;
+        file.hunks.push(Hunk {
+            header: String::from_utf8_lossy(hunk.header()).trim_end().to_string(),
+            lines: Vec::new(),
+        });
+        for l in 0..count {
+            if before + kept >= MAX_TOTAL_LINES || kept > MAX_LINES_PER_FILE {
+                file.hunks.clear();
+                file.note = Some(TOO_LARGE_NOTE.to_string());
+                return Ok(kept);
+            }
+            let line = patch.line_in_hunk(h, l)?;
+            let kind = match line.origin() {
+                '+' => LineKind::Added,
+                '-' => LineKind::Removed,
+                ' ' => LineKind::Context,
+                _ => continue,
+            };
+            file.hunks.last_mut().expect("a hunk was just pushed").lines.push(DiffLine {
+                kind,
+                old_lineno: line.old_lineno(),
+                new_lineno: line.new_lineno(),
+                text: String::from_utf8_lossy(line.content()).trim_end_matches(['\n', '\r']).to_string(),
+                spans: Vec::new(),
+            });
+            kept += 1;
+        }
+    }
+    if kept > MAX_LINES_PER_FILE {
+        file.hunks.clear();
+        file.note = Some(TOO_LARGE_NOTE.to_string());
+    }
+    Ok(kept)
 }
 
 /// Hangs syntax spans on every line of every file, parsing whole blobs rather
@@ -565,13 +618,14 @@ fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {
 fn slashed(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
-fn total_lines(file: &FileDiff) -> usize {
-    file.hunks.iter().map(|h| h.lines.len()).sum()
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn total_lines(file: &FileDiff) -> usize {
+        file.hunks.iter().map(|h| h.lines.len()).sum()
+    }
     use std::path::PathBuf;
 
     fn repo_with(files: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
@@ -793,6 +847,48 @@ mod tests {
             .files
             .iter()
             .any(|file| file.note.as_deref() == Some(TOO_LARGE_NOTE)));
+    }
+
+    #[test]
+    fn every_file_past_the_line_limit_is_still_listed_as_too_large() {
+        let (_dir, path) = repo_with(&[("base.txt", "base\n")]);
+        let body: String = (0..MAX_LINES_PER_FILE).map(|line| format!("line {line}\n")).collect();
+        for file in 0..MAX_TOTAL_LINES / MAX_LINES_PER_FILE {
+            write(&path, &format!("a-large-{file}.txt"), &body);
+        }
+        for file in 0..3 {
+            write(&path, &format!("z-small-{file}.txt"), "one line\n");
+        }
+
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
+        let small: Vec<&FileDiff> = review.files.iter().filter(|f| f.path.starts_with("z-small")).collect();
+        assert_eq!(small.len(), 3, "listed though nothing of them is drawn");
+        assert!(small.iter().all(|f| f.hunks.is_empty() && f.note.as_deref() == Some(TOO_LARGE_NOTE)));
+        assert_eq!(review.files.iter().map(total_lines).sum::<usize>(), MAX_TOTAL_LINES, "the large files fill the review exactly");
+    }
+
+    #[test]
+    fn many_changes_are_each_captured_with_their_own_content() {
+        let files: Vec<(String, &str)> = (0..200).map(|i| (format!("f{i:03}.txt"), "old\n")).collect();
+        let listed: Vec<(&str, &str)> = files.iter().map(|(name, body)| (name.as_str(), *body)).collect();
+        let (_dir, path) = repo_with(&listed);
+        // Half the edits and every new file are one content, which the writes
+        // share among threads race to store as one object.
+        let wants = |name: &str, i: usize| if i.is_multiple_of(2) || name.starts_with('u') { "same".to_owned() } else { format!("new {i}") };
+        for i in 0..200 {
+            write(&path, &format!("f{i:03}.txt"), &format!("{}\n", wants("f", i)));
+        }
+        for i in 0..100 {
+            write(&path, &format!("u{i:03}.txt"), "same\n");
+        }
+
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
+        assert_eq!(review.files.len(), 300);
+        for file in &review.files {
+            let i: usize = file.path[1..4].parse().unwrap();
+            let added: Vec<&str> = file.hunks.iter().flat_map(|h| &h.lines).filter(|l| l.kind == LineKind::Added).map(|l| l.text.as_str()).collect();
+            assert_eq!(added, [wants(&file.path, i)], "{}", file.path);
+        }
     }
 
     #[test]
