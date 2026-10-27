@@ -12,7 +12,7 @@
 //! one is down its tabs, keys and open dialogs are gone.
 //!
 //! Running each configured extension is `running`'s, and the consoles its
-//! views run `consoles`'s.
+//! views run `consoles`'s, handed over when it exits.
 
 pub(super) mod consoles;
 pub(super) mod running;
@@ -112,12 +112,29 @@ impl Daemon {
     }
 
     /// Takes everything `name` published off every client, its open
-    /// dialogs with it: an extension that is down shows nothing.
+    /// dialogs and its consoles with it: an extension that is down shows
+    /// nothing.
     pub fn retire_extension(&self, name: &str) {
+        if self.take_down(name) {
+            self.end_consoles_of(name);
+        }
+    }
+
+    /// As [`Self::retire_extension`], for an extension whose process
+    /// exited and is to be started again: its consoles wait for the one
+    /// started in its place, for `wait`.
+    pub(in crate::state) fn extension_exited(self: &Arc<Self>, name: &str, wait: std::time::Duration) {
+        if self.take_down(name) {
+            self.hand_over_consoles(name, wait);
+        }
+    }
+
+    /// Takes what `name` published off every client; false when it was not
+    /// admitted.
+    fn take_down(&self, name: &str) -> bool {
         let Some(gone) = self.extensions.lock().unwrap().extensions.remove(name) else {
-            return;
+            return false;
         };
-        self.end_consoles_of(name);
         for dialog in gone.dialogs {
             self.tell_extensions(ExtensionNews::Withdrawn { viewer: dialog.viewer, id: dialog.id });
         }
@@ -127,6 +144,7 @@ impl Daemon {
         if !gone.commands.is_empty() {
             self.tell_extensions(ExtensionNews::Commands);
         }
+        true
     }
 
     /// Whether `bearer` is the token `name` was admitted with.

@@ -4,7 +4,9 @@
 //!
 //! An extension is admitted before it starts and retired the moment it
 //! exits, so a crashed one shows nothing — no tabs, no keys, no dialogs —
-//! until the one started in its place publishes again.
+//! until the one started in its place publishes again. Its consoles keep
+//! running for that one to take over (`consoles`); stopping the daemon
+//! ends them.
 
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -110,13 +112,17 @@ impl Daemon {
                 }
                 Err(error) => tracing::warn!("could not start extension {}: {error}", config.name),
             }
-            self.retire_extension(&config.name);
+            self.extension_exited(&config.name, super::consoles::HANDOVER);
             if started.elapsed() >= RESTART_MAX {
                 wait = first_wait;
             }
             tokio::select! {
                 _ = tokio::time::sleep(wait) => {}
-                _ = stopped.changed() => return,
+                _ = stopped.changed() => {
+                    // Nothing will be started to take its consoles over.
+                    self.end_consoles_of(&config.name);
+                    return;
+                }
             }
             wait = (wait * 2).min(RESTART_MAX);
         }

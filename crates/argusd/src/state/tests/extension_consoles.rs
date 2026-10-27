@@ -1,6 +1,8 @@
 //! Extensions' console views: the panes the daemon runs for them, kept and
 //! restarted as the views are published, and ended as the views go.
 
+use std::time::Duration;
+
 use argus_protocol::{ConsoleEnd, ExtEvent, ExtView};
 
 use super::*;
@@ -114,6 +116,69 @@ async fn an_extension_that_stops_takes_every_console_it_ran() {
     assert!(panes.iter().all(|pane| d.processes.killed(*pane)));
     assert!(d.console_panes("dev").is_empty());
     assert!(d.subscribe_pane(panes[0]).is_err());
+}
+
+/// The extension `dev` exits, and the one started in its place is admitted
+/// and listening, as `running` does it.
+fn restart(d: &ScriptedDaemon, wait: Duration) -> tokio::sync::mpsc::UnboundedReceiver<ExtEvent> {
+    d.extension_exited("dev", wait);
+    d.admit_extension("dev");
+    d.open_extension_events("dev").unwrap().1
+}
+
+#[tokio::test]
+async fn an_extension_restarted_takes_over_the_consoles_it_publishes_the_same() {
+    let (_dir, d, scope, _events) = dev_on_a_checkout();
+    let stack = console_view("stack", &scope, r#"{"command": ["sh"], "cwd": "web"}"#);
+    d.publish_views("dev", vec![stack.clone()]).unwrap();
+    let pane = pane_of(&d, "stack").unwrap();
+
+    let _events = restart(&d, Duration::from_secs(60));
+    assert!(!d.processes.killed(pane), "an extension exiting is no request to stop the person's stack");
+    assert!(d.extension_views().is_empty(), "while it is down it shows nothing");
+    d.publish_views("dev", vec![stack]).unwrap();
+
+    assert_eq!(pane_of(&d, "stack"), Some(pane), "the same process, not a new one");
+    assert!(!d.processes.killed(pane));
+    assert_eq!(d.console_panes("dev"), [pane]);
+}
+
+#[tokio::test]
+async fn a_console_published_differently_after_a_restart_is_started_anew_and_the_old_one_waits_out_its_handover() {
+    let (_dir, d, scope, _events) = dev_on_a_checkout();
+    d.publish_views("dev", vec![console_view("stack", &scope, r#"{"command": ["sh"]}"#)]).unwrap();
+    let old = pane_of(&d, "stack").unwrap();
+
+    let _events = restart(&d, Duration::from_millis(50));
+    d.publish_views("dev", vec![console_view("stack", &scope, r#"{"command": ["bash"]}"#)]).unwrap();
+
+    let new = pane_of(&d, "stack").unwrap();
+    assert_ne!(new, old, "another run is another process");
+    assert!(!d.processes.killed(old), "unclaimed, it is still in its handover");
+    for _ in 0..100 {
+        if d.processes.killed(old) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(d.processes.killed(old), "ended once the handover is over");
+    assert!(!d.processes.killed(new));
+    assert_eq!(d.console_panes("dev"), [new]);
+}
+
+#[tokio::test]
+async fn a_console_claimed_is_not_ended_by_the_handover_it_left() {
+    let (_dir, d, scope, _events) = dev_on_a_checkout();
+    let stack = console_view("stack", &scope, r#"{"command": ["sh"]}"#);
+    d.publish_views("dev", vec![stack.clone()]).unwrap();
+    let pane = pane_of(&d, "stack").unwrap();
+
+    let _events = restart(&d, Duration::from_millis(20));
+    d.publish_views("dev", vec![stack]).unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert!(!d.processes.killed(pane));
+    assert_eq!(pane_of(&d, "stack"), Some(pane));
 }
 
 #[tokio::test]

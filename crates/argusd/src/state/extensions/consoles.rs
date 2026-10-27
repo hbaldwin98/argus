@@ -7,21 +7,44 @@
 //! not one of the person's tabs and is not brought back by a restart: the
 //! extension publishes its view again when it starts, and that starts it.
 //!
+//! An extension whose process exits hands its consoles over rather than
+//! taking them with it: a console may be the person's whole stack of
+//! services, and an extension crashing or restarting is no request to stop
+//! them. The one started in its place takes over each console it publishes
+//! the same run of; any left unclaimed after [`HANDOVER`] is ended.
+//!
 //! Lock order is the registry, then `inner`. A start holds only `inner`, so a
 //! process that exits at once finds its pane; an exit takes the two one after
 //! the other, never together.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use argus_protocol::{ConsoleEnd, ExtConsole, ExtEvent, ExtScope, ExtView};
 
 use crate::state::*;
+
+/// How long a console waits for the extension restarted in its place to
+/// claim it. Longer than the longest wait between restarts, so a crashing
+/// extension's consoles outlast its backoff.
+pub(in crate::state) const HANDOVER: Duration = Duration::from_secs(120);
+
+/// Names each handover, so a wait that ends finds only the consoles it was
+/// for, not ones handed over again since.
+static HANDOVERS: AtomicU64 = AtomicU64::new(0);
 
 /// A pane running an extension's console view.
 pub(in crate::state) struct HeldConsole {
     extension: String,
     view: String,
     pane: Pane,
+    /// Where and what it was asked to run, for the extension restarted in
+    /// its place to claim it by.
+    scope: ExtScope,
+    run: ExtConsole,
+    /// The handover it waits in, while its extension is down.
+    orphaned: Option<u64>,
 }
 
 impl HeldConsole {
@@ -62,7 +85,8 @@ impl Daemon {
                 .and_then(|b| b.console.as_ref())
                 .filter(|b| b.same_run(console) && b.ended.is_none())
                 .and_then(|b| b.pane)
-                .filter(|pane| self.console_running(name, &view_name, *pane));
+                .filter(|pane| self.console_running(name, &view_name, *pane))
+                .or_else(|| self.handed_over(name, &view_name, scope, console));
             // What the extension sent in the daemon's fields is not read.
             console.pane = kept;
             console.ended = None;
@@ -71,7 +95,7 @@ impl Daemon {
             }
             let at = format!("views[{i}].console");
             let begun = self.console_dir(scope, console.cwd.as_deref(), &format!("{at}.cwd")).and_then(|dir| {
-                self.start_console(name, &view_name, &title, console, &dir).map_err(|e| anyhow::anyhow!("{at}.command: {e}"))
+                self.start_console(name, &view_name, &title, scope, console, &dir).map_err(|e| anyhow::anyhow!("{at}.command: {e}"))
             });
             match begun {
                 Ok(pane) => {
@@ -95,6 +119,7 @@ impl Daemon {
         name: &str,
         view: &str,
         title: &str,
+        scope: ExtScope,
         console: &ExtConsole,
         dir: &Path,
     ) -> anyhow::Result<PaneId> {
@@ -120,7 +145,9 @@ impl Daemon {
             )
             .map_err(|e| anyhow::anyhow!("could not start {program}: {e}"))?;
         let pane = Pane::new(id, PaneKind::Shell, title.to_string(), runtime);
-        inner.extension_consoles.push(HeldConsole { extension: name.to_string(), view: view.to_string(), pane });
+        let run = ExtConsole { pane: None, ended: None, ..console.clone() };
+        let held = HeldConsole { extension: name.to_string(), view: view.to_string(), pane, scope, run, orphaned: None };
+        inner.extension_consoles.push(held);
         Ok(id)
     }
 
@@ -128,6 +155,40 @@ impl Daemon {
         let inner = self.inner.lock().unwrap();
         let held = inner.extension_consoles.iter().find(|h| h.pane.id == pane);
         held.is_some_and(|h| h.extension == name && h.view == view && h.ended().is_none())
+    }
+
+    /// The pane of a console `name` handed over that is still running what
+    /// `view` asks for, in the same scope. It stays handed over until the
+    /// publish settles, so a publish refused afterwards leaves it waiting.
+    fn handed_over(&self, name: &str, view: &str, scope: ExtScope, console: &ExtConsole) -> Option<PaneId> {
+        let inner = self.inner.lock().unwrap();
+        let held = inner.extension_consoles.iter().find(|h| {
+            h.extension == name && h.view == view && h.orphaned.is_some() && h.ended().is_none()
+        });
+        held.filter(|h| h.scope == scope && h.run.same_run(console)).map(|h| h.pane.id)
+    }
+
+    /// Hands the consoles of `name`, whose process exited, over to the one
+    /// started in its place, and ends those it has not claimed after
+    /// `wait`, [`HANDOVER`] but in a test. On the runtime.
+    pub(in crate::state) fn hand_over_consoles(self: &Arc<Self>, name: &str, wait: Duration) {
+        let handover = HANDOVERS.fetch_add(1, Ordering::Relaxed);
+        let any = {
+            let mut inner = self.inner.lock().unwrap();
+            let mut any = false;
+            for held in inner.extension_consoles.iter_mut().filter(|h| h.extension == name && h.orphaned.is_none()) {
+                held.orphaned = Some(handover);
+                any = true;
+            }
+            any
+        };
+        if any {
+            let daemon = self.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(wait).await;
+                daemon.end_consoles(|held| held.orphaned == Some(handover));
+            });
+        }
     }
 
     /// Where a console of a view in `scope` runs: `cwd` under the scope's
@@ -186,8 +247,10 @@ impl Daemon {
     /// Makes the panes of `name` the ones `views` name, and reads into each
     /// view how its console stands. A command that ended before the publish
     /// landed found no view to record it in, so its ending is told to the
-    /// extension here, on `events`, unless `old` already says it ended. Returns the panes no view names, to be
-    /// retired by a caller that no longer holds the registry.
+    /// extension here, on `events`, unless `old` already says it ended. A
+    /// console handed over that a view names is the extension's again; one
+    /// none names waits out its handover. Returns the panes no view names,
+    /// to be retired by a caller that no longer holds the registry.
     pub(in crate::state) fn settle_consoles(
         &self,
         name: &str,
@@ -207,9 +270,12 @@ impl Daemon {
             console.ended = ended;
         }
         let named: Vec<PaneId> = views.iter().filter_map(|v| v.console.as_ref()?.pane).collect();
+        for held in inner.extension_consoles.iter_mut().filter(|h| named.contains(&h.pane.id)) {
+            held.orphaned = None;
+        }
         let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut inner.extension_consoles)
             .into_iter()
-            .partition(|h| h.extension == name && !named.contains(&h.pane.id));
+            .partition(|h| h.extension == name && h.orphaned.is_none() && !named.contains(&h.pane.id));
         inner.extension_consoles = kept;
         gone.into_iter().map(|h| h.pane).collect()
     }
