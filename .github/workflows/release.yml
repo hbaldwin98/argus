@@ -93,10 +93,11 @@ jobs:
             libx11-xcb-dev libxcb1-dev
 
       - name: Build release binaries
-        # A macOS backtrace cannot read the line tables (they stay in the objects the build leaves
-        # behind), and they took its fat-LTO build past the job's hour.
+        # Only Windows keeps the line tables, in .pdb files shipped apart from the archive. On Linux
+        # they are inside the executables and tripled its archives (47 MB to 138 MB for 0.42.2); a
+        # macOS backtrace cannot read them, and they took its fat-LTO build past the job's hour.
         env:
-          CARGO_PROFILE_RELEASE_DEBUG: ${{ runner.os == 'macOS' && 'false' || 'line-tables-only' }}
+          CARGO_PROFILE_RELEASE_DEBUG: ${{ runner.os == 'Windows' && 'line-tables-only' || 'false' }}
         run: cargo build --workspace --release --locked --target ${{ matrix.target }}
 
       - name: Package Unix binaries
