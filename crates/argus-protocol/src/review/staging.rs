@@ -91,6 +91,7 @@ mod tests {
             new_blob: None,
             new_lines: None,
             pending: false,
+            counted: None,
         };
         let review = Review {
             request_id: 1,

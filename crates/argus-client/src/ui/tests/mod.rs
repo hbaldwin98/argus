@@ -554,6 +554,7 @@ fn showing_file(
             new_blob: new_lines.map(|_| "b10b".to_string()),
             new_lines,
             pending: false,
+            counted: None,
         }],
         commit,
     });

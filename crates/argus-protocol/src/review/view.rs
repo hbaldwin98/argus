@@ -270,9 +270,11 @@ impl ReviewView {
         let mut review = review;
         for file in &mut review.files {
             if let Some(held) = self.read.iter().position(|old| old == file) {
-                let pending = file.pending;
+                let (pending, counted) = (file.pending, file.counted);
                 *file = self.review.files[held].clone();
                 file.pending |= pending;
+                // The listing's counts are newer than the lines kept.
+                file.counted = counted.or(file.counted);
             }
         }
         self.read = read;
@@ -750,6 +752,7 @@ mod tests {
             new_blob: None,
             new_lines: None,
             pending: false,
+            counted: None,
         }
     }
 
@@ -1343,6 +1346,7 @@ mod tests {
             new_blob: Some("b10b".into()),
             new_lines: Some(60),
             pending: false,
+            counted: None,
         }])
     }
 

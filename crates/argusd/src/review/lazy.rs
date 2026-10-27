@@ -4,11 +4,17 @@
 //! object database and makes every patch before it can answer, where the
 //! listing reads only what Git already keeps — the index, and the working
 //! tree's stat — and writes nothing.
+//!
+//! It counts each file's added and removed lines while it has time, reading
+//! the files without writing them, so a list of a few hundred files shows
+//! real counts before any is read; past [`COUNT_BUDGET`] the rest go
+//! uncounted until they are read.
 
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use argus_protocol::{is_checkout_relative, ChangeKind, FileDiff, ReviewBase};
+use argus_protocol::{is_checkout_relative, ChangeKind, FileDiff, LineCounts, ReviewBase};
 
 use crate::review::diff::{
     blob_id_spans, capture_blob, hang_spans, render_patch, slashed, wanted_sides, GeneratedReview, BINARY_NOTE, MAX_DIFF_BYTES, TOO_LARGE_NOTE,
@@ -20,23 +26,30 @@ use crate::review::diff::{
 /// untracked files was most of the listing's time.
 const RENAME_PAIRS: usize = 1000 * 1000;
 
+/// How long the listing spends counting lines: the listing is what a large
+/// checkout's review waits on, so counting stops here and the rest of the
+/// files go uncounted.
+const COUNT_BUDGET: Duration = Duration::from_millis(400);
+
 /// Every file a side of the working changes holds, each `pending`: its path,
 /// how it changed, and a rename's old path, as `git status` would say them.
 pub fn list(path: &Path, base: ReviewBase) -> anyhow::Result<GeneratedReview> {
-    list_within(path, base, RENAME_PAIRS)
+    list_within(path, base, RENAME_PAIRS, COUNT_BUDGET)
 }
 
-fn list_within(path: &Path, base: ReviewBase, rename_pairs: usize) -> anyhow::Result<GeneratedReview> {
+fn list_within(path: &Path, base: ReviewBase, rename_pairs: usize, counting: Duration) -> anyhow::Result<GeneratedReview> {
     let repo = git2::Repository::open(path).with_context(|| format!("could not open Git repository at {}", path.display()))?;
     let mut opts = git2::DiffOptions::new();
-    opts.ignore_submodules(true);
+    // No context: only the changed lines are counted.
+    opts.ignore_submodules(true).context_lines(0);
     let mut diff = match base {
         ReviewBase::Staged => {
             let head = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
             repo.diff_tree_to_index(head.as_ref(), None, Some(&mut opts))?
         }
         ReviewBase::Unstaged => {
-            opts.include_untracked(true).recurse_untracked_dirs(true).include_typechange(true);
+            // An untracked file's content is read only when it is counted.
+            opts.include_untracked(true).recurse_untracked_dirs(true).include_typechange(true).show_untracked_content(true);
             repo.diff_index_to_workdir(None, Some(&mut opts))?
         }
         ReviewBase::Commit => anyhow::bail!("a commit is not listed lazily"),
@@ -51,8 +64,28 @@ fn list_within(path: &Path, base: ReviewBase, rename_pairs: usize) -> anyhow::Re
         find.renames(true).for_untracked(true);
         diff.find_similar(Some(&mut find)).context("could not detect review renames")?;
     }
-    let files = diff.deltas().filter_map(|delta| listed(&delta)).collect();
+    let started = Instant::now();
+    let mut files = Vec::new();
+    for (i, delta) in diff.deltas().enumerate() {
+        let Some(mut file) = listed(&delta) else { continue };
+        if started.elapsed() < counting {
+            file.counted = counted(&diff, i, &delta);
+        }
+        files.push(file);
+    }
     Ok(GeneratedReview { files, commit: None })
+}
+
+/// The lines delta `i` adds and removes; none for a file over the size a
+/// review reads, which its read says is too large rather than counting.
+fn counted(diff: &git2::Diff<'_>, i: usize, delta: &git2::DiffDelta) -> Option<LineCounts> {
+    let size = delta.old_file().size().max(delta.new_file().size());
+    if size as i64 > MAX_DIFF_BYTES {
+        return None;
+    }
+    let patch = git2::Patch::from_diff(diff, i).ok()??;
+    let (_, added, removed) = patch.line_stats().ok()?;
+    Some(LineCounts { added: added as u32, removed: removed as u32 })
 }
 
 /// One delta as a file not yet read.
@@ -76,6 +109,7 @@ fn listed(delta: &git2::DiffDelta) -> Option<FileDiff> {
         new_blob: None,
         new_lines: None,
         pending: true,
+        counted: None,
     })
 }
 
@@ -119,6 +153,7 @@ pub fn read(path: &Path, base: ReviewBase, file: &str, old_path: Option<&str>, k
         new_blob: new.map(|oid| oid.to_string()),
         new_lines: None,
         pending: false,
+        counted: None,
     };
     let blob = |oid: Option<git2::Oid>| -> anyhow::Result<git2::Blob<'_>> {
         match oid {

@@ -626,6 +626,7 @@ fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {
             .then(|| TOO_LARGE_NOTE.to_string())
             .or_else(|| delta.flags().is_binary().then(|| BINARY_NOTE.to_string())),
         pending: false,
+        counted: None,
     }
 }
 

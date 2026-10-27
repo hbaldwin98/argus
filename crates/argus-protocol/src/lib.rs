@@ -112,7 +112,7 @@ pub use paths::{config_dir, instance_name};
 pub use review::drafts::{DraftAction, ReviewDraft, MAX_REVIEW_DRAFTS};
 pub use review::staging::{IndexChange, PickedLine};
 pub use review::{
-    ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,
+    ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk, LineCounts,
     LineKind, Review, ReviewAnchor, ReviewBase, ReviewComment, ReviewContext, ReviewFile, MAX_HISTORY_COMMITS,
     MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
 };

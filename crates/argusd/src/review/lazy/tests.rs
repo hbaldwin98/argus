@@ -121,7 +121,7 @@ fn walkdir_count(dir: &Path) -> usize {
 fn past_the_rename_limit_a_moved_file_is_listed_as_gone_and_new() {
     let (_dir, path) = every_kind();
     let kinds = |pairs| {
-        let files = list_within(&path, ReviewBase::Unstaged, pairs).unwrap().files;
+        let files = list_within(&path, ReviewBase::Unstaged, pairs, COUNT_BUDGET).unwrap().files;
         ["old_name.rs", "new_name.rs"].map(|p| files.iter().find(|f| f.path == p).map(|f| f.kind))
     };
     assert_eq!(kinds(RENAME_PAIRS), [None, Some(ChangeKind::Renamed)], "paired while the pairs are few");
@@ -153,4 +153,32 @@ fn a_file_named_outside_the_checkout_is_refused_and_nothing_is_read() {
         let refused = read(&path, ReviewBase::Unstaged, file, old_path, ChangeKind::Renamed).unwrap_err();
         assert!(refused.to_string().contains("not a path in the checkout"), "{file}: {refused}");
     }
+}
+
+#[test]
+fn a_listing_counts_each_files_lines_as_the_full_review_does() {
+    let (_dir, path) = every_kind();
+    for base in [ReviewBase::Unstaged, ReviewBase::Staged] {
+        let full = generate(&path, base).unwrap().files;
+        let listed = list(&path, base).unwrap().files;
+        for file in &full {
+            let at = listed.iter().find(|l| l.path == file.path).unwrap_or_else(|| panic!("{} listed", file.path));
+            let counts = at.counted.unwrap_or_else(|| panic!("{} counted", file.path));
+            assert_eq!(
+                (counts.added as usize, counts.removed as usize),
+                (file.added_lines(), file.removed_lines()),
+                "{base:?} {}",
+                file.path
+            );
+            assert_eq!((at.added_lines(), at.removed_lines()), (file.added_lines(), file.removed_lines()), "shown before it is read");
+        }
+    }
+}
+
+#[test]
+fn past_the_counting_budget_a_file_is_listed_uncounted() {
+    let (_dir, path) = every_kind();
+    let files = list_within(&path, ReviewBase::Unstaged, RENAME_PAIRS, Duration::ZERO).unwrap().files;
+    assert!(!files.is_empty());
+    assert!(files.iter().all(|f| f.counted.is_none()));
 }

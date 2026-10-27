@@ -680,7 +680,7 @@ fn hunks(path: &str, patch: &str) -> Vec<Hunk> {
 }
 
 fn file_diff(path: &str, kind: ChangeKind, patch: &str) -> FileDiff {
-    FileDiff { path: path.into(), old_path: None, kind, hunks: hunks(path, patch), note: None, new_blob: None, new_lines: None, pending: false }
+    FileDiff { path: path.into(), old_path: None, kind, hunks: hunks(path, patch), note: None, new_blob: None, new_lines: None, pending: false, counted: None }
 }
 
 const BRIEF_RS: &str = "@@ -0,0 +1,31 @@

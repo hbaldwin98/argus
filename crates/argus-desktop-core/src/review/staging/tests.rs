@@ -7,7 +7,7 @@ fn line(kind: LineKind, old: Option<u32>, new: Option<u32>, text: &str) -> DiffL
 }
 
 fn file(path: &str, kind: ChangeKind, hunks: Vec<Hunk>) -> FileDiff {
-    FileDiff { path: path.into(), old_path: None, kind, hunks, note: None, new_blob: None, new_lines: None, pending: false }
+    FileDiff { path: path.into(), old_path: None, kind, hunks, note: None, new_blob: None, new_lines: None, pending: false, counted: None }
 }
 
 fn hunk(lines: Vec<DiffLine>) -> Hunk {

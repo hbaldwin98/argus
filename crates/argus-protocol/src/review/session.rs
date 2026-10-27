@@ -506,6 +506,7 @@ mod tests {
             new_blob: None,
             new_lines: None,
             pending: false,
+            counted: None,
         }
     }
 

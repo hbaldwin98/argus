@@ -155,15 +155,40 @@ pub struct FileDiff {
     /// kept on screen, until `ClientMsg::ReviewFile` brings this one's.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pending: bool,
+    /// The lines added and removed, counted while listing: what a file not
+    /// yet read shows instead of its hunks' count, which is none. Absent
+    /// where the listing ran out of time to count it, and from a daemon
+    /// that does not count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counted: Option<LineCounts>,
+}
+
+/// How many lines a file's change added and removed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LineCounts {
+    pub added: u32,
+    pub removed: u32,
 }
 
 impl FileDiff {
     pub fn added_lines(&self) -> usize {
-        self.count(LineKind::Added)
+        match self.listed_counts() {
+            Some(counts) => counts.added as usize,
+            None => self.count(LineKind::Added),
+        }
     }
 
     pub fn removed_lines(&self) -> usize {
-        self.count(LineKind::Removed)
+        match self.listed_counts() {
+            Some(counts) => counts.removed as usize,
+            None => self.count(LineKind::Removed),
+        }
+    }
+
+    /// The listing's counts while the file is not read: its hunks are none,
+    /// or an earlier read's kept on screen, and count nothing true.
+    fn listed_counts(&self) -> Option<LineCounts> {
+        self.counted.filter(|_| self.pending)
     }
 
     fn count(&self, kind: LineKind) -> usize {
@@ -308,7 +333,7 @@ pub struct ReviewComment {
 
 #[cfg(test)]
 mod tests {
-    use super::{DiffLine, LineKind, ReviewAnchor, ReviewBase};
+    use super::{ChangeKind, DiffLine, FileDiff, Hunk, LineCounts, LineKind, ReviewAnchor, ReviewBase};
 
     #[test]
     fn review_bases_toggle_between_the_two_sides() {
@@ -369,5 +394,26 @@ mod tests {
             line.spans.is_empty(),
             "an absent field reads as no highlighting"
         );
+    }
+
+    #[test]
+    fn a_file_not_yet_read_shows_the_listings_counts_and_a_read_one_its_lines() {
+        let added = DiffLine { kind: LineKind::Added, old_lineno: None, new_lineno: Some(1), text: "a".into(), spans: Vec::new() };
+        let read = FileDiff {
+            path: "a.rs".into(),
+            old_path: None,
+            kind: ChangeKind::Modified,
+            hunks: vec![Hunk { header: "@@ -0,0 +1 @@".into(), lines: vec![added] }],
+            note: None,
+            new_blob: None,
+            new_lines: None,
+            pending: false,
+            counted: Some(LineCounts { added: 7, removed: 2 }),
+        };
+        assert_eq!((read.added_lines(), read.removed_lines()), (1, 0), "a read file counts its own lines");
+        let listed = FileDiff { hunks: Vec::new(), pending: true, ..read.clone() };
+        assert_eq!((listed.added_lines(), listed.removed_lines()), (7, 2), "not 0 and 0 for having no lines yet");
+        let kept = FileDiff { pending: true, ..read };
+        assert_eq!((kept.added_lines(), kept.removed_lines()), (7, 2), "an earlier read kept on screen is older than the listing");
     }
 }
