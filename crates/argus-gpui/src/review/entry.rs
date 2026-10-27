@@ -44,8 +44,8 @@ pub struct Entry {
     /// drop, handing a key in the gap to the pane under it.
     pending: Option<Tab>,
     /// The checkout the stage is on, for the tab that has to open its own
-    /// view of it: a history page names none, so it is remembered from the
-    /// press that opened the stage, or the review that did.
+    /// view of it: the press that opened the stage, or the review or history
+    /// that last opened, by whatever route.
     checkout: Option<u64>,
 }
 
@@ -85,8 +85,10 @@ impl Entry {
         self.answered(Tab::Changes);
     }
 
-    /// A history was opened, by whatever asked for it.
-    pub fn history_opened(&mut self) {
+    /// A history was opened, by whatever asked for it: its checkout is the
+    /// one the stage is on, as a review's is.
+    pub fn history_opened(&mut self, checkout: u64) {
+        self.checkout = Some(checkout);
         self.asked = false;
         self.answered(Tab::History);
     }
@@ -284,8 +286,22 @@ mod tests {
     fn a_history_opened_by_another_route_answers_a_stage_that_was_only_asked_for() {
         let mut entry = Entry::default();
         entry.enter(NOTHING, None);
-        entry.history_opened();
+        entry.history_opened(5);
         assert!(!entry.up(NOTHING));
+    }
+
+    #[test]
+    fn changes_opens_on_the_checkout_of_a_history_opened_from_the_rail() {
+        let mut entry = Entry::default();
+        entry.opened(5);
+        entry.leave(REVIEW);
+        // `h` on another checkout in the rail opens its history, not through Git.
+        entry.history_opened(9);
+        assert_eq!(
+            said(entry.show(Tab::Changes, HISTORY, Some(9))),
+            ["HistoryAction { action: CloseLayer, row: None }", "OpenReview { checkout: 9 }"],
+            "not the checkout an earlier review was on"
+        );
     }
 
     #[test]
@@ -294,7 +310,7 @@ mod tests {
         entry.enter(NOTHING, Some(7));
         entry.show(Tab::History, REVIEW, Some(7));
         assert!(entry.up(NOTHING), "the close was heard, the open not yet");
-        entry.history_opened();
+        entry.history_opened(7);
         assert!(entry.up(HISTORY));
         assert!(!entry.up(NOTHING), "the open answered the switch");
     }

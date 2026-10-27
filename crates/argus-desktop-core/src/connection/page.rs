@@ -1679,6 +1679,7 @@ pub struct ReviewFile {
 #[serde(rename_all = "camelCase")]
 pub struct HistoryPage {
     pub open: bool,
+    pub checkout: u64,
     pub name: String,
     pub branch: String,
     /// What the filter field says; the rows are the commits it matches.

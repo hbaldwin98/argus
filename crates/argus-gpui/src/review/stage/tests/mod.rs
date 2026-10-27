@@ -805,7 +805,7 @@ fn the_history_tab_closes_the_review_and_opens_the_history_of_the_same_checkout(
     assert_eq!(taken(&opened), ["ReviewAction { action: CloseLayer }", "OpenHistory { checkout: 100 }"]);
     assert_eq!(selected(cx, &opened, "git-tab-changes"), Some(true), "the tab is the session's to say");
     forget(&opened);
-    let history = HistoryPage { open: true, name: "main".into(), branch: "main".into(), ..Default::default() };
+    let history = HistoryPage { open: true, checkout: 100, name: "main".into(), branch: "main".into(), ..Default::default() };
     hear(cx, &opened, vec![closed(), Event::History(Box::new(history))]);
     assert_eq!(selected(cx, &opened, "git-tab-history"), Some(true));
     assert!(present(cx, &opened, "history"));
@@ -979,6 +979,7 @@ fn file_row(row: usize, path: &str, on: bool) -> HistoryRowView {
 fn history() -> HistoryPage {
     HistoryPage {
         open: true,
+        checkout: 100,
         name: "main".into(),
         branch: "main".into(),
         rows: vec![
@@ -1272,7 +1273,6 @@ fn the_same_text_typed_in_the_next_history_is_sent_again(cx: &mut TestAppContext
 fn the_tabs_send_the_calls_that_open_the_other_and_close_this_one(cx: &mut TestAppContext) {
     let opened = historied(cx);
     click(cx, &opened, "git-tab-changes");
-    // The history names no checkout: the stage's is the pane's.
     assert_eq!(asked(&opened), ["HistoryAction { action: CloseLayer, row: None }", "OpenReview { checkout: 100 }"]);
     assert_eq!(selected(cx, &opened, "git-tab-history"), Some(true), "the tab is the session's to say");
     click(cx, &opened, "git-tab-history");

@@ -6,7 +6,7 @@ import type { HistoryRowView } from "./HistoryRowView";
  * The history dialog: a checkout's newest commits, and the diff of the
  * file under the cursor.
  */
-export type HistoryPage = { open: boolean, name: string, branch: string, 
+export type HistoryPage = { open: boolean, checkout: number, name: string, branch: string, 
 /**
  * What the filter field says; the rows are the commits it matches.
  */

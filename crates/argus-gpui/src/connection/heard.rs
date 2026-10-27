@@ -397,7 +397,7 @@ impl Heard {
             }
             Event::History(page) => {
                 if page.open {
-                    self.git.history_opened();
+                    self.git.history_opened(page.checkout);
                 }
                 self.history = page.open.then(|| Rc::new(*page));
             }

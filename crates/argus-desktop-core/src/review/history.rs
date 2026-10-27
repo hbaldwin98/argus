@@ -321,6 +321,7 @@ impl HistoryDialog {
         let Some(view) = &self.view else {
             return HistoryPage {
                 open: true,
+                checkout: self.checkout.0,
                 name: self.name.clone(),
                 branch: self.branch.clone(),
                 filter: self.filter.clone(),
@@ -397,6 +398,7 @@ impl HistoryDialog {
         };
         HistoryPage {
             open: true,
+            checkout: self.checkout.0,
             name: self.name.clone(),
             branch: self.branch.clone(),
             filter: self.filter.clone(),
