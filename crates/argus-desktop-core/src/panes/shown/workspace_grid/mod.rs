@@ -4,12 +4,13 @@
 //!
 //! Cells are numbered as `split_grid` numbers its panes: 0 the Workspace's,
 //! `n + 1` the page's `Side::Beside(n)`. Every cell holds a pane or a panel
-//! but the Workspace's when it is the only one, so a side the page names is
-//! never an empty split. The Workspace's own cell is always a pane's: a
-//! panel only splits off one, and a panel left first when that pane goes
-//! trades places with the first pane after it, or with none left leaves the
-//! grid. Which side has the keys is `shown`'s; this keeps that side's number
-//! right as cells come and go.
+//! but the Workspace's, so a side the page names is never an empty split.
+//! The Workspace's own cell is a pane's or empty: a panel only splits off a
+//! pane, and a panel left first when that pane goes trades places with the
+//! first pane after it. With no pane left the panels keep their cells beside
+//! an empty Workspace, for the next pane shown there: a session closed is
+//! not a request to close what was split off it. Which side has the keys is
+//! `shown`'s; this keeps that side's number right as cells come and go.
 
 pub mod gutter;
 pub mod occupant;
@@ -278,47 +279,37 @@ impl WorkspaceGrid {
         side(self.cells.len() - 1)
     }
 
-    /// Takes every emptied cell out — the Workspace's too while another
-    /// can take its place — its room going to a neighbour, the panes after
-    /// it numbered down onto the rooms of the sides they take and drawn
-    /// whole; `keys` follows its pane, and keys on a cell that went go to
-    /// its neighbour on the left, or the Workspace's.
+    /// Takes every emptied cell out — the Workspace's too while a pane can
+    /// take its place — its room going to a neighbour, the panes after it
+    /// numbered down onto the rooms of the sides they take and drawn whole;
+    /// `keys` follows its pane, and keys on a cell that went go to its
+    /// neighbour on the left, or the Workspace's.
     pub(super) fn close_empty(&mut self, keys: &mut Side, out: &mut Vec<ClientMsg>) {
         self.drop_empty(keys, out);
-        if self.cells[0].panel.is_none() {
-            debug_assert!(self.whole());
-            return;
-        }
-        match self.cells.iter().position(|cell| cell.pane.is_some()) {
-            // The pane takes the Workspace's number and the panel its, each
-            // keeping its place on screen.
-            Some(k) => {
-                let (first, rest) = self.cells.split_at_mut(k);
-                let (a, b) = (&mut first[0], &mut rest[0]);
-                std::mem::swap(&mut a.pane, &mut b.pane);
-                std::mem::swap(&mut a.panel, &mut b.panel);
-                std::mem::swap(&mut a.screen, &mut b.screen);
-                std::mem::swap(&mut a.sized, &mut b.sized);
-                self.layout.swap(0, k);
-                redraw(&mut self.cells[0], out);
-                if *keys == side(k) {
-                    *keys = Side::Workspace;
-                }
-            }
-            // Nothing is left to split from.
-            None => {
-                for cell in &mut self.cells {
-                    cell.panel = None;
-                }
-                self.drop_empty(keys, out);
+        // The Workspace's cell went only for a pane left to take its place:
+        // that pane takes the Workspace's number and the panel its, each
+        // keeping its place on screen.
+        if self.cells[0].panel.is_some() {
+            let k = self.cells.iter().position(|cell| cell.pane.is_some()).expect("a pane is left");
+            let (first, rest) = self.cells.split_at_mut(k);
+            let (a, b) = (&mut first[0], &mut rest[0]);
+            std::mem::swap(&mut a.pane, &mut b.pane);
+            std::mem::swap(&mut a.panel, &mut b.panel);
+            std::mem::swap(&mut a.screen, &mut b.screen);
+            std::mem::swap(&mut a.sized, &mut b.sized);
+            self.layout.swap(0, k);
+            redraw(&mut self.cells[0], out);
+            if *keys == side(k) {
+                *keys = Side::Workspace;
             }
         }
         debug_assert!(self.whole());
     }
 
     fn drop_empty(&mut self, keys: &mut Side, out: &mut Vec<ClientMsg>) {
+        let paned = self.cells.iter().any(|cell| cell.pane.is_some());
         for n in (0..self.cells.len()).rev() {
-            if self.cells[n].filled() || self.cells.len() < 2 {
+            if self.cells[n].filled() || self.cells.len() < 2 || (n == 0 && !paned) {
                 continue;
             }
             for j in n + 1..self.cells.len() {
@@ -372,12 +363,13 @@ impl WorkspaceGrid {
     }
 
     /// The invariants every move leaves: a cell for each place in the
-    /// layout, a pane or a panel in each but a lone Workspace's, which only
-    /// a pane fills, none with both, and no more cells than a side's number
-    /// can name.
+    /// layout, a pane or a panel in each but the Workspace's, which only a
+    /// pane fills and is empty only with no pane in the grid, none with
+    /// both, and no more cells than a side's number can name.
     fn whole(&self) -> bool {
         let filled = self.cells.iter().skip(1).all(|cell| cell.filled() && !(cell.pane.is_some() && cell.panel.is_some()));
-        let first = self.cells.first().is_some_and(|cell| cell.panel.is_none() && (cell.pane.is_some() || self.cells.len() == 1));
+        let paned = self.cells.iter().any(|cell| cell.pane.is_some());
+        let first = self.cells.first().is_some_and(|cell| cell.panel.is_none() && (cell.pane.is_some() || !paned));
         first && filled && self.cells.len() == self.layout.len() && self.cells.len() <= 256
     }
 }

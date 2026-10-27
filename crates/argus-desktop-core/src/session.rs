@@ -4955,6 +4955,21 @@ mod tests {
     }
 
     #[test]
+    fn a_panel_in_a_cell_outlives_the_session_it_was_split_off_and_is_beside_the_next_one_shown() {
+        let mut s = session(Hello::this_build());
+        s.resize(Side::Workspace, 30, 100);
+        s.select(PaneId(2));
+        docks(&mut s, DockGesture::Grid { panel: Panel::Browsers, onto: Occupant::Pane(2), zone: Zone::Right });
+        let mut closed = tree();
+        closed[0].repositories[0].checkouts[0].panes.retain(|p| p.id != PaneId(2));
+        s.receive(with_tree(closed));
+        assert_eq!(s.shown.on(Side::Workspace), None, "the session is gone");
+        assert!(s.shown.grid().holds_panel(&Panel::Browsers), "closing a session does not close what was split off it");
+        s.select(PaneId(1));
+        assert_eq!(s.rail(0).row.panels, [Some(Panel::Browsers)], "beside the next session shown");
+    }
+
+    #[test]
     fn the_stage_names_each_browser_by_its_owners_title_and_a_browser_takes_the_persons_hand() {
         use argus_protocol::BrowserInput;
         let mut s = session(Hello::this_build());

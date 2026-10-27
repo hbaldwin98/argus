@@ -278,13 +278,22 @@ fn the_workspaces_pane_going_hands_its_number_to_the_next_pane_and_the_panel_kee
 }
 
 #[test]
-fn with_no_pane_left_a_panel_leaves_the_grid() {
+fn with_no_pane_left_a_panel_keeps_its_cell_for_the_next_pane_shown() {
     let mut grid = workspace((20, 60));
     grid.join_panel(&Panel::Browsers).unwrap();
     let mut keys = Side::Workspace;
     grid.cell_mut(Side::Workspace).unwrap().clear(true, &mut Vec::new());
     grid.close_empty(&mut keys, &mut Vec::new());
-    assert_eq!((grid.sides(), grid.holds_panel(&Panel::Browsers)), (vec![Side::Workspace], false));
+    assert_eq!((grid.sides(), keys), (vec![Side::Workspace, Side::Beside(0)], Side::Workspace));
+    assert_eq!(grid.panes().count(), 0, "the Workspace's cell is empty");
+    assert!(grid.holds_panel(&Panel::Browsers), "closing the session is not closing what was split off it");
+    assert_eq!(grid.join(PaneId(5), &mut Vec::new()), Err(Refusal::NoWorkspacePane), "nothing splits off an empty Workspace");
+    grid.cell_mut(Side::Workspace).unwrap().subscribe(PaneId(5), &mut Vec::new());
+    assert_eq!(grid.page(keys, |_| None).panels, [Some(Panel::Browsers)], "the next pane shown has it beside again");
+    assert!(grid.release(&Panel::Browsers));
+    grid.cell_mut(Side::Workspace).unwrap().clear(true, &mut Vec::new());
+    grid.close_empty(&mut keys, &mut Vec::new());
+    assert_eq!(grid.sides(), [Side::Workspace], "with no panel either, the grid is the Workspace's cell alone");
 }
 
 #[test]
