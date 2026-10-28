@@ -28,6 +28,7 @@ pub mod mixed;
 pub mod overlay;
 pub mod pill;
 pub mod progress;
+pub mod reveal;
 pub mod ruler;
 pub mod scroll;
 pub mod section;

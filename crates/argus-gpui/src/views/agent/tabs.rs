@@ -17,6 +17,7 @@ use gpui_kit::{div, prelude::*, AnyElement, App, ClickEvent, Context, Entity, Mo
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::icons::Glyph;
+use crate::kit::reveal;
 use crate::kit::spinner::spinner;
 use crate::kit::strip;
 use crate::kit::tip::tip;
@@ -92,15 +93,16 @@ fn tab(page: &ViewsPage, at: usize, on: bool, caller: &Caller, tokens: &Tokens) 
                 .children(dot)
                 .child(strip::title(view.view.title.clone())),
         )
-        .child(
+        .child(reveal::on_hover(
+            group,
+            on,
             strip::close_x(SharedString::from(format!("view-tab-close-{key}")), words, tokens)
-                .when(!on, |close| close.hidden().group_hover(group.clone(), |style| style.flex()))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(move |_, _, cx| {
                     cx.stop_propagation();
                     closing.call(close.clone());
                 }),
-        )
+        ))
 }
 
 /// What the strip is drawn from: `chosen` is the index of the view the panel shows, `scroll` the

@@ -22,6 +22,7 @@ use crate::kit::icons::Glyph;
 use crate::kit::drag::{Dragger, Step};
 use crate::kit::tip::tip;
 use crate::kit::long_list::long_list;
+use crate::kit::reveal;
 use crate::review::changes::lines::{change_id, height, lines, shown, Line, EMPTY_BOX, HEAD};
 use crate::review::changes::flat::FILE_ROW;
 use crate::review::changes::side::{folder, Files};
@@ -369,22 +370,23 @@ impl Files {
             // `.nums` and `.stage` share the row's end: the counts until the row is hovered or lit,
             // then the move across.
             .child(
-                div()
+                h_flex()
                     .flex_shrink_0()
-                    .text_size(rem(11.0))
-                    .when(file.on, |nums| nums.hidden())
-                    .group_hover(group.clone(), |nums| nums.hidden())
-                    .child(counts(file.file.added, file.file.removed, tokens)),
-            )
-            .child(
-                ghost(("review-change-move", id), SharedString::from(format!("{across} {move_path}")), tokens)
-                    .when(!file.on, |button| button.hidden().group_hover(group, |button| button.flex()))
-                    .tooltip(tip(SharedString::from(format!("{across} file"))))
-                    .child(if staged { Glyph::Minus.at(14.0) } else { Glyph::Plus.at(14.0) })
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.ask(Call::Stage { gesture: StageGesture::File { staged, path: move_path.clone() } }, cx);
-                    })),
+                    .items_center()
+                    .when(!file.on, |end| {
+                        end.child(reveal::off_hover(group.clone(), div().text_size(rem(11.0)).child(counts(file.file.added, file.file.removed, tokens))))
+                    })
+                    .child(reveal::on_hover(
+                        group,
+                        file.on,
+                        ghost(("review-change-move", id), SharedString::from(format!("{across} {move_path}")), tokens)
+                            .tooltip(tip(SharedString::from(format!("{across} file"))))
+                            .child(if staged { Glyph::Minus.at(14.0) } else { Glyph::Plus.at(14.0) })
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.ask(Call::Stage { gesture: StageGesture::File { staged, path: move_path.clone() } }, cx);
+                            })),
+                    )),
             )
     }
 
