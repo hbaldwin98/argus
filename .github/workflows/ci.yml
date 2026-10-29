@@ -54,13 +54,15 @@ jobs:
       # The desktop crate links WebKitGTK on Linux, and the GPUI window
       # (argus-gpui) links fontconfig, xkbcommon, xcb and wayland; nothing else
       # needs them, and macOS and Windows bring their own webview and text.
+      # Dictation (argus-dictation) reads the microphone through ALSA and builds
+      # transcribe.cpp with CMake.
       - name: Install desktop libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config \
             libfontconfig-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            libx11-xcb-dev libxcb1-dev
+            libx11-xcb-dev libxcb1-dev libasound2-dev cmake
 
       # Nearly all of a run is compiling dependencies that did not change,
       # most of them vendored C: libgit2, SQLite, the tree-sitter grammars.

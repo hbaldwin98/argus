@@ -7,6 +7,7 @@ members = [
     "crates/argus-desktop-core",
     "crates/argus-desktop",
     "crates/argus-gpui",
+    "crates/argus-dictation",
 ]
 # The vendored gpui-base the GPUI window is patched onto: a patch, not a member, so `--workspace`
 # neither builds nor lints it as Argus's own code (`patches/gpui-base/README.md`).

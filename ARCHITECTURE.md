@@ -30,6 +30,7 @@ naming the question it answers.
 | `argus-client` | The terminal client and the `argus` command line |
 | `argus-desktop-core` | What the desktop window holds and says, with no window in it |
 | `argus-gpui` | The desktop window (`argus-desktop-next`) |
+| `argus-dictation` | Speech to text on the window's machine: the microphone, the voice gate, transcribe.cpp and its model files; its own crate so ggml's native build stays out of `argus-desktop-core` |
 | `argus-desktop` | The Tauri window it replaces |
 
 ## Rules that hold everywhere

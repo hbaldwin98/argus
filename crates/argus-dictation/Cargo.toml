@@ -1,0 +1,25 @@
+[package]
+name = "argus-dictation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# The engine is CPU-only unless one of these is asked for: each needs its SDK where it is built (the
+# Vulkan SDK on Windows, the CUDA toolkit, Xcode's Metal compiler), which CI does not have.
+[features]
+vulkan = ["transcribe-cpp/vulkan"]
+cuda = ["transcribe-cpp/cuda"]
+metal = ["transcribe-cpp/metal"]
+
+[dependencies]
+# Pinned exactly: the sys crate builds the vendored transcribe.cpp and ggml with CMake, and links them
+# statically, so this version is the native code the window ships.
+transcribe-cpp = { version = "=0.4.1", default-features = false }
+cpal = "0.18"
+tracing = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+# Reads the end-to-end test's WAV fixture.
+hound = "3"
