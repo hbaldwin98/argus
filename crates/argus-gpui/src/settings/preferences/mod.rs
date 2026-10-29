@@ -1,6 +1,6 @@
 //! The Settings sheet (SHELL-SETTINGS-1..13): the theme, the background and the fonts, where a file
-//! opens and with what, when an agent needs you, and how the feature index and a saved view's links
-//! open, in six sections down one scrolling page with a nav beside it.
+//! opens and with what, when an agent needs you, dictation, and how the feature index and a saved
+//! view's links open, in seven sections down one scrolling page with a nav beside it.
 //!
 //! Every control sends its choice at once (`Call::Setting`) and draws what the session sends back
 //! (`Heard::settings`), updated in place and never rebuilt, so a slider being dragged or a command
@@ -11,6 +11,7 @@
 
 mod appearance;
 mod cards;
+mod dictation;
 mod nav;
 mod plain;
 mod rows;
@@ -19,6 +20,8 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use argus_desktop_core::connection::page::{Call, SettingChange, SettingsPage};
+use argus_desktop_core::dictation::preferences::DictationChange;
+use argus_desktop_core::dictation::DictationGesture;
 use argus_desktop_core::settings::remembered::MIN_OPACITY;
 use gpui_kit::component::dialog::Dialog;
 use gpui_kit::component::input::InputEvent;
@@ -42,6 +45,40 @@ use crate::theme::{derive, Tokens};
 /// Where the sections after Appearance start in [`nav::SECTIONS`].
 const SECTIONS_AT: usize = 1;
 
+/// The Dictation section's name, which the dictation panel and chip open the sheet at.
+pub const DICTATION: &str = "Dictation";
+
+/// A choice the sheet sends: the window's preferences and dictation's are each their own call.
+pub(super) trait Asked {
+    fn call(self) -> Call;
+}
+
+impl Asked for SettingChange {
+    fn call(self) -> Call {
+        Call::Setting { change: self }
+    }
+}
+
+impl Asked for DictationChange {
+    fn call(self) -> Call {
+        Call::Dictation { gesture: DictationGesture::Set { change: self } }
+    }
+}
+
+/// Opens the sheet at the section named `name`, or goes there if it is up.
+pub fn open_at(name: &str, window: &mut Window, cx: &mut App) {
+    let Some(surfaces) = crate::keys::over::Surfaces::get(cx) else { return };
+    let at = nav::SECTIONS.iter().position(|section| section.name == name).unwrap_or(0);
+    if Overlays::get(cx).is_open(Overlay::Settings) {
+        surfaces.settings.update(cx, |view, cx| view.go(at, cx));
+        return;
+    }
+    surfaces.settings.update(cx, |view, cx| {
+        view.toggle(window, cx);
+        view.opening = Some(at);
+    });
+}
+
 pub struct PreferencesView {
     heard: Entity<Heard>,
     caller: Caller,
@@ -52,6 +89,9 @@ pub struct PreferencesView {
     /// A thumb is being dragged: the session's echo of a value must not be written under it.
     dragging: bool,
     pub(crate) body: ScrollHandle,
+    /// The section the sheet was opened at, gone to once the body has been laid out: the kit drops a
+    /// scroll asked of a body that has never been drawn.
+    opening: Option<usize>,
     /// Where the keys are while the sheet is up: the close button, with no ring.
     close: FocusHandle,
     /// The choices the fonts' notes were last read for, so a thousand family names are checked once
@@ -99,6 +139,7 @@ impl PreferencesView {
             opacity,
             dragging: false,
             body: ScrollHandle::new(),
+            opening: None,
             close: cx.focus_handle(),
             read: None,
             code_missing: None,
@@ -108,8 +149,8 @@ impl PreferencesView {
     }
 
     /// Asks the session for one choice. Nothing is drawn from it until the session says it back.
-    fn set(&self, change: SettingChange) {
-        self.caller.call(Call::Setting { change });
+    fn set(&self, change: impl Asked) {
+        self.caller.call(change.call());
     }
 
     /// The choices the session last sent, which the sheet draws.
@@ -202,6 +243,14 @@ impl Render for PreferencesView {
                 Rc::new(move |_: &mut Window, cx: &mut App| me.update(cx, |this, cx| this.go(at, cx))) as nav::Press
             })
             .collect();
+        if let Some(at) = self.opening {
+            if self.body.bounds().size.height > gpui_kit::px(0.0) {
+                self.body.scroll_to_top_of_item(at);
+                self.opening = None;
+            } else {
+                window.request_animation_frame();
+            }
+        }
         let lit = nav::in_view(&self.body, &tokens);
         let saved = h_flex()
             .id("settings-saved")

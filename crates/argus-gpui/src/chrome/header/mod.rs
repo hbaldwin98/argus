@@ -34,6 +34,8 @@ pub struct Header {
     size: SharedString,
     /// The daemon is gone: what the strip says is the last it heard, and dimmed (SHELL-STAGE-14).
     held: bool,
+    /// The dictation chip, beside the launcher, in a window with dictation.
+    dictation: Option<AnyElement>,
     launcher: Option<AnyElement>,
     /// The stage's tools, or the pane's `...` menu when it has no tools of its own.
     tools: Option<AnyElement>,
@@ -42,7 +44,7 @@ pub struct Header {
 impl Header {
     /// A strip that only names the window, as the probe window shows it.
     pub fn new() -> Self {
-        Self { strip: StripPage::titled("argus"), size: SharedString::default(), held: false, launcher: None, tools: None }
+        Self { strip: StripPage::titled("argus"), size: SharedString::default(), held: false, dictation: None, launcher: None, tools: None }
     }
 
     /// A strip that is only this title, as the examples and the probe show it.
@@ -66,6 +68,11 @@ impl Header {
 
     pub fn held(mut self, held: bool) -> Self {
         self.held = held;
+        self
+    }
+
+    pub fn dictation(mut self, chip: Option<AnyElement>) -> Self {
+        self.dictation = chip;
         self
     }
 
@@ -95,7 +102,7 @@ impl RenderOnce for Header {
         let StripPage { crumb, title, status, resumed, meta, meta_tip, pill, .. } = self.strip;
         // `.head-status` is drawn for the folded rail alone, where the row is not seen.
         let chip = status.filter(|_| narrow(width, tokens.narrow_below));
-        let tools = self.launcher.is_some() || self.tools.is_some();
+        let tools = self.dictation.is_some() || self.launcher.is_some() || self.tools.is_some();
         // `.strip`: on the surface colour, a hairline under it.
         h_flex()
             .id("header")
@@ -172,6 +179,7 @@ impl RenderOnce for Header {
                         .items_center()
                         .gap(rem(tokens.sp_8))
                         .pr(rem(tokens.sp_8))
+                        .children(self.dictation)
                         .children(self.launcher)
                         .children(self.tools)
                         .child(div().ml(rem(tokens.sp_4)).w(rem(tokens.hairline)).h(rem(tokens.sp_20)).bg(tokens.line)),

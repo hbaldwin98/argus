@@ -72,11 +72,12 @@ fn scroll_by(cx: &mut TestAppContext, opened: &Opened, y: f32) {
     cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
 }
 
-/// SHELL-SETTINGS-1: six sections, each named in the nav and in the body.
+/// SHELL-SETTINGS-1: the sections, each named in the nav and in the body; the Argus Dictation design
+/// puts its section seventh, after Notifications.
 #[gpui_kit::test]
-fn the_sheet_has_its_six_sections_and_the_version(cx: &mut TestAppContext) {
+fn the_sheet_has_its_seven_sections_and_the_version(cx: &mut TestAppContext) {
     let opened = sheet(cx, Preferences::default());
-    for (at, name) in ["Appearance", "Editor", "Notifications", "Features", "Views", "Connection"].into_iter().enumerate() {
+    for (at, name) in ["Appearance", "Editor", "Notifications", "Dictation", "Features", "Views", "Connection"].into_iter().enumerate() {
         let (nav, section) = cx
             .update_window(opened.handle, |_, window, _| (window.find(("settings-nav-item", at)).label().map(str::to_owned), window.find(("settings-section", at)).label().map(str::to_owned)))
             .unwrap();
@@ -200,9 +201,9 @@ fn the_other_sections_send_theirs(cx: &mut TestAppContext) {
     scroll_to(cx, &opened, 2);
     click_label(cx, &opened, "Notify when an agent needs you");
     click_label(cx, &opened, "Only while this window is in the background");
-    scroll_to(cx, &opened, 3);
-    click_label(cx, &opened, "Board");
     scroll_to(cx, &opened, 4);
+    click_label(cx, &opened, "Board");
+    scroll_to(cx, &opened, 5);
     click_label(cx, &opened, "Column");
     assert_eq!(
         asked(&opened),
@@ -263,8 +264,8 @@ fn the_close_button_puts_the_sheet_away(cx: &mut TestAppContext) {
 fn a_nav_press_scrolls_the_body_to_its_section(cx: &mut TestAppContext) {
     let opened = sheet(cx, Preferences::default());
     let top = |cx: &mut TestAppContext, id: usize| cx.update_window(opened.handle, |_, window, _| window.find(("settings-section", id)).bounds().origin.y.as_f32()).unwrap();
-    let before = top(cx, 3);
-    let nav = cx.update_window(opened.handle, |_, window, _| window.find(("settings-nav-item", 3usize)).bounds().center()).unwrap();
+    let before = top(cx, 4);
+    let nav = cx.update_window(opened.handle, |_, window, _| window.find(("settings-nav-item", 4usize)).bounds().center()).unwrap();
     use gpui_kit::test::TestEventExt as _;
     cx.update_window(opened.handle, |_, window, cx| {
         window.pointer_move(nav, None, cx);
@@ -274,7 +275,7 @@ fn a_nav_press_scrolls_the_body_to_its_section(cx: &mut TestAppContext) {
     .unwrap();
     cx.run_until_parked();
     cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
-    let after = top(cx, 3);
+    let after = top(cx, 4);
     assert!(after < before, "Features moved up from {before} to {after}");
 }
 
@@ -284,7 +285,7 @@ fn a_nav_press_scrolls_the_body_to_its_section(cx: &mut TestAppContext) {
 fn the_wheel_lights_the_section_it_scrolls_to(cx: &mut TestAppContext) {
     let opened = sheet(cx, Preferences::default());
     let lit = |cx: &mut TestAppContext| {
-        cx.update_window(opened.handle, |_, window, _| (0..6usize).find(|at| window.find(("settings-nav-item", *at)).selected() == Some(true)))
+        cx.update_window(opened.handle, |_, window, _| (0..7usize).find(|at| window.find(("settings-nav-item", *at)).selected() == Some(true)))
             .unwrap()
     };
     assert_eq!(lit(cx), Some(0));
@@ -305,7 +306,7 @@ fn the_wheel_lights_the_section_it_scrolls_to(cx: &mut TestAppContext) {
     let view = cx.update(|cx| Surfaces::get(cx).expect("the shell built the surfaces").settings);
     let scrolled = cx.update(|cx| view.read(cx).body.offset().y.as_f32());
     assert!(scrolled < -100.0, "the wheel scrolled the body, to {scrolled}");
-    assert_eq!(lit(cx), Some(5), "the body is at its foot, on Connection");
+    assert_eq!(lit(cx), Some(6), "the body is at its foot, on Connection");
 }
 
 /// SHELL-SETTINGS-1: before the first `settings` event the chord does nothing, as the page's does.
@@ -315,4 +316,27 @@ fn the_chord_does_nothing_before_the_session_has_sent_the_settings(cx: &mut Test
     blur(cx, &opened);
     press(cx, &opened, "ctrl-,");
     assert!(overlays(cx).is_empty());
+}
+
+/// The Argus Dictation design: the strip's dictation chip, and Enter on a panel that says dictation
+/// is not set up, open the sheet at the Dictation section.
+#[gpui_kit::test]
+fn the_sheet_opens_at_the_section_it_is_asked_for(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    hear(cx, &opened, vec![page(Preferences::default(), offers(None))]);
+    blur(cx, &opened);
+    cx.update_window(opened.handle, |_, window, cx| super::open_at(super::DICTATION, window, cx)).unwrap();
+    for _ in 0..3 {
+        cx.run_until_parked();
+        cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+    }
+    assert_eq!(overlays(cx), [Overlay::Settings]);
+    let view = cx.update(|cx| Surfaces::get(cx).expect("the shell built the surfaces").settings);
+    let scrolled = cx.update(|cx| view.read(cx).body.offset().y.as_f32());
+    assert!(scrolled < 0.0, "the body scrolled, to {scrolled}");
+    let (body, dictation) = cx
+        .update_window(opened.handle, |_, window, _| (window.find("settings-body".to_owned()).bounds(), window.find(("settings-section", 3usize)).bounds()))
+        .unwrap();
+    // Its top at the body's, or as near as the body scrolls when what follows is short.
+    assert!(dictation.top() >= body.top() && dictation.top() < body.bottom(), "Dictation's head is in view: {dictation:?} in {body:?}");
 }

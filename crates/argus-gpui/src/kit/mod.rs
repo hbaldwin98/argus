@@ -2,6 +2,7 @@
 
 pub mod alert;
 pub mod area;
+pub mod bars;
 pub mod button;
 pub mod caption;
 pub mod copy;

@@ -116,6 +116,9 @@ pub struct Heard {
     /// or not: the look of the whole window is drawn from them (`settings/look`). Shared, so the
     /// dialog and the look keep them without copying the installed fonts.
     pub settings: Option<Rc<SettingsPage>>,
+    /// Dictation, whole, once a window built with the engine has said what this machine offers:
+    /// the Settings section, the strip's chip and the panel over the pane.
+    pub dictation: Option<Rc<argus_desktop_core::dictation::DictationPage>>,
     /// The sheet's heading of each extension.
     pub extension_groups: Vec<ExtGroup>,
     /// Every extension command the session listed, for the keys that run them (`keys/extension`).
@@ -232,6 +235,7 @@ impl Heard {
             link: None,
             reconcile: None,
             settings: None,
+            dictation: None,
             extension_groups: Vec::new(),
             extension_commands: Vec::new(),
             extension_views: Vec::new(),
@@ -329,6 +333,7 @@ impl Heard {
             Event::Link(page) => self.link = page.open.then_some(*page),
             Event::Reconcile(page) => self.reconcile = page.open.then_some(*page),
             Event::Settings(page) => self.settings = Some(Rc::new(*page)),
+            Event::Dictation(page) => self.dictation = Some(Rc::new(*page)),
             Event::Extensions(page) => {
                 self.extension_groups = page.groups;
                 self.extension_commands = page.commands;

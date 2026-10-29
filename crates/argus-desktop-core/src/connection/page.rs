@@ -241,6 +241,11 @@ pub enum Call {
     StartOn { checkout: u64, template: Option<String> },
     /// One choice in the Settings dialog, saved as it is made.
     Setting { change: SettingChange },
+    /// The person's hand on dictation: a key, a choice in its Settings section, a model's file.
+    /// Only the GPUI window dictates, so it never crosses to the page.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    Dictation { gesture: crate::dictation::DictationGesture },
     /// Holds a feature for `reason`, or lifts its hold when there is none.
     Hold { slug: String, reason: Option<String> },
     /// Archives a feature, accepting it, or reopens it with `archived` false.
@@ -590,6 +595,11 @@ pub enum Event {
     /// The question an extension puts to this window, whole, whenever it
     /// changes; `open` false once none is left.
     ExtensionDialog(Box<ExtDialogPage>),
+    /// Dictation, whole, whenever it changes: sent only once a window with the engine has said what
+    /// this machine offers, which the GPUI window alone does, so it never crosses to the page.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    Dictation(Box<crate::dictation::DictationPage>),
 }
 
 /// The connection, as the status bar and the empty stage show it.

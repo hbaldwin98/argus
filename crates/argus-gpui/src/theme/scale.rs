@@ -615,6 +615,16 @@ pub struct Scale {
     pub icon_menu: f32,
     /// `.ext-pick`'s `max-height`.
     pub ext_pick_max_h: f32,
+    /// The dictation panel (the Argus Dictation design's `.pill`): how far above its pane's foot it
+    /// floats, clear of the prompt, and its widest; its meter's bars, each bar's width, the tallest
+    /// and the shortest a bar is drawn; and the chip's width at the strip's end.
+    pub dictate_lift: f32,
+    pub dictate_max_w: f32,
+    pub dictate_bars: usize,
+    pub dictate_bar_w: f32,
+    pub dictate_bar_h: f32,
+    pub dictate_bar_floor: f32,
+    pub dictate_chip_h: f32,
     /// The chevron's turn, a spinner's turn (and the slow one), the placeholder
     /// shimmer and the changed-file flash. There are no custom easings:
     /// transitions use `ease`, the flash `ease-out`, the shimmer `ease-in-out`
@@ -1008,6 +1018,13 @@ impl Scale {
             seq_char_w: 7.2,
             icon_menu: 15.0,
             ext_pick_max_h: 280.0,
+            dictate_lift: 58.0,
+            dictate_max_w: 640.0,
+            dictate_bars: 14,
+            dictate_bar_w: 2.0,
+            dictate_bar_h: 14.0,
+            dictate_bar_floor: 3.0,
+            dictate_chip_h: 22.0,
             motion_turn: Duration::from_millis(150),
             motion_spin: Duration::from_millis(900),
             motion_spin_slow: Duration::from_millis(1000),

@@ -12,7 +12,8 @@
 | --- | --- |
 | `projects.toml` | Workspaces, projects, repositories, agent templates, harnesses and extensions. Yours to edit; Argus only reads it |
 | `client.toml` | The terminal client's editor, theme, layout and notification settings |
-| `desktop.json` | The desktop window's own settings and what it remembers (layouts, docks, zoom) |
+| `desktop.json` | The desktop window's own settings and what it remembers (layouts, docks, zoom, dictation's choices) |
+| `dictation/` | The speech models the GPUI window downloads for dictation, and the voice-activity gate they share |
 | `runtime.db` | Everything Argus writes: panes to relaunch, projects and repositories added or removed from a client, runtime workspaces, review comments, and the feature board |
 | `argusd.log` | The running daemon's log; `argusd.log.1` is the run before |
 
@@ -122,6 +123,7 @@ The settings panel (`S`) writes this file as you change it.
 | `ARGUS_THEME` | Overrides the theme for one client process |
 | `ARGUS_DESKTOP_HOST` | The host the desktop window connects to on a first run |
 | `ARGUS_BROWSER` | The browser executable agents' browsers run, instead of Chrome, Chromium or Edge |
+| `ARGUS_DICTATION_MODELS` | The directory the GPUI window keeps its dictation models in, instead of `dictation/` under the configuration directory |
 | `ARGUS_ARTIFACT_SCOPE` | `workspace` files an agent's feature, task and decision writes on the workspace board instead of the repository's |
 | `RUST_LOG` | The daemon's log level, `info` by default |
 

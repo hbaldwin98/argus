@@ -298,6 +298,9 @@ pub enum Action {
     ZoomReset,
     /// Show the views agents showed, or put them away.
     Views,
+    /// Start dictating into what has the keys, or stop and paste: the toggle, beside the
+    /// push-to-talk chord the Settings sheet sets (`dictation::hold`).
+    Dictate,
     /// The extension view open as a page of its own.
     ExtensionPage,
     /// The extension view back in its dock.
@@ -570,7 +573,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Window, ZOOM_IN, ZoomIn, "larger"),
     bind(Window, ZOOM_OUT, ZoomOut, "smaller"),
     bind(Window, ZOOM_RESET, ZoomReset, "the usual size"),
-    bind(Pane, &[Chord::key("v").after_leader()], Views, "show or hide the views agents showed"),
+    bind(Pane, &[Chord::key(".").after_leader()], Views, "show or hide the views agents showed"),
+    bind(Pane, &[Chord::key("v").after_leader()], Dictate, "dictate into the pane, and again to stop and paste"),
     bind(Rail, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next checkout or pane"),
     bind(Rail, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous checkout or pane"),
     bind(Rail, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell on its checkout"),
@@ -796,6 +800,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Compose, Some(Anywhere), "Start a shell or an agent…"),
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
     (Action::Settings, Some(Anywhere), "Open the settings"),
+    (Dictate, Some(Pane), "Dictate into the focused pane, and again to stop and paste"),
     (ZoomIn, Some(Window), "Zoom in"),
     (ZoomOut, Some(Window), "Zoom out"),
     (ZoomReset, Some(Window), "Reset the zoom"),

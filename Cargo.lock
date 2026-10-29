@@ -407,6 +407,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "argus-desktop-core",
+ "argus-dictation",
  "argus-protocol",
  "base64 0.23.1",
  "chrono",

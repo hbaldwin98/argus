@@ -15,6 +15,17 @@ path = "src/main.rs"
 name = "fonts"
 harness = false
 
+# Dictation (`dictation::engine`): the microphone, the model files and transcribe.cpp, which builds
+# ggml with CMake. On by default, since CI's Windows and Linux runners build it (Linux with ALSA's
+# headers and CMake installed); `--no-default-features` builds the window without it, which then
+# says so in its Settings sheet. The GPU backends pass through, each needing its SDK where it is built.
+[features]
+default = ["dictation"]
+dictation = ["dep:argus-dictation"]
+dictation-vulkan = ["dictation", "argus-dictation/vulkan"]
+dictation-cuda = ["dictation", "argus-dictation/cuda"]
+dictation-metal = ["dictation", "argus-dictation/metal"]
+
 # The window's icon, the Tauri window's own: `build.rs` gives the executable it as resource 1,
 # which is where the GPUI platform looks for the taskbar's and a shortcut's icon.
 [build-dependencies]
@@ -32,6 +43,7 @@ gpui-kit = { version = "=0.8.0", features = ["tree-sitter"] }
 # takes (`argus-desktop-core`), and the protocol types they are made of.
 argus-desktop-core = { path = "../argus-desktop-core", features = ["grammars"] }
 argus-protocol = { workspace = true }
+argus-dictation = { path = "../argus-dictation", optional = true }
 anyhow = { workspace = true }
 # The parser and language types a loaded grammar hands the kit's highlighter; the version the kit
 # links, which the workspace pins (decision 71).

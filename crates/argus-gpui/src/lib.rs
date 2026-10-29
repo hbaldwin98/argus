@@ -7,6 +7,7 @@ pub mod checkouts;
 pub mod code;
 pub mod chrome;
 pub mod connection;
+pub mod dictation;
 pub mod extensions;
 pub mod keys;
 pub mod kit;

@@ -6,6 +6,7 @@
 //! of the Argus project at work. `page/test/screens` replays each scene's
 //! events into the page and photographs it.
 
+mod dictation;
 mod extension_kinds;
 #[cfg(test)]
 mod live;
@@ -2004,6 +2005,7 @@ pub fn scenes() -> Vec<Scene> {
     let mut all = main_scenes();
     all.extend(saved::scenes());
     all.extend(extension_kinds::scenes());
+    all.extend(dictation::scenes());
     all
 }
 
@@ -2494,6 +2496,10 @@ fn write_screens() {
         assert!(names.insert(scene.name), "{} is named twice", scene.name);
         let mut s = (scene.build)();
         let mut events = s.everything(NOW);
+        // Dictation is the GPUI window's alone, and its page is never sent to the Tauri page.
+        if events.iter().any(|event| matches!(event, crate::connection::page::Event::Dictation(_))) {
+            continue;
+        }
         events.extend(s.take_frames());
         assert!(!events.is_empty(), "{} hears nothing", scene.name);
         let mut json = json!({"name": scene.name, "title": scene.title, "events": events});

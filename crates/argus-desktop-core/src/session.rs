@@ -45,6 +45,7 @@ use argus_protocol::{
 };
 
 use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
+use crate::dictation::{self, Deliver, Dictation, DictationGesture};
 use crate::chrome::cursor::{RailCursor, Then};
 use crate::browser::Browsers;
 use crate::views::agent::AgentViews;
@@ -190,6 +191,9 @@ pub struct Session {
     code: Code,
     focused: bool,
     choices: Chosen,
+    /// The preferences, the machine the window reported and the run, once the window has an
+    /// engine to dictate with.
+    dictation: Dictation,
     /// Notifications for the system, raised by the last tree.
     alerts: Vec<Alert>,
     /// The view last reported, so an unchanged one is not sent again.
@@ -261,6 +265,7 @@ impl Session {
             code: Code::default(),
             focused: true,
             choices: Chosen::new(settings.preferences),
+            dictation: Dictation::new(settings.dictation),
             alerts: Vec::new(),
             reported: None,
             rail_sent: Sent::default(),
@@ -836,6 +841,10 @@ impl Session {
             Call::FeatureAction { action } => self.feature_action(action),
             Call::SetChime { on } => self.set_chime(on),
             Call::Setting { change } => self.set(change),
+            Call::Dictation { gesture } => {
+                self.dictation_gesture(gesture);
+                self.finish()
+            }
             Call::Hold { slug, reason } => self.hold(&slug, reason),
             Call::Archive { slug, archived } => self.archive(&slug, archived),
             Call::DropFeature { slug, on } => self.drop_feature(&slug, on),
@@ -1328,6 +1337,7 @@ impl Session {
             Action::PageUp => self.on_view(|view| view.page(-1)),
             Action::PageDown => self.on_view(|view| view.page(1)),
             Action::Palette | Action::Shortcuts | Action::Settings => self.passing.push(Event::Run { action }),
+            Action::Dictate => self.dictation_gesture(DictationGesture::Press { mode: dictation::run::Mode::Toggle, field: false }),
             // `connection::commands` reads the clipboard before the key
             // gets here; the rest are the page's, for keys a pane never
             // hears.
@@ -3169,6 +3179,55 @@ impl Session {
         self.shown.pane().filter(|_| self.side_visible(self.shown.keys()))
     }
 
+    /// What the window's engine reports: the machine it runs on, and a run's progress.
+    pub fn dictation_heard(&mut self, heard: dictation::Heard) -> Vec<ClientMsg> {
+        let pane = self.typed_to().map(|pane| (pane, self.pane_name(pane)));
+        let (tree, console) = (&self.tree, &self.console);
+        let alive = |pane: PaneId| tree.lineage_of_pane(pane).is_some() || console.holds(pane);
+        let delivered = self.dictation.heard(heard, &dictation::Here { pane, alive: &alive });
+        self.deliver(delivered);
+        self.finish()
+    }
+
+    /// What dictation asks of the window's engine since it was last asked.
+    pub fn take_dictation_asks(&mut self) -> Vec<dictation::Ask> {
+        self.dictation.take_asks()
+    }
+
+    fn dictation_gesture(&mut self, gesture: DictationGesture) {
+        let pane = self.typed_to().map(|pane| (pane, self.pane_name(pane)));
+        let (tree, console) = (&self.tree, &self.console);
+        let alive = |pane: PaneId| tree.lineage_of_pane(pane).is_some() || console.holds(pane);
+        let delivered = self.dictation.gesture(gesture, &dictation::Here { pane, alive: &alive });
+        self.deliver(delivered);
+    }
+
+    /// A pane as the dictation panel names it: the rail's and the strip's name, whose agent's
+    /// title already leads with its harness, or a console's tab.
+    fn pane_name(&self, pane: PaneId) -> String {
+        if let Some((_, info)) = self.tree.lineage_of_pane(pane).filter(|(_, info)| !info.title.is_empty()) {
+            return info.title.clone();
+        }
+        self.console.title(pane).map_or_else(|| "the pane".to_owned(), |title| format!("console \u{b7} {title}"))
+    }
+
+    /// A run's text into its pane as one bracketed paste, Enter after it when asked for.
+    fn deliver(&mut self, delivered: Vec<Deliver>) {
+        for each in delivered {
+            match each {
+                Deliver::Paste { pane, text, enter } => {
+                    self.live();
+                    self.out.push(ClientMsg::Paste { pane, text: paste::normalize(&text) });
+                    if enter {
+                        self.out.push(ClientMsg::Input { pane, bytes: b"\r".to_vec() });
+                    }
+                }
+                Deliver::Copy(text) => self.copied = Some(text),
+                Deliver::Notice(text) => self.passing.push(Event::Notice { text }),
+            }
+        }
+    }
+
     pub fn found_fonts(&mut self, fonts: Vec<crate::connection::page::FontFamily>) -> Vec<ClientMsg> {
         self.choices.found_fonts(fonts);
         Vec::new()
@@ -3256,7 +3315,8 @@ impl Session {
             | Action::MovePaneRight
             | Action::MovePaneUp
             | Action::MovePaneDown
-            | Action::CloseSplit => self.run(action),
+            | Action::CloseSplit
+            | Action::Dictate => self.run(action),
             Action::Fill | Action::Close if self.on_screen().is_none() => {
                 self.passing.push(Event::Notice { text: "no pane is on screen".into() });
             }
@@ -3347,7 +3407,7 @@ impl Session {
             | self.code_tree_width.take_unsaved()
             | self.code_outline_width.take_unsaved()
             | self.extension_views.take_unsaved();
-        let chosen = self.choices.take_unsaved();
+        let chosen = self.choices.take_unsaved() | self.dictation.take_unsaved();
         let host = std::mem::take(&mut self.host_unsaved);
         (layouts || agent || chime || review || docks || rail || chosen || host).then(|| Settings {
             layouts: self.features.layouts().clone(),
@@ -3366,6 +3426,7 @@ impl Session {
             code_outline_width: self.code_outline_width.get(),
             extensions: self.extension_views.layout(),
             preferences: self.choices.get().clone(),
+            dictation: self.dictation.chosen().clone(),
         })
     }
 
@@ -3492,6 +3553,11 @@ impl Session {
         if let Some(page) = self.choices.take() {
             events.push(Event::Settings(Box::new(page)));
         }
+        let (tree, console) = (&self.tree, &self.console);
+        let alive = |pane: PaneId| tree.lineage_of_pane(pane).is_some() || console.holds(pane);
+        if let Some(page) = self.dictation.take(&alive) {
+            events.push(Event::Dictation(Box::new(page)));
+        }
         // Before the rail, so the page knows which side has the keys when
         // the rail says which pane the Workspace shows.
         let present = self.present();
@@ -3584,6 +3650,7 @@ impl Session {
     pub fn everything(&mut self, now: u64) -> Vec<Event> {
         self.status.resend();
         self.choices.resend();
+        self.dictation.resend();
         self.dialogs.reload();
         self.recent.reload();
         self.tracker_dialogs.reload();

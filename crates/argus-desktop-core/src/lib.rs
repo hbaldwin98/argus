@@ -17,6 +17,7 @@ pub mod checkouts;
 pub mod chrome;
 pub mod code;
 pub mod connection;
+pub mod dictation;
 pub mod extensions;
 #[cfg(any(test, feature = "scenes"))]
 #[cfg_attr(not(test), allow(dead_code))]

@@ -41,7 +41,12 @@ pub struct Owner {
     alerts: Mutex<Option<mpsc::UnboundedReceiver<Alert>>>,
     /// What plays the chime when the session sends one.
     chime: Box<dyn Fn() + Send + Sync>,
+    /// Where dictation's asks go: the engine, in a build with it. None drops them, and a session
+    /// without an engine to report a machine never asks.
+    dictating: Mutex<Option<Arc<Dictating>>>,
 }
+
+type Dictating = dyn Fn(argus_desktop_core::dictation::Ask) + Send + Sync;
 
 impl Owner {
     /// The owner, and the receiver the UI thread drains. What a fresh page
@@ -64,6 +69,7 @@ impl Owner {
             alerting,
             alerts: Mutex::new(Some(alerts)),
             chime: Box::new(chime),
+            dictating: Mutex::new(None),
         };
         {
             let mut session = lock(&owner.session);
@@ -76,6 +82,23 @@ impl Owner {
     /// Changes the session, sends what the change asks of the daemon, and
     /// tells the views what it changed.
     pub fn act(&self, change: impl FnOnce(&mut Session) -> Vec<ClientMsg>) {
+        let asks = self.change(change);
+        // Outside the session's lock: the engine reports back through `act` on threads of its own.
+        if asks.is_empty() {
+            return;
+        }
+        let dictating = lock(&self.dictating).clone();
+        if let Some(dictating) = dictating {
+            asks.into_iter().for_each(|ask| dictating(ask));
+        }
+    }
+
+    /// Hands what dictation asks to `dictating`, from now on.
+    pub fn on_dictation(&self, dictating: impl Fn(argus_desktop_core::dictation::Ask) + Send + Sync + 'static) {
+        *lock(&self.dictating) = Some(Arc::new(dictating));
+    }
+
+    fn change(&self, change: impl FnOnce(&mut Session) -> Vec<ClientMsg>) -> Vec<argus_desktop_core::dictation::Ask> {
         let mut session = lock(&self.session);
         effects::act(
             &mut session,
@@ -93,6 +116,7 @@ impl Owner {
                 clipboard: &clipboard::System,
             },
         );
+        session.take_dictation_asks()
     }
 
     /// `pane`'s latest picture as bytes, decoded from base64 once by core and shared, for a window's

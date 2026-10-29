@@ -1,4 +1,4 @@
-//! The sheet's sections and the column that names them: six sections, each with its icon and, under
+//! The sheet's sections and the column that names them: seven sections, each with its icon and, under
 //! its name, the line about what it holds, and the one lit that is in view.
 //!
 //! A press on a name scrolls the body to its section; scrolling lights the last section whose top
@@ -23,10 +23,11 @@ pub struct Section {
 }
 
 /// The sections in the order the sheet lists them.
-pub const SECTIONS: [Section; 6] = [
+pub const SECTIONS: [Section; 7] = [
     Section { name: "Appearance", about: "The theme, the background and the fonts", icon: Glyph::Workspace },
     Section { name: "Editor", about: "Where a file opens, and with what", icon: Glyph::Code },
     Section { name: "Notifications", about: "When Argus tells you something needs you", icon: Glyph::Bell },
+    Section { name: "Dictation", about: "Speak into the focused pane", icon: Glyph::Talk },
     Section { name: "Features", about: "How the feature index opens", icon: Glyph::List },
     Section { name: "Views", about: "Where the links in a saved view open", icon: Glyph::Split },
     Section { name: "Connection", about: "The daemon this window reaches", icon: Glyph::Server },

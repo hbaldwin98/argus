@@ -367,6 +367,21 @@ export const sent = [
       "place": "anywhere"
     },
     {
+      "action": "dictate",
+      "chords": [
+        {
+          "alt": false,
+          "ctrl": false,
+          "key": "v",
+          "leader": true,
+          "meta": false,
+          "shift": false
+        }
+      ],
+      "label": "Dictate into the focused pane, and again to stop and paste",
+      "place": "pane"
+    },
+    {
       "action": "zoomIn",
       "chords": [
         {
@@ -1409,13 +1424,27 @@ export const sent = [
             {
               "alt": false,
               "ctrl": false,
-              "key": "v",
+              "key": ".",
               "leader": true,
               "meta": false,
               "shift": false
             }
           ],
           "label": "show or hide the views agents showed"
+        },
+        {
+          "action": "dictate",
+          "chords": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "v",
+              "leader": true,
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "label": "dictate into the pane, and again to stop and paste"
         }
       ],
       "place": "pane",

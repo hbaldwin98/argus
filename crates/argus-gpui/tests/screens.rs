@@ -35,7 +35,7 @@ use gpui_kit::{point, px, size, AnyWindowHandle, App, AppContext as _, Bounds, E
 const WIDTH: f32 = 1440.0;
 const HEIGHT: f32 = 900.0;
 
-const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-markdown,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,browser-driving,browser-long-tabs,browser@720,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog,features-list,features-board,capture,feature-work,feature-record,feature-flows,link,link-map,link-draft,link-typed,link-refused,reconcile,reconcile-ticked,reconcile-edited,reconcile-none,reconcile-asked,reconcile-carrying,reconcile-failed,palette-commands,palette-query,palette-features-found,palette-reading,palette-none,palette-moved,shortcuts-filtered,shortcuts-none,shortcuts-section,new,sessions,sessions-ended,transcript,saved-view-columns,saved-view-stale,saved-view-missing,extension-prompt,extension-pick,extension-form,extension-console";
+const DEFAULT: &str = "settings,workspace-agent,workspace-shell,workspace-exited,workspace-split,workspace-grid,workspace-grid-four,workspace-console,workspace-empty,docks,float,review,review-comment,history,add-project,palette,shortcuts,switcher,checkouts,checkouts-files,checkouts-delete,code,code-edit,code-markdown,code-start,code-search,browsers,browsers-none,browser,browser-held,browser-tabless,browsers-tabless,browser-driving,browser-long-tabs,browser@720,agent-views,agent-view-page,saved-view,extension-stage,extension-dialog,features-list,features-board,capture,feature-work,feature-record,feature-flows,link,link-map,link-draft,link-typed,link-refused,reconcile,reconcile-ticked,reconcile-edited,reconcile-none,reconcile-asked,reconcile-carrying,reconcile-failed,palette-commands,palette-query,palette-features-found,palette-reading,palette-none,palette-moved,shortcuts-filtered,shortcuts-none,shortcuts-section,new,sessions,sessions-ended,transcript,saved-view-columns,saved-view-stale,saved-view-missing,extension-prompt,extension-pick,extension-form,extension-console,dictation-listening,dictation-loading,dictation-finishing,dictation-pasted,dictation-held,dictation-not-set-up,dictation-refused,dictation-settings,dictation-settings+dictation-chip";
 
 /// The scenes the page finishes with a click on a control, and the control: the window is brought to the
 /// same place by pressing it, so the menu or dialog is open in the picture as it is in the page's.
@@ -328,7 +328,8 @@ fn every_default_scene_is_a_core_scene_or_a_variant_of_one() {
     let mut seen = std::collections::HashSet::new();
     for name in DEFAULT.split(',') {
         assert!(seen.insert(name), "{name} is listed twice");
-        assert!(known.contains(&base_of(name)), "{name} is made from {}, which core has no scene for", base_of(name));
+        let scene = name.split('+').next().unwrap_or(name);
+        assert!(known.contains(&base_of(scene)), "{name} is made from {}, which core has no scene for", base_of(scene));
     }
     for name in ["palette-commands", "palette-reading", "palette-none", "palette-moved", "shortcuts-filtered", "shortcuts-none", "shortcuts-section", "reconcile-none", "reconcile-asked", "reconcile-carrying", "link-map"] {
         assert!(seen.contains(name), "{name} is a state the specs list and the harness no longer photographs");

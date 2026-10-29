@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::dictation::preferences::DictationPreferences;
 use crate::layout::docks::{Dock, DocksLayout, Panel};
 use crate::board::features::Layout;
 
@@ -88,6 +89,10 @@ pub struct Settings {
     /// What the Settings dialog sets, flat in the file beside the rest.
     #[serde(flatten)]
     pub preferences: Preferences,
+    /// The Dictation section's choices: a key of their own rather than among the flat
+    /// preferences, since only the GPUI window dictates and the Tauri page is never sent them.
+    #[serde(default, deserialize_with = "crate::dictation::preferences::lenient")]
+    pub dictation: DictationPreferences,
 }
 
 /// The Settings dialog's choices. Each field keeps its default when the
@@ -345,6 +350,7 @@ impl Default for Settings {
             code_outline_width: None,
             extensions: ExtensionsLayout::default(),
             preferences: Preferences::default(),
+            dictation: DictationPreferences::default(),
         }
     }
 }
@@ -491,6 +497,8 @@ mod tests {
             ui_font: "Inter".into(),
             zoom: 125,
         };
+        settings.dictation.enter_after = true;
+        settings.dictation.model = crate::dictation::model::Model::Nemotron;
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path), settings);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -535,6 +543,22 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, br#"{ "preferences": { "theme": "frappe" } }"#).unwrap();
         assert!(load_from(&path).preferences.vim);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_bad_dictation_value_costs_only_itself() {
+        let path = scratch("dictation");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{ "chime": false, "dictation": { "enterAfter": true, "device": "tpu" } }"#).unwrap();
+        let loaded = load_from(&path);
+        assert!(!loaded.chime, "the rest of the file is read");
+        assert!(loaded.dictation.enter_after);
+        assert_eq!(loaded.dictation.device, crate::dictation::preferences::Device::Auto);
+        std::fs::write(&path, br#"{ "chime": false, "dictation": 7 }"#).unwrap();
+        let loaded = load_from(&path);
+        assert!(!loaded.chime);
+        assert_eq!(loaded.dictation, DictationPreferences::default());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

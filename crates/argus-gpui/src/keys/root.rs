@@ -50,6 +50,11 @@ impl Global for Intercepting {}
 
 fn intercept(event: &KeystrokeEvent, window: &mut Window, cx: &mut App) {
     let Some(page) = page_key::from_keystroke(&event.keystroke) else { return };
+    // The push-to-talk chord is the window's before anything's, as the leader is (`dictation::keys`).
+    if crate::dictation::keys::heard(&page, window, cx) {
+        cx.stop_propagation();
+        return;
+    }
     let press = Press { keystroke: &event.keystroke, page: &page };
     // A drawing opened larger holds every key, before the window's own and every layer.
     if Figure.open(window, cx) {

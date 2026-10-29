@@ -31,6 +31,8 @@ use crate::chrome::stage::route::frame;
 use crate::chrome::stage::{stopped, Bodies, StageView};
 use crate::connection::caller::Caller;
 use crate::connection::heard::{Heard, Ran};
+use crate::dictation::keys::DictationKeys;
+use crate::dictation::panel::PanelView;
 use crate::keys::extension::Commands;
 use crate::keys::layer::Layers;
 use crate::keys::over::{run_over, Surfaces};
@@ -61,6 +63,8 @@ pub struct Shell {
     _observing: Subscription,
     /// The add-a-project dialog, which opens itself over the window while the session holds it.
     _add: Entity<AddView>,
+    /// The dictation panel, floated over the pane it speaks into while a run has something to say.
+    dictation: Entity<PanelView>,
     /// The words of the pane's size changed.
     _labelled: Subscription,
     /// The system's light or dark changed.
@@ -105,6 +109,8 @@ impl Shell {
         let work = cx.new(|cx| WorkView::new(heard.clone(), caller.clone(), stage.into(), console.into(), cx));
         let notice = cx.new(|cx| NoticeView::new(heard.clone(), cx));
         let add = cx.new(|cx| AddView::new(heard.clone(), caller.clone(), window, cx));
+        DictationKeys::install(heard.clone(), caller.clone(), cx);
+        let dictation = cx.new(|cx| PanelView::new(heard.clone(), caller.clone(), cx));
         Surfaces {
             palette: cx.new(|cx| PaletteView::new(heard.clone(), caller.clone(), window, cx)),
             sheet: cx.new(|cx| SheetView::new(heard.clone(), window, cx)),
@@ -140,7 +146,7 @@ impl Shell {
         let appearance = window.observe_window_appearance(|window, cx| {
             look::system_changed(window, cx);
         });
-        Self { heard, caller, rail, work, notice, terminal, #[cfg(test)] split, _observing: observing, _add: add, _labelled: labelled, _appearance: appearance, _running: running }
+        Self { heard, caller, rail, work, notice, terminal, #[cfg(test)] split, _observing: observing, _add: add, dictation, _labelled: labelled, _appearance: appearance, _running: running }
     }
 
     #[cfg(test)]
@@ -194,6 +200,11 @@ impl Render for Shell {
             None => slots.tools(stage, window, cx),
         };
         let launcher = launcher(waiting.0, waiting.1, waiting.2, held, &self.caller, &tokens).map(IntoElement::into_any_element);
+        let mic = self.heard.read(cx).dictation.clone().and_then(|page| {
+            let shown = page.chip.as_ref()?;
+            let chip = crate::dictation::chip::chip(shown, &page.section.hold, &page.section.toggle, &tokens, window.rem_size());
+            Some(chip.on_click(|_, window, cx| crate::settings::preferences::open_at(crate::settings::preferences::DICTATION, window, cx)).into_any_element())
+        });
         let scrimmed = !Overlays::get(cx).open_kinds().is_empty();
         h_flex()
             .relative()
@@ -207,13 +218,16 @@ impl Render for Shell {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .child(Header::new().strip(strip).size(size).held(held).launcher(launcher).tools(tools))
+                    .child(Header::new().strip(strip).size(size).held(held).dictation(mic).launcher(launcher).tools(tools))
                     .child(div().id("stage").flex_1().min_h_0().bg(tokens.see_sunken).child(self.work.clone()))
                     // Over the stage, under nothing: a notice is the last thing drawn.
                     .child(self.notice.clone()),
             )
             // The page's `.scrim`: the kit paints none of its own, so a dialog that is up dims the window here, under the dialog layer.
             .when(scrimmed, |shell| shell.child(div().absolute().top_0().left_0().size_full().bg(tokens.scrim)))
+            // Floated over everything and dimmed by nothing: it says what happens to the words being spoken.
+            .child(self.dictation.clone())
+            .child(crate::dictation::keys::listener())
     }
 }
 

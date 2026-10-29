@@ -214,6 +214,36 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
   reads the whole transcript.
 - `Ctrl-=` / `Ctrl--` / `Ctrl-0` zoom (`Cmd` on a Mac). `Ctrl-,` opens the settings.
 
+### Dictation
+
+The GPUI window (`argus-desktop-next`) hears speech on its own machine and types it where the keys
+are. Audio never leaves the computer. Hold `Ctrl-Shift-Space` and speak; letting go puts the words
+into the focused pane as one paste, or types them into the text field you were in. The leader then
+`v` does the same without holding: press it again to stop. `Esc` throws away what was said. The
+window keeps the hold chord from the pane's program, as it does the leader.
+
+While you speak, a panel at the foot of the pane shows the words so far and names where they will go.
+That place is fixed when you press, so moving the keys elsewhere mid-sentence changes nothing.
+Nothing reaches the pane until you let go. If the pane closes while you speak, the panel keeps the
+words. `Enter` then pastes them into the pane that is focused now, `C` copies them, and `Esc` drops
+them.
+
+The chip beside **Views** in the window's header shows whether dictation is ready. Pressing it opens
+**Settings → Dictation**:
+
+- **Dictation** turns it on or off.
+- **Model** offers Parakeet (English, 731 MB, the default) and Nemotron (32 languages, 751 MB). Each one
+  downloads, resumes, cancels and deletes from its card. Choose one by pressing its card.
+- **Language** applies to Nemotron only.
+- **Device** is Auto, GPU or CPU.
+- **Microphone** follows the system default unless you choose one.
+- **Keys** sets the hold chord: press its control, then the chord.
+- **Text** has four switches: voice activity detection (skips silence), remove filler words, append a
+  trailing space, and press Enter after pasting. The last two are off by default.
+
+Every change takes effect at once. The model loads the first time you dictate and unloads after 10
+idle minutes.
+
 ### Code stage
 
 The Code stage (`5`) reads a checkout's working tree rather than its diff: a tree of its files with

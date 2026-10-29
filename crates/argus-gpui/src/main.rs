@@ -66,6 +66,8 @@ fn main() {
         let heard = cx.new(|_| Heard::fed_by(std::sync::Arc::new(move |pane| pictures.picture(pane))));
         heard.update(cx, |heard, cx| heard.listen(events, cx));
         let fonts = calls.clone();
+        #[cfg(feature = "dictation")]
+        let dictating = calls.clone();
         let hosts_found = calls.clone();
         let queued = calls.clone();
         let asking = calls.clone();
@@ -82,6 +84,9 @@ fn main() {
         if let Some(alerts) = queued.alerts() {
             alerts::raise_from(opened, alerts, cx).detach();
         }
+        // The microphone, the model files and the engine, which report this machine to the session.
+        #[cfg(feature = "dictation")]
+        argus_gpui::dictation::engine::install(dictating, opened, cx);
         // The Settings dialog's font fields offer the machine's families once they are read.
         settings::installed_fonts::read(cx, move |families| fonts.act(|session| session.found_fonts(families)));
         // The host switcher offers what the ssh config names; reading it touches the disk, so off the UI thread.

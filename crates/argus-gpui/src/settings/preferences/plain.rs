@@ -1,5 +1,6 @@
-//! The five sections after Appearance, and the segment every choice of a few is drawn as: Editor,
-//! Notifications, Features, Views and Connection.
+//! The sections after Appearance but Dictation's, and the segment every choice of a few is drawn
+//! as: Editor, Notifications, Features, Views and Connection, with Dictation (`dictation`) in its
+//! place among them.
 //!
 //! Every control here sends its choice at once and draws only what the session sends back, so a
 //! refused choice leaves the control showing what is true (CROSS-27). A switch asks for the
@@ -12,7 +13,7 @@ use gpui_kit::component::input::Input;
 use gpui_kit::{div, prelude::*, AnyElement, Context, Role, SharedString};
 
 use super::rows::{meta, row, section, Group};
-use super::{PreferencesView, SECTIONS_AT};
+use super::{Asked, PreferencesView, SECTIONS_AT};
 use crate::kit::segment::{pill, track};
 use crate::kit::tip::tip;
 use crate::kit::toggle::toggle;
@@ -26,13 +27,13 @@ const LINKS: [(SavedLinks, &str); 2] = [(SavedLinks::Dialog, "Dialog"), (SavedLi
 impl PreferencesView {
     /// `.seg`: `options` as pills in one track, `chosen` lit. `ask` is the change a pill asks for;
     /// one in `unavailable` (with its reason) is dimmed and answers no press.
-    pub(super) fn segment<T: Copy + PartialEq + 'static>(
+    pub(super) fn segment<T: Copy + PartialEq + 'static, C: Asked + 'static>(
         &self,
         label: &'static str,
         options: &[(T, &'static str)],
         chosen: T,
         unavailable: &[(T, String)],
-        ask: fn(T) -> SettingChange,
+        ask: fn(T) -> C,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tokens = *Tokens::global(cx);
@@ -51,7 +52,7 @@ impl PreferencesView {
     }
 
     /// A switch asking for the opposite of what it shows.
-    pub(super) fn switch(&self, id: &'static str, label: &'static str, on: bool, off: bool, ask: fn(bool) -> SettingChange, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn switch<C: Asked + 'static>(&self, id: &'static str, label: &'static str, on: bool, off: bool, ask: fn(bool) -> C, cx: &mut Context<Self>) -> AnyElement {
         let tokens = *Tokens::global(cx);
         let tokens = &tokens;
         let press = toggle(id, label, on, off, tokens);
@@ -61,7 +62,7 @@ impl PreferencesView {
         press.on_click(cx.listener(move |this, _, _, _| this.set(ask(!on)))).into_any_element()
     }
 
-    /// Editor, Notifications, Features, Views and Connection, in the order the nav lists them.
+    /// Editor, Notifications, Dictation, Features, Views and Connection, in the order the nav lists them.
     pub(super) fn plain(&self, page: &SettingsPage, tokens: &Tokens, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let chosen = &page.chosen;
         let field = div().w(rem(tokens.setting_field_w)).max_w(gpui_kit::relative(0.5)).flex_shrink_0().font_family(SharedString::from(tokens.font_mono)).child(
@@ -114,7 +115,8 @@ impl PreferencesView {
         )];
         let connection = vec![div().py(rem(tokens.sp_12)).child(meta("Nothing to set here yet.", tokens).text_color(tokens.fg_faint)).into_any_element()];
         let one = |rows| vec![Group::plain(rows)];
-        [editor, one(notifications), one(features), one(views), one(connection)]
+        let dictation = self.dictation(tokens, cx);
+        [editor, one(notifications), dictation, one(features), one(views), one(connection)]
             .into_iter()
             .enumerate()
             .map(|(at, groups)| {
