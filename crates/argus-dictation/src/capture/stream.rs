@@ -35,6 +35,11 @@ pub enum Refusal {
 pub struct Level(Arc<AtomicU32>);
 
 impl Level {
+    /// A level written into `shared`, which the window reads its meter from.
+    pub fn shared(shared: Arc<AtomicU32>) -> Level {
+        Level(shared)
+    }
+
     pub fn get(&self) -> f32 {
         f32::from_bits(self.0.load(Ordering::Relaxed))
     }
@@ -67,10 +72,10 @@ impl Drop for Capture {
 }
 
 /// Opens `microphone` (by id; the system's default when none, or when it is gone) and hands each
-/// 16 kHz mono chunk to `deliver`, on the audio thread, until the capture is dropped.
-pub fn start(microphone: Option<&str>, deliver: impl FnMut(Vec<f32>) + Send + 'static) -> Result<Capture, Refusal> {
+/// 16 kHz mono chunk to `deliver`, on the audio thread, until the capture is dropped; `level` says
+/// how loud each chunk was.
+pub fn start(microphone: Option<&str>, level: Level, deliver: impl FnMut(Vec<f32>) + Send + 'static) -> Result<Capture, Refusal> {
     let microphone = microphone.map(str::to_owned);
-    let level = Level::default();
     let metered = level.clone();
     let (stop, stopped) = mpsc::channel::<()>();
     let (opened, opening) = mpsc::channel();

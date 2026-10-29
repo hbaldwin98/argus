@@ -111,7 +111,7 @@ pub(crate) fn serve(loaded: &mut Loaded, start: &Start, asks: &Receiver<Ask>, sa
         Err(err) => tracing::warn!("dictation: finishing the stream failed ({err})"),
     }
     drop(stream);
-    if text.trim().is_empty() && recorded.len() > SAMPLE_RATE as usize / 4 {
+    if needs_batch(&text, recorded.len()) {
         tracing::info!("dictation: the stream heard nothing; transcribing the run whole");
         match session.run(&recorded, &options) {
             Ok(whole) => {
@@ -123,4 +123,26 @@ pub(crate) fn serve(loaded: &mut Loaded, start: &Start, asks: &Receiver<Ask>, sa
     }
     say(Said::Final { run, text: text.trim().to_owned(), language: language.filter(|language| !language.is_empty()) });
     None
+}
+
+/// Whether a stream that finished with `text` gives way to a batch pass over the `recorded` samples
+/// it was fed: when it heard nothing, unless what it was fed is too short to hold a word.
+fn needs_batch(text: &str, recorded: usize) -> bool {
+    text.trim().is_empty() && recorded > SAMPLE_RATE as usize / 4
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stream_that_heard_nothing_gives_way_to_one_batch_pass() {
+        // "An empty or failed stream retries the recorded audio in one batch pass" (the design page's
+        // behaviours to keep, after Handy's live.rs).
+        let second = SAMPLE_RATE as usize;
+        assert!(needs_batch("", second));
+        assert!(needs_batch("  ", second), "whitespace is nothing heard");
+        assert!(!needs_batch("paste this", second), "the stream's own text is final");
+        assert!(!needs_batch("", second / 8), "too short to hold a word: the gate let only a click through");
+    }
 }

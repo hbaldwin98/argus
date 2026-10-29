@@ -17,9 +17,14 @@ metal = ["transcribe-cpp/metal"]
 # statically, so this version is the native code the window ships.
 transcribe-cpp = { version = "=0.4.1", default-features = false }
 cpal = "0.18"
+# The model files are fetched in process, with the system's certificates, as `argus update` fetches a
+# release, and held to their published sha256.
+ureq = { workspace = true }
+sha2 = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 # Reads the end-to-end test's WAV fixture.
 hound = "3"
+tempfile = { workspace = true }

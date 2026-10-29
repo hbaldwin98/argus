@@ -24,6 +24,12 @@ pub fn microphones() -> Vec<Microphone> {
         .collect()
 }
 
+/// The system's default input's name, for the menu's first entry.
+pub fn default_microphone() -> Option<String> {
+    let device = cpal::default_host().default_input_device()?;
+    Some(device.description().map(|description| description.name().to_owned()).unwrap_or_else(|_| device.to_string()))
+}
+
 /// The device `id` names, or the system's default input when `id` is none or no longer there.
 pub(crate) fn input(id: Option<&str>) -> Option<cpal::Device> {
     let host = cpal::default_host();

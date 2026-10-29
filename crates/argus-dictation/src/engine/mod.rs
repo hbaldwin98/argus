@@ -70,7 +70,8 @@ pub enum Said {
     Failed { run: u64, reason: String },
 }
 
-/// The engine's handle: dropping it ends the thread and lets the model go.
+/// The engine's handle: dropping the last of its clones ends the thread and lets the model go.
+#[derive(Clone)]
 pub struct Engine {
     asks: Sender<Ask>,
 }

@@ -393,8 +393,11 @@ dependencies = [
  "cpal",
  "hound",
  "proptest",
+ "sha2 0.11.1",
+ "tempfile",
  "tracing",
  "transcribe-cpp",
+ "ureq",
 ]
 
 [[package]]

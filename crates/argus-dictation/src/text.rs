@@ -148,6 +148,24 @@ pub fn clean(raw: &str, how: Clean) -> String {
     collapse_spaces(&text).trim_start().to_owned()
 }
 
+/// The text so far as the panel shows it: what the model settled on, cleaned, and its guess at the
+/// rest. The settled text's last token is held back with the guess while fillers are removed, as
+/// [`clean`] holds it back: "um" may yet be the start of "umbrella".
+pub fn live(committed: &str, tentative: &str, remove_fillers: bool, language: Option<&str>) -> (String, String) {
+    let settled = clean(committed, Clean { remove_fillers, language, final_text: false });
+    let held = match committed.char_indices().rev().find(|(_, c)| c.is_whitespace()) {
+        _ if !remove_fillers => "",
+        Some((at, space)) => &committed[at + space.len_utf8()..],
+        None => committed,
+    };
+    let mut guess = format!("{held}{tentative}");
+    let apart = !held.is_empty() || committed.ends_with(char::is_whitespace);
+    if !settled.trim().is_empty() && apart && !guess.is_empty() && !guess.starts_with(char::is_whitespace) {
+        guess.insert(0, ' ');
+    }
+    (settled.trim_end().to_owned(), guess)
+}
+
 /// Every run of two or more whitespace characters as one space.
 fn collapse_spaces(text: &str) -> String {
     let mut out = String::with_capacity(text.len());

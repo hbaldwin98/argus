@@ -48,7 +48,8 @@ pub(crate) struct Loaded {
     _vad_model: Option<Model>,
 }
 
-pub(crate) const NO_GPU: &str = "No GPU found — choose Auto or CPU in Settings";
+/// What a run that asked for the GPU on a machine with none is failed with.
+pub const NO_GPU: &str = "No GPU found — choose Auto or CPU in Settings";
 
 /// The stream shape as transcribe.cpp's stream-slot extension.
 pub(crate) fn stream_options(shape: Shape) -> StreamOptions {

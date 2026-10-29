@@ -71,6 +71,16 @@ fn with_fillers_kept_a_live_transcript_is_shown_whole() {
 }
 
 #[test]
+fn the_panel_shows_the_settled_words_cleaned_and_the_held_back_word_with_the_guess() {
+    // The design page's caption: settled words in white, the model's guess in grey; the half-word
+    // held back from cleaning is shown with the guess, so no word the speaker said goes unshown.
+    assert_eq!(live("Um, so I thi", "nk", true, Some("en")), ("So I".to_owned(), " think".to_owned()));
+    assert_eq!(live("so the ", "set", false, None), ("so the".to_owned(), " set".to_owned()));
+    assert_eq!(live("so th", "e set", false, None), ("so th".to_owned(), "e set".to_owned()));
+    assert_eq!(live("", "", true, None), (String::new(), String::new()));
+}
+
+#[test]
 fn a_word_with_a_filler_inside_it_is_left_alone() {
     assert_eq!(handy("huh, the hummus was fine", Some("en")), "huh, the hummus was fine");
     assert_eq!(handy("an umbrella_um", Some("en")), "an umbrella_um");
