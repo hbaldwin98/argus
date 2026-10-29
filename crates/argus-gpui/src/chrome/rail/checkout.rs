@@ -76,7 +76,7 @@ impl RailView {
             // `.co`: a margin of 8 each side, the fold chevron in its 12px of left padding.
             .mx(rem(tokens.sp_8))
             .child(
-                line(format!("checkout-{id}"), tokens.control_h_sm, &tokens)
+                line(format!("checkout-{id}"), tokens.rail_row_h, &tokens)
                     .group(group.clone())
                     .w_full()
                     .pl(rem(tokens.sp_12 - 1.0))
@@ -135,7 +135,8 @@ impl RailView {
                                 .child(n.to_string()),
                         )
                     })
-                    .when_some(git, |row, git| row.child(div().font_family(mono.clone()).text_color(tokens.changed).child(git)))
+                    // The git marks are faint, not the changed colour: a rail of busy branches is otherwise a column of orange.
+                    .when_some(git, |row, git| row.child(div().font_family(mono.clone()).text_color(tokens.fg_faint).child(git)))
                     .when(!checkout.open, |row| {
                         let words = format!("{} {} folded away", checkout.count, if checkout.count == 1 { "pane" } else { "panes" });
                         row.child(

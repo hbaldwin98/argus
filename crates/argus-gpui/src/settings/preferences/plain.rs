@@ -11,7 +11,7 @@ use argus_desktop_core::settings::remembered::{EditorMode, SavedLinks};
 use gpui_kit::component::input::Input;
 use gpui_kit::{div, prelude::*, AnyElement, Context, Role, SharedString};
 
-use super::rows::{meta, row, section};
+use super::rows::{meta, row, section, Group};
 use super::{PreferencesView, SECTIONS_AT};
 use crate::kit::segment::{pill, track};
 use crate::kit::tip::tip;
@@ -67,9 +67,11 @@ impl PreferencesView {
         let field = div().w(rem(tokens.setting_field_w)).max_w(gpui_kit::relative(0.5)).flex_shrink_0().font_family(SharedString::from(tokens.font_mono)).child(
             Input::new(self.command.input()).id("settings-command").aria_label("Editor command").h(rem(tokens.control_h)),
         );
-        let editor = vec![
+        let files = vec![
             row("Files open", Some("A known GUI editor always opens on its own"), vec![], self.segment("Files open", &EDITORS, chosen.editor, &[], |mode| SettingChange::Editor { mode }, cx), tokens),
             row("Editor command", Some("Empty uses $VISUAL, then $EDITOR"), vec![], field, tokens),
+        ];
+        let code = vec![
             row("Vim keys", Some("In the Code stage: normal, insert and visual modes, and :w"), vec![], self.switch("settings-vim", "Vim's keys in the Code stage", chosen.vim, false, |on| SettingChange::Vim { on }, cx), tokens),
             row(
                 "Install grammars without asking",
@@ -79,6 +81,7 @@ impl PreferencesView {
                 tokens,
             ),
         ];
+        let editor = vec![Group::named("Files", files), Group::named("Code stage", code)];
         let notifications = vec![
             row(
                 "When an agent needs you",
@@ -109,13 +112,14 @@ impl PreferencesView {
             self.segment("Links in a saved view open", &LINKS, chosen.saved_links, &[], |opens| SettingChange::SavedLinks { opens }, cx),
             tokens,
         )];
-        let connection = vec![div().px(rem(tokens.sp_16)).py(rem(tokens.sp_12)).child(meta("Nothing to set here yet.", tokens).text_color(tokens.fg_faint)).into_any_element()];
-        [editor, notifications, features, views, connection]
+        let connection = vec![div().py(rem(tokens.sp_12)).child(meta("Nothing to set here yet.", tokens).text_color(tokens.fg_faint)).into_any_element()];
+        let one = |rows| vec![Group::plain(rows)];
+        [editor, one(notifications), one(features), one(views), one(connection)]
             .into_iter()
             .enumerate()
-            .map(|(at, rows)| {
+            .map(|(at, groups)| {
                 let named = &super::nav::SECTIONS[SECTIONS_AT + at];
-                section(("settings-section", SECTIONS_AT + at), named.name, named.about, rows, tokens)
+                section(("settings-section", SECTIONS_AT + at), named.name, named.about, groups, tokens)
             })
             .collect()
     }

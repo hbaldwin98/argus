@@ -55,15 +55,15 @@ impl RailView {
     /// `.nav.nav-fold`: the icon cell holding the chevron, the label, the count.
     fn fold(&self, id: &'static str, label: &'static str, count: usize, listed: bool, ctx: Ctx, tokens: &Tokens) -> super::row::Line {
         let fill = tokens.fill;
-        line(id, tokens.nav_h, tokens)
+        line(id, tokens.rail_row_h, tokens)
             .w_full()
             .px(rem(tokens.sp_8))
             .gap(rem(tokens.sp_12))
             .text_size(rem(tokens.fs_md))
-            .text_color(tokens.fg)
+            .text_color(tokens.fg_muted)
             .aria_expanded(listed)
             .aria_label(label)
-            .hover(move |style| style.bg(fill))
+            .hover(move |style| style.bg(fill).text_color(tokens.fg))
             .when(ctx.held, |row| row.opacity(tokens.opacity_dim))
             .child(
                 div()
@@ -76,7 +76,7 @@ impl RailView {
                     .child(if listed { Glyph::Down } else { Glyph::Right }.at(tokens.icon_xs)),
             )
             .child(div().flex_1().min_w_0().truncate().child(label))
-            .child(div().typed(tokens.type_small).text_color(tokens.fg_muted).child(count.to_string()))
+            .child(div().typed(tokens.type_small).text_color(tokens.fg_fainter).child(count.to_string()))
     }
 
     fn extensions(&self, slice: &Slice, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
@@ -99,17 +99,17 @@ impl RailView {
         let (extension, name) = (view.extension.clone(), view.view.clone());
         let tooltip = format!("{} \u{b7} from {}{}", view.title, view.extension, if view.page { "" } else { ", docked" });
         let (panel, title) = (view.panel.clone(), view.title.clone());
-        let row = line(format!("ext-view-{}-{}", view.extension, view.view), tokens.nav_h, tokens)
+        let row = line(format!("ext-view-{}-{}", view.extension, view.view), tokens.rail_row_h, tokens)
             .w_full()
             .px(rem(tokens.sp_8))
             .gap(rem(tokens.sp_12))
             .text_size(rem(tokens.fs_md))
-            .text_color(tokens.fg)
+            .text_color(if view.on { tokens.fg } else { tokens.fg_muted })
             .aria_selected(view.on)
             .aria_label(tooltip.clone())
             .tooltip(tip(tooltip))
             .when(view.on, |row| row.bg(tokens.bg_selected))
-            .when(!view.on, |row| row.hover(move |style| style.bg(fill)))
+            .when(!view.on, |row| row.hover(move |style| style.bg(fill).text_color(tokens.fg)))
             .on_click(cx.listener(move |this, _, _, _| this.ask(held, Call::OpenExtensionView { extension: extension.clone(), view: name.clone() })))
             .on_mouse_down(
                 MouseButton::Left,
@@ -238,18 +238,18 @@ impl RailView {
             .min_w_0()
             .pl(rem(tokens.sp_12 * depth as f32))
             .child(
-                line(format!("saved-{}", view.id), tokens.nav_h, tokens)
+                line(format!("saved-{}", view.id), tokens.rail_row_h, tokens)
                     .flex_1()
                     .min_w_0()
                     .px(rem(tokens.sp_8))
                     .gap(rem(tokens.sp_12))
                     .text_size(rem(tokens.fs_md))
-                    .text_color(tokens.fg)
+                    .text_color(if lit { tokens.fg } else { tokens.fg_muted })
                     .aria_selected(lit)
                     .aria_label(tooltip.clone())
                     .tooltip(tip(tooltip))
                     .when(lit, |row| row.bg(tokens.bg_selected))
-                    .when(!lit, |row| row.hover(move |style| style.bg(fill)))
+                    .when(!lit, |row| row.hover(move |style| style.bg(fill).text_color(tokens.fg)))
                     .on_click(cx.listener(move |this, _, _, _| this.ask(held, Call::OpenSavedView { id: open.clone(), from: None })))
                     .on_mouse_down(
                         MouseButton::Left,

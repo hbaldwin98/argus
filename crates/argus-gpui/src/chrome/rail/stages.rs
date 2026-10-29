@@ -96,7 +96,7 @@ impl RailView {
                     .gap(rem(tokens.sp_4))
                     .children(slice.keys.get(at).cloned().unwrap_or_default().into_iter().map(|key| keycap(key, mono.clone(), tokens)));
                 let caps = if search { caps } else { caps.opacity(0.0).group_hover("navs", |style| style.opacity(1.0)) };
-                let base = line(nav.id(), if search { tokens.search_h } else { tokens.nav_h }, tokens).text_size(rem(tokens.fs_md));
+                let base = line(nav.id(), if search { tokens.search_h } else { tokens.rail_row_h }, tokens).text_size(rem(tokens.fs_md));
                 // A narrow rail: a tile of the icon, the words in the tooltip.
                 let base = if ctx.icons {
                     base.w(rem(tokens.rail_tile)).h(rem(tokens.rail_tile)).justify_center().tooltip(tip(nav.label()))
@@ -118,10 +118,11 @@ impl RailView {
                             .hover(|style| style.text_color(tokens.fg_muted))
                     }
                 } else {
+                    // Only the lit row is in the text colour; the rest are muted and come up under the pointer.
                     base.when(!ctx.icons, |row| row.gap(rem(tokens.sp_12)))
-                        .text_color(tokens.fg)
+                        .text_color(if lit { tokens.fg } else { tokens.fg_muted })
                         .when(lit, |row| row.bg(tokens.bg_selected))
-                        .when(!lit, |row| row.hover(move |style| style.bg(fill)))
+                        .when(!lit, |row| row.hover(move |style| style.bg(fill).text_color(tokens.fg)))
                 };
                 let glyph = nav.glyph().at(tokens.icon_glyph);
                 let icon = if search {
@@ -133,9 +134,9 @@ impl RailView {
                         .justify_center()
                         .size(rem(tokens.nav_icon_cell))
                         .flex_shrink_0()
-                        .text_color(if lit { tokens.accent } else { tokens.fg_muted });
+                        .text_color(if lit { tokens.fg } else { tokens.fg_muted });
                     // `.nav .ic.new`: the one item whose mark is a filled disc.
-                    let mark = if nav == Nav::New { mark.bg(fill).text_color(tokens.fg).rounded_full() } else { mark };
+                    let mark = if nav == Nav::New { mark.bg(fill).rounded_full() } else { mark };
                     mark.child(glyph).into_any_element()
                 };
                 let browsers = nav == Nav::Browsers && !ctx.icons;

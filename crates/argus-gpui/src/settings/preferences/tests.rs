@@ -87,6 +87,21 @@ fn the_sheet_has_its_six_sections_and_the_version(cx: &mut TestAppContext) {
     assert_eq!(title.as_deref(), Some("Settings"));
 }
 
+/// The restyle proposal: the nav says under each name what its section holds, in the words the
+/// section's own subtitle says.
+#[gpui_kit::test]
+fn each_name_in_the_nav_has_the_line_about_its_section_under_it(cx: &mut TestAppContext) {
+    let opened = sheet(cx, Preferences::default());
+    for (at, section) in super::nav::SECTIONS.iter().enumerate() {
+        let (name, about) = cx
+            .update_window(opened.handle, |_, window, _| (window.find(("settings-nav-item", at)).bounds(), window.find(("settings-nav-about", at)).bounds()))
+            .unwrap();
+        let said = cx.update_window(opened.handle, |_, window, _| window.find(("settings-nav-about", at)).label().map(str::to_owned)).unwrap();
+        assert_eq!(said.as_deref(), Some(section.about), "{}", section.name);
+        assert!(name.contains(&about.origin) && about.origin.y > name.origin.y, "{}: the line is inside its row, under the name", section.name);
+    }
+}
+
 /// SHELL-SETTINGS-1: it opens at the top, on Appearance, with its first section where the body starts.
 #[gpui_kit::test]
 fn the_sheet_opens_at_the_top_of_appearance(cx: &mut TestAppContext) {

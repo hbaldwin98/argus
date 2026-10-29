@@ -45,8 +45,8 @@ impl RailView {
         let dot = repo.status.and_then(|word| status_colour(word, tokens));
         let fill = tokens.fill;
         let tokens = *tokens;
-        // `.repobtn`: muted and semibold, the chosen one in the text colour with an
-        // accent chevron, a quiet one faint and regular.
+        // `.repobtn`: muted and medium (a step under the page's semibold, so the tree is quieter), the
+        // chosen one in the text colour with an accent chevron, a quiet one faint and regular.
         let colour = if chosen { tokens.fg } else if repo.quiet { tokens.fg_faint } else { tokens.fg_muted };
         let group = SharedString::from(format!("repo-row-{id}"));
         let items = menus::repository(repo, chosen);
@@ -60,13 +60,13 @@ impl RailView {
             .mt(rem(if first { tokens.sp_2 } else { tokens.sp_8 }))
             .items_center()
             .child(
-                line(format!("repo-{id}"), tokens.row_h, &tokens)
+                line(format!("repo-{id}"), tokens.rail_row_h, &tokens)
                     .flex_1()
                     .min_w_0()
                     .px(rem(tokens.sp_4))
                     .gap(rem(tokens.sp_6))
                     .text_size(rem(tokens.fs_sm))
-                    .weighted(if repo.quiet { tokens.weight_regular } else { tokens.weight_semibold })
+                    .weighted(if repo.quiet { tokens.weight_regular } else { tokens.weight_medium })
                     .text_color(colour)
                     .aria_selected(chosen)
                     .aria_expanded(repo.open)

@@ -1,12 +1,13 @@
-//! A cell's header: the pane's title, its status, and the button that takes it out of the grid. A
-//! panel's cell has the same header with the panel's title and no status: it is carried and closed
-//! as a pane's is, and its close sends the panel back to its dock.
+//! A cell's header: the pane's status dot, its name in the body colour and its task muted (core's
+//! halves of the title), and the button that takes it out of the grid. A panel's cell has the same
+//! header with the panel's title as its name and no status: it is carried and closed as a pane's is,
+//! and its close sends the panel back to its dock.
 //!
 //! The header is the handle a pane is carried by (SHELL-GRID-11): a press on it is followed by the
 //! work area's drag, which lifts it after the shared threshold, lights the zone it would land on,
-//! and lets Escape put it back. The close does not start one. The cell that has the keys wears the
-//! selected colour and an accent edge under it (`.gcell.keyed > .thead`); the Workspace's own cell
-//! keeps the close button's room empty, so the status dots line up across the headers.
+//! and lets Escape put it back. The close does not start one. The head has no fill of its own, only a
+//! hairline under it; which cell has the keys is said by the ring round the cell (`keyed`), not by
+//! the head. The Workspace's own cell keeps the close button's room empty, so the heads' ends line up.
 
 use argus_desktop_core::connection::page::{Call, Side};
 use argus_desktop_core::layout::docks::{DocksPage, Panel};
@@ -27,10 +28,13 @@ use crate::theme::Tokens;
 /// The words on a header's close.
 pub const TAKE_OUT: &str = "Take out of the grid";
 
-/// What a header names: what its cell holds, by the title it is shown by, and a pane's status.
+/// What a header names: what its cell holds, by the title it is shown by (whole, for the close's
+/// words and the carried pane), its two halves as the head sets them, and a pane's status.
 pub(super) struct Named {
     pub held: Occupant,
     pub title: String,
+    pub name: String,
+    pub task: Option<String>,
     pub status: Option<&'static str>,
 }
 
@@ -54,7 +58,7 @@ impl SplitView {
     pub(super) fn head(&self, n: u8, named: Named, keyed: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *tokens;
         let title = SharedString::from(named.title.clone());
-        let (fill, foreground) = (tokens.fill, tokens.fg);
+        let (name, task) = (named.name.clone(), named.task.clone());
         let carried = Carried::Cell { slot: n, held: named.held, title: named.title };
         let held = self.heard.read(cx).held();
         h_flex()
@@ -67,16 +71,11 @@ impl SplitView {
             .items_center()
             .gap(rem(tokens.sp_6))
             .pl(rem(tokens.sp_12))
-            // The card's overflow clip is square, so its round corners would show this fill behind them.
-            .rounded_t(rem(tokens.r_md))
-            .bg(if keyed { tokens.bg_selected } else { tokens.bg_chrome })
             .border_b_1()
             .border_color(tokens.line)
-            .typed(tokens.type_small)
-            .weighted(tokens.weight_medium)
-            .text_color(if keyed { tokens.fg } else { tokens.fg_muted })
+            .text_size(rem(tokens.fs_xs))
+            .text_color(tokens.fg_faint)
             .cursor_grab()
-            .when(!keyed, |head| head.hover(move |style| style.bg(fill).text_color(foreground)))
             .tooltip(tip("Drag onto another pane to move this one"))
             // A press that is never a drag leaves the header as it was: it has no click of its own.
             .on_mouse_down(MouseButton::Left, {
@@ -87,8 +86,26 @@ impl SplitView {
                     }
                 })
             })
-            .child(strip::title(title.clone()).flex_1())
             .children(named.status.map(|status| status_dot(format!("cell-{n}"), status, &tokens)))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .gap(rem(tokens.sp_6))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("cell-name-{n}")))
+                            .test_support()
+                            .aria_label(SharedString::from(name.clone()))
+                            .flex_shrink_0()
+                            .weighted(tokens.weight_semibold)
+                            .text_color(tokens.fg)
+                            .child(name),
+                    )
+                    .children(task.map(|task| {
+                        strip::title(format!("\u{b7} {task}")).id(SharedString::from(format!("cell-task-{n}"))).test_support().aria_label(SharedString::from(task))
+                    })),
+            )
             .child(if n == 0 {
                 div().w(rem(tokens.control_h_sm)).flex_shrink_0().into_any_element()
             } else {
@@ -104,6 +121,5 @@ impl SplitView {
                     }))
                     .into_any_element()
             })
-            .when(keyed, |head| head.child(div().absolute().left_0().right_0().bottom_0().h(rem(tokens.rule)).bg(tokens.accent)))
     }
 }

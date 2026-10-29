@@ -19,7 +19,7 @@ use super::status::pane_word;
 use super::RailView;
 use crate::kit::area;
 use crate::kit::icons::Glyph;
-use crate::kit::pill::status_pill;
+use crate::kit::pill::quiet_pill;
 use crate::kit::status_dot::status_dot;
 use crate::kit::tip::tip;
 use crate::layout::carry::{Carried, Carrier};
@@ -91,7 +91,7 @@ impl RailView {
             None
         };
         let shown = pane.on.then(|| area::measure(self.shown_row.clone()));
-        let row = line(format!("pane-{id}"), tokens.pane_row_h, tokens)
+        let row = line(format!("pane-{id}"), tokens.rail_row_h, tokens)
             .group(group.clone())
             .relative()
             .w_full()
@@ -100,7 +100,8 @@ impl RailView {
             .pr(rem(tokens.sp_8 - 1.0))
             .gap(rem(tokens.sp_12))
             .text_size(rem(tokens.fs_md))
-            .text_color(if pane.on || pane.agent { tokens.fg } else { tokens.fg_muted })
+            // Only the pane on screen is in the text colour, as only the lit stage is; the rest are muted.
+            .text_color(if pane.on { tokens.fg } else { tokens.fg_muted })
             .border_1()
             .border_color(ring)
             .aria_selected(pane.on)
@@ -120,7 +121,7 @@ impl RailView {
             .child(div().flex_1().min_w_0().truncate().child(pane.title.clone()))
             .when_some(word, |row, word| {
                 // `.pane-end`: gives way to the close button while the row is pointed at.
-                row.child(div().flex_shrink_0().group_hover(group.clone(), |style| style.invisible()).child(status_pill(format!("pane-{id}-word"), word, pane.status, tokens)))
+                row.child(div().flex_shrink_0().group_hover(group.clone(), |style| style.invisible()).child(quiet_pill(format!("pane-{id}-word"), word, pane.status, tokens)))
             })
             // `.pane-row .close`: over the status word, only under the pointer.
             .child(
@@ -131,7 +132,7 @@ impl RailView {
                     .aria_label(format!("Close {}", pane.title))
                     .absolute()
                     .right(rem(tokens.sp_8))
-                    .top(rem((tokens.pane_row_h - tokens.icon_box) / 2.0 - 1.0))
+                    .top(rem((tokens.rail_row_h - tokens.icon_box) / 2.0 - 1.0))
                     .size(rem(tokens.icon_box))
                     .flex()
                     .items_center()

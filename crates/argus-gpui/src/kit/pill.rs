@@ -1,4 +1,5 @@
-//! The one status pill: a dot and a word on a tint of how loud the status is (`.spill`).
+//! The one status pill: a dot and a word on a tint of how loud the status is (`.spill`), and its
+//! quiet form, the dot and the word alone, for a list where every row has one.
 //!
 //! A pane row, a feature's card, a task's detail and a session's header all say a status with
 //! it, so the look is here once. The word is the daemon's, said as the rail says it unless the
@@ -84,6 +85,28 @@ pub fn status_pill(id: impl Into<ElementId>, word: impl Into<SharedString>, stat
         .child(word)
 }
 
+/// The quiet pill: the dot and the word in the status's colour, with no tint and no edge, so a column
+/// of them reads as words rather than as badges. What is not doing anything (idle, exited) is a faint
+/// dot and a faint word, a step under the rest.
+pub fn quiet_pill(id: impl Into<ElementId>, word: impl Into<SharedString>, status: &str, tokens: &Tokens) -> impl IntoElement {
+    let Tone { colour, .. } = tone(status, tokens);
+    let word = word.into();
+    h_flex()
+        .id(id)
+        .test_support()
+        .aria_label(word.clone())
+        .h(rem(tokens.chip_h))
+        .gap(rem(tokens.sp_6))
+        .items_center()
+        .flex_shrink_0()
+        .text_color(colour)
+        .text_size(rem(tokens.fs_xs))
+        .weighted(tokens.weight_medium)
+        .whitespace_nowrap()
+        .child(div().size(rem(tokens.dot_sm)).flex_shrink_0().rounded_full().bg(colour))
+        .child(word)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +142,13 @@ mod tests {
         for (status, hollow) in [("idle", true), ("exited", true), ("anything else", true), ("working", false), ("failed", false)] {
             assert_eq!(tone(status, &tokens).hollow, hollow, "{status}");
         }
+    }
+
+    #[test]
+    fn a_quiet_pill_says_an_ended_status_in_the_faint_colour_and_a_loud_one_in_its_own() {
+        let tokens = crate::theme::themes::ledger::tokens();
+        assert_eq!(tone("exited", &tokens).colour, tokens.fg_faint);
+        assert_eq!(tone("waiting", &tokens).colour, tokens.attention);
+        assert_eq!(tone("failed", &tokens).colour, tokens.danger);
     }
 }

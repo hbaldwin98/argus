@@ -13,6 +13,7 @@
 //! `shown`'s; this keeps that side's number right as cells come and go.
 
 pub mod gutter;
+pub mod head;
 pub mod occupant;
 pub mod rects;
 mod split_grid;

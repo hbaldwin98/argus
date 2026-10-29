@@ -1,4 +1,4 @@
-//! The strip across the top of the stage: the crumb over the title with the pane's status chip and
+//! The strip across the top of the stage: one line of the crumb then the title, with the pane's status chip and
 //! resumed note, the pane's size or parked place, the drag region that moves the window, the
 //! stage's tools, and the window's three controls (SHELL-STAGE-7..9).
 //!
@@ -13,7 +13,7 @@ pub mod more;
 pub mod slots;
 
 use argus_desktop_core::chrome::strip::StripPage;
-use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, AnyElement, App, MouseButton, SharedString, Window, WindowControlArea};
 
@@ -25,8 +25,9 @@ use crate::style::Typed as _;
 use crate::theme::scale::{css, rem};
 use crate::theme::Tokens;
 
-/// The strip: a drag region that grows, holding the crumb over the title as the page's
-/// `.head-stack` does, then the stage's tools, then the three window controls.
+/// The strip: a drag region that grows, holding the crumb and then the title on one line (the page's
+/// `.head-stack` sets them one over the other, in a strip half as tall again), then the stage's
+/// tools, then the three window controls.
 #[derive(IntoElement)]
 pub struct Header {
     strip: StripPage,
@@ -125,18 +126,18 @@ impl RenderOnce for Header {
                         this.on_mouse_down(MouseButton::Left, |_, window, _| crate::window::drag::start_move(window))
                     })
                     .child(
-                        v_flex()
+                        h_flex()
                             .flex_1()
                             .min_w_0()
-                            .justify_center()
-                            .gap(rem(tokens.sp_2))
+                            .items_center()
+                            .gap(rem(tokens.sp_4))
                             .when(!crumb.is_empty(), |this| this.child(crumb::crumb(&crumb, &tokens)))
                             .child(
                                 h_flex()
                                     .min_w_0()
                                     .gap(rem(tokens.sp_8))
                                     .items_center()
-                                    .child(div().typed(tokens.type_heading).text_color(tokens.fg).truncate().child(SharedString::from(title)))
+                                    .child(div().typed(tokens.type_heading).weighted(tokens.weight_medium).text_color(tokens.fg).truncate().child(SharedString::from(title)))
                                     .children(chip.map(|status| status_pill("head-status", status_word(status).to_owned(), status, &tokens)))
                                     .children(pill.map(|pill| status_pill("head-pill", pill.word, pill.status, &tokens)))
                                     .when(!meta.is_empty(), |row| row.child(self::meta::meta(&meta, meta_tip, &tokens)))

@@ -49,9 +49,10 @@ pub fn sheet_head(
         .flex_shrink_0()
         .items_center()
         .gap(rem(tokens.sp_12))
-        .min_h(rem(tokens.sp_44 + tokens.sp_12))
+        // As tall as the window's own strip, so a sheet's head is no heavier than the frame round it.
+        .min_h(rem(tokens.header_h))
         .px(rem(tokens.sp_24))
-        .py(rem(tokens.sp_8))
+        .py(rem(tokens.sp_4))
         .border_b_1()
         .border_color(tokens.line)
         .child(div().flex_1().min_w_0().typed(tokens.type_title).text_color(tokens.fg).child(title))

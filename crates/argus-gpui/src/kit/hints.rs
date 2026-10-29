@@ -1,6 +1,6 @@
 //! The key bar at a stage's foot, the one every stage draws (`.kbar`): each hint as its caps and
 //! what it does, and at the far end whatever the stage puts there. It stands as tall as the
-//! sidebar's foot beside it (8px over and under a row as tall as the foot's icon buttons, under a
+//! sidebar's foot beside it (`foot_pad` over and under a row as tall as the foot's icon buttons, under a
 //! hairline), so the two feet line up across the window.
 //!
 //! The words are the stage's own; what is bound and unhinted stays out of it, as in the page.
@@ -26,7 +26,7 @@ pub fn bar(id: &'static str, hints: &[Hint], end: &[Hint], note: Option<AnyEleme
         .test_support()
         .aria_label(SharedString::from(said.join(", ")))
         .flex_shrink_0()
-        .py(rem(tokens.sp_8))
+        .py(rem(tokens.foot_pad))
         .px(rem(tokens.sp_20))
         .border_t_1()
         .border_color(tokens.line)

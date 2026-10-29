@@ -158,3 +158,15 @@ fn the_four_pane_scene_is_a_grid_of_two_rows_with_the_keys_on_the_last(cx: &mut 
     let (top, below) = (bounds(cx, &opened, "cell-0"), bounds(cx, &opened, "cell-3"));
     assert!(below.origin.y > top.origin.y, "the fourth is on the second row");
 }
+
+#[gpui_kit::test]
+fn a_cell_head_sets_an_agents_name_apart_from_its_task_and_a_shell_is_its_name_alone(cx: &mut TestAppContext) {
+    // The restyle's two-weight head: dot, the name in the body colour, the task muted.
+    let mut row = three();
+    row.beside[0] = Some(shown(2, "claude \u{b7} trim context"));
+    let opened = opened(cx, row);
+    assert_eq!(label(cx, &opened, "cell-name-1").as_deref(), Some("claude"));
+    assert_eq!(label(cx, &opened, "cell-task-1").as_deref(), Some("trim context"));
+    assert_eq!(label(cx, &opened, "cell-name-2").as_deref(), Some("three"));
+    assert!(!has(cx, &opened, "cell-task-2"), "a title with no separator has no task");
+}

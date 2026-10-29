@@ -14,7 +14,7 @@ use gpui_kit::component::h_flex;
 use gpui_kit::{div, prelude::*, AnyElement, Context, SharedString};
 
 use super::cards::cards;
-use super::rows::{row, section};
+use super::rows::{row, section, Group};
 use super::PreferencesView;
 use crate::settings::look::system_dark;
 use crate::kit::toggle::toggle;
@@ -61,20 +61,15 @@ impl PreferencesView {
             )
         });
         let (code_note, ui_note) = (self.code_missing.clone(), self.ui_missing.clone());
-        let rows = vec![
-            cards(drawn, tokens, window.rem_size(), cx),
-            row("Follow the system", Some("Mocha when it is dark, Latte when it is light"), vec![], follow, tokens),
-            row("Background opacity", Some("The desktop shows through the background; text and borders stay solid"), vec![], slider, tokens),
-        ]
-        .into_iter()
-        .chain(backdrop)
-        .chain([
+        let theme = vec![cards(drawn, tokens, window.rem_size(), cx), row("Follow the system", Some("Mocha when it is dark, Latte when it is light"), vec![], follow, tokens)];
+        let background = std::iter::once(row("Background opacity", Some("The desktop shows through the background; text and borders stay solid"), vec![], slider, tokens)).chain(backdrop).collect();
+        let fonts = vec![
             row("Code font", Some("Panes and code, monospaced; a Nerd Font draws its icons"), code_note.into_iter().collect(), self.code_font.clone(), tokens),
             row("Interface font", Some("Menus, lists, headings and prose"), ui_note.into_iter().collect(), self.ui_font.clone(), tokens),
-        ])
-        .collect();
+        ];
+        let groups = vec![Group::named("Theme", theme), Group::named("Background", background), Group::named("Fonts", fonts)];
         let named = &super::nav::SECTIONS[0];
-        section(("settings-section", 0usize), named.name, named.about, rows, tokens)
+        section(("settings-section", 0usize), named.name, named.about, groups, tokens)
     }
 
     /// The notes under the font fields: what draws when no installed font is called what a field

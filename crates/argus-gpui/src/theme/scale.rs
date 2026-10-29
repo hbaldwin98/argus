@@ -167,6 +167,9 @@ pub struct Scale {
     pub opacity_wait: f32,
     /// What a dock or console keeps while another is held.
     pub opacity_held: f32,
+    /// A cell of the grid that has not got the keys steps back to this, so the keyed one is found
+    /// at a look; not `opacity_dim`, which says the daemon is gone.
+    pub opacity_unkeyed: f32,
 
     pub control_h: f32,
     pub control_h_sm: f32,
@@ -183,6 +186,8 @@ pub struct Scale {
     pub dot_md: f32,
     pub dot_lg: f32,
     pub meter_h: f32,
+    /// The hairline progress bar, for a bar under a line of text rather than one beside it.
+    pub meter_h_thin: f32,
     pub header_h: f32,
     pub strip_h: f32,
     pub pane_head_h: f32,
@@ -212,10 +217,13 @@ pub struct Scale {
     pub status_dash_h: f32,
     /// A nav row's icon cell, the indent of a checkout's panes under its branch, and the open pane's edge mark.
     pub nav_icon_cell: f32,
-    /// `.pane`, `.nav` and `.search`: the height of a pane row, a nav row and the search field.
-    pub pane_row_h: f32,
-    pub nav_h: f32,
+    /// Every row of the rail but the search field (a stage, a repository, a checkout, a pane, a
+    /// view), one height so the column reads as one list; and the search field's.
+    pub rail_row_h: f32,
     pub search_h: f32,
+    /// Over and under the sidebar's foot and a stage's key bar, which stand on one line across the
+    /// window: the page's 8, made 6 so the foot is quieter.
+    pub foot_pad: f32,
     /// `.nav-saved-list`: the share of the window's height the Views fold's list may take before it scrolls (`40vh`).
     pub nav_saved_share: f32,
     /// `.saved-col` and `.saved-meta dt`: the least a saved panel's column is wide before the panel scrolls sideways, and the width of a Details label.
@@ -343,7 +351,7 @@ pub struct Scale {
     pub scommand_max_w: f32,
     pub scheckout_max_w: f32,
     pub folders_max_h: f32,
-    /// `.dialog.sheet-dialog` (the Settings sheet: its width and height, the share of the window each may take, which the shortcuts sheet's own height share is also), `.settings-nav`, `.themecards` and `.themecard .pv` (the cards per row, the preview's height, its sidebar's width, a line's height and the rounding of both), `.toggle`, `.opacity input` and the percent beside it, `.settings .setrow .field` and `.fontpick-list`.
+    /// `.dialog.sheet-dialog` (the Settings sheet: its width and height, the share of the window each may take, which the shortcuts sheet's own height share is also), `.settings-nav`, `.themecards` and `.themecard .pv` (the cards per row, the preview's height, its sidebar's width, a line's height and the rounding of both), `.toggle`, `.opacity input` and the percent beside it, `.settings .setrow .field` and `.fontpick-list`. The nav's width, the cards, their preview and the switch are the port's own, narrower and shorter than the page's, so the rows under the cards show on the first screen.
     pub settings_w: f32,
     pub settings_h: f32,
     pub settings_max_w_share: f32,
@@ -354,6 +362,9 @@ pub struct Scale {
     pub preview_line_h: f32,
     pub preview_rounding: f32,
     pub toggle_w: f32,
+    /// The switch's height and its knob's size: a small switch (30 by 17) so a row's words lead it.
+    pub toggle_h: f32,
+    pub toggle_knob: f32,
     pub opacity_slider_w: f32,
     pub percent_w: f32,
     pub setting_field_w: f32,
@@ -676,6 +687,7 @@ impl Scale {
             opacity_dim: 0.55,
             opacity_wait: 0.7,
             opacity_held: 0.5,
+            opacity_unkeyed: 0.62,
 
             control_h: 30.0,
             control_h_sm: 24.0,
@@ -692,9 +704,11 @@ impl Scale {
             dot_md: 7.0,
             dot_lg: 8.0,
             meter_h: 6.0,
-            header_h: 56.0,
-            strip_h: 40.0,
-            pane_head_h: 32.0,
+            meter_h_thin: 2.0,
+            // The port's own, lower than the page's 56, 40 and 32: one line of title, a quieter frame.
+            header_h: 40.0,
+            strip_h: 34.0,
+            pane_head_h: 26.0,
             rail_w: 288.0,
             rail_folded: 56.0,
             rail_tile: 40.0,
@@ -712,8 +726,8 @@ impl Scale {
             status_box: 9.0,
             status_dash_h: 1.5,
             nav_icon_cell: 22.0,
-            pane_row_h: 32.0,
-            nav_h: 32.0,
+            rail_row_h: 28.0,
+            foot_pad: 6.0,
             search_h: 34.0,
             nav_saved_share: 0.40,
             saved_col_min: 420.0,
@@ -813,13 +827,15 @@ impl Scale {
             settings_w: 1120.0,
             settings_h: 760.0,
             settings_max_w_share: 0.94,
-            settings_nav_w: 200.0,
-            theme_cards_per_row: 5,
-            preview_h: 56.0,
-            preview_side_w: 24.0,
-            preview_line_h: 6.0,
+            settings_nav_w: 228.0,
+            theme_cards_per_row: 6,
+            preview_h: 34.0,
+            preview_side_w: 12.0,
+            preview_line_h: 3.0,
             preview_rounding: 3.0,
-            toggle_w: 40.0,
+            toggle_w: 30.0,
+            toggle_h: 17.0,
+            toggle_knob: 13.0,
             opacity_slider_w: 200.0,
             percent_w: 36.0,
             setting_field_w: 260.0,

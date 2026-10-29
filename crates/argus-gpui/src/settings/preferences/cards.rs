@@ -53,7 +53,7 @@ pub fn cards(drawn: Chosen, tokens: &Tokens, rem_size: gpui_kit::Pixels, cx: &mu
             .flex_1()
             .min_w_0()
             .gap(rem(tokens.sp_6))
-            .p(rem(tokens.sp_8))
+            .p(rem(tokens.sp_6))
             .rounded(rem(tokens.r_md))
             .border_1()
             .border_color(if on { tokens.accent } else { tokens.line_strong })
@@ -74,7 +74,8 @@ pub fn cards(drawn: Chosen, tokens: &Tokens, rem_size: gpui_kit::Pixels, cx: &mu
                     .min_w_0()
                     .gap(rem(tokens.sp_6))
                     .items_center()
-                    .weighted(tokens.weight_semibold)
+                    .text_size(rem(tokens.fs_sm))
+                    .weighted(tokens.weight_medium)
                     .child(div().min_w_0().truncate().child(SharedString::from(name)))
                     .when(on, |name| name.child(div().text_color(tokens.ok).child(Glyph::Check.at(tokens.icon_xs)))),
             )
@@ -90,9 +91,9 @@ pub fn cards(drawn: Chosen, tokens: &Tokens, rem_size: gpui_kit::Pixels, cx: &mu
         }
         // A short last row keeps the width of a card in each cell it has, as a grid does: the filler has a card's padding and border so its share matches.
         while row.len() < per_row {
-            row.push(div().flex_1().min_w_0().p(rem(tokens.sp_8)).border_1().into_any_element());
+            row.push(div().flex_1().min_w_0().p(rem(tokens.sp_6)).border_1().into_any_element());
         }
-        rows.push(h_flex().gap(rem(tokens.sp_12)).children(row).into_any_element());
+        rows.push(h_flex().gap(rem(tokens.sp_8)).children(row).into_any_element());
     }
-    v_flex().id("themecards").role(Role::RadioGroup).test_support().aria_label("Theme").gap(rem(tokens.sp_12)).px(rem(tokens.sp_16)).py(rem(tokens.sp_12)).children(rows).into_any_element()
+    v_flex().id("themecards").role(Role::RadioGroup).test_support().aria_label("Theme").gap(rem(tokens.sp_8)).py(rem(tokens.sp_8)).children(rows).into_any_element()
 }

@@ -11,7 +11,9 @@
 //!   ARGUS_GPUI_SHOTS=<dir> cargo test -p argus-gpui --test screens -- --ignored --nocapture
 //!
 //! `ARGUS_GPUI_SCENES=a,b` limits the scenes. A scene the page finishes with a
-//! click (`then`) is photographed as heard, before the click.
+//! click (`then`) is photographed as heard, before the click. `ARGUS_GPUI_THEME`
+//! (a theme's settings name: `ledger`, `latte`, `rosePine`...) draws every
+//! scene in that theme in place of the one its session chose.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -21,6 +23,7 @@ use std::time::Duration;
 use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::connection::page::Event;
 use argus_desktop_core::screens::{scenes, NOW};
+use argus_desktop_core::settings::remembered::Theme;
 use argus_gpui::chrome::shell::Shell;
 use argus_gpui::connection::caller::Caller;
 use argus_gpui::connection::heard::Heard;
@@ -138,6 +141,12 @@ fn edits_in(name: &str, events: &[Event]) -> Vec<Event> {
     vec![Event::Edit(EditEvent::Opened { checkout: page.checkout, path, version: 0, text })]
 }
 
+/// The theme `ARGUS_GPUI_THEME` names, by the name the settings file stores it under.
+fn chosen_theme() -> Option<Theme> {
+    let name = std::env::var("ARGUS_GPUI_THEME").ok().filter(|name| !name.is_empty())?;
+    Some(serde_json::from_value(serde_json::Value::String(name.clone())).unwrap_or_else(|_| panic!("ARGUS_GPUI_THEME={name} is not a theme")))
+}
+
 /// Everything a fresh page would hear in `name`'s scene, and the first frames apart: a frame for a cell
 /// that has no screen yet is dropped, so they are heard once the window has drawn the cells the
 /// rail names.
@@ -152,6 +161,16 @@ fn heard_in(name: &str) -> (Vec<Event>, Vec<Event>) {
         events.extend(session.events(NOW));
     }
     events.extend(session.take_frames());
+    if let Some(theme) = chosen_theme() {
+        let mut said = false;
+        for event in &mut events {
+            if let Event::Settings(page) = event {
+                page.chosen.theme = theme;
+                said = true;
+            }
+        }
+        assert!(said, "{name}: the session sent no settings to draw ARGUS_GPUI_THEME in");
+    }
     let (frames, rest): (Vec<Event>, Vec<Event>) = events.into_iter().partition(|event| matches!(event, Event::Frame(_)));
     (rest, frames)
 }

@@ -68,7 +68,8 @@ pub struct Foot {
     pub settings_title: String,
 }
 
-/// `.bar`: 8px over 16px of padding, 4px between rows, and the page's small type.
+/// `.bar`, tighter than the page's: `foot_pad` over 16px of padding, 2px between rows, and the page's small
+/// type. The tallies and the daemon's line do not fit one row beside the three buttons, so they are two.
 pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Tokens) -> impl IntoElement {
     let Foot { link, needs_you, working, alarm, chime, console, .. } = foot;
     let (needs_you, working, chime) = (*needs_you, *working, *chime);
@@ -77,9 +78,9 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
         .id("foot")
         .test_support()
         .flex_shrink_0()
-        .gap(rem(tokens.sp_4))
+        .gap(rem(tokens.sp_2))
         .px(rem(if icons { 0.0 } else { tokens.sp_16 }))
-        .py(rem(tokens.sp_8))
+        .py(rem(tokens.foot_pad))
         .when(icons, |rows| rows.items_center())
         .border_t_1()
         .border_color(tokens.line)
@@ -87,7 +88,7 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
         .text_color(tokens.fg_muted);
     // A narrow rail has no room for words: the tallies and the alarm are put away.
     if !icons && connected && (needs_you > 0 || working > 0) {
-        let mut tallies = h_flex().min_h(rem(tokens.control_h_sm)).gap(rem(tokens.sp_8)).items_center();
+        let mut tallies = h_flex().gap(rem(tokens.sp_8)).items_center();
         if needs_you > 0 {
             let text = format!("▲ {needs_you} need you");
             tallies = tallies.child(
@@ -96,7 +97,7 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
                     .role(Role::Status)
                     .test_support()
                     .aria_label(text.clone())
-                    .weighted(tokens.weight_semibold)
+                    .weighted(tokens.weight_medium)
                     .text_color(tokens.attention)
                     .child(text),
             );
@@ -109,7 +110,8 @@ pub fn foot(foot: &Foot, caller: &Caller, held: bool, icons: bool, tokens: &Toke
                     .role(Role::Status)
                     .test_support()
                     .aria_label(text.clone())
-                    .text_color(tokens.accent)
+                    // Work under way asks nothing of the person, so it is said in the muted colour.
+                    .text_color(tokens.fg_muted)
                     .child(text),
             );
         }

@@ -1,5 +1,5 @@
-//! The page's `.toggle`: a switch, 40 by 24, a pill that is the fill while off and the accent while
-//! on, with a round knob that sits left and goes right.
+//! The page's `.toggle`, made smaller: a switch `toggle_w` by `toggle_h`, a pill that is the fill
+//! while off and the accent while on, with a round knob that sits left and goes right.
 //!
 //! Controlled, as every control here is (CROSS-27): it draws the state it is given and asks for the
 //! opposite when pressed; the surface sends that to Rust and draws what Rust says next. The kit's
@@ -12,13 +12,19 @@ use crate::kit::icon_button::Node;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
+/// Where the knob's left edge sits: centred top to bottom and as far from the left edge as from the
+/// top; on, as far from the right.
+fn knob_left(on: bool, tokens: &Tokens) -> f32 {
+    let inset = (tokens.toggle_h - tokens.toggle_knob) / 2.0;
+    if on { tokens.toggle_w - tokens.toggle_knob - inset } else { inset }
+}
+
 /// `off` is a switch that cannot be pressed now: dimmed, with no pointer. The caller adds `on_click`
 /// (not while `off`).
 pub fn toggle(id: impl Into<ElementId>, label: impl Into<SharedString>, on: bool, off: bool, tokens: &Tokens) -> Node {
     let (rest, lit) = if on { (tokens.accent, tokens.accent.lighten(tokens.step_lift)) } else { (tokens.fill, tokens.fill.lighten(tokens.step_lift)) };
-    // The knob has 4px above and beside it; on, it is as far from the right edge.
-    let inset = tokens.sp_4;
-    let left = if on { tokens.toggle_w - tokens.check_box - inset } else { inset };
+    let inset = (tokens.toggle_h - tokens.toggle_knob) / 2.0;
+    let left = knob_left(on, tokens);
     h_flex()
         .id(id)
         .role(Role::Switch)
@@ -28,7 +34,7 @@ pub fn toggle(id: impl Into<ElementId>, label: impl Into<SharedString>, on: bool
         .relative()
         .flex_shrink_0()
         .w(rem(tokens.toggle_w))
-        .h(rem(tokens.sp_24))
+        .h(rem(tokens.toggle_h))
         .rounded(rem(tokens.r_pill))
         .bg(rest)
         .when(off, |toggle| toggle.opacity(tokens.opacity_dim))
@@ -38,8 +44,23 @@ pub fn toggle(id: impl Into<ElementId>, label: impl Into<SharedString>, on: bool
                 .absolute()
                 .top(rem(inset))
                 .left(rem(left))
-                .size(rem(tokens.check_box))
+                .size(rem(tokens.toggle_knob))
                 .rounded_full()
                 .bg(if on { tokens.fg_on_accent } else { tokens.fg_muted }),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_knob_sits_inside_the_switch_and_as_far_from_each_end() {
+        // The proposal's switch: 30 by 17 with a 13px knob, 2px from every edge it is beside.
+        let tokens = crate::theme::themes::ledger::tokens();
+        assert!(tokens.toggle_knob < tokens.toggle_h && tokens.toggle_h < tokens.toggle_w);
+        let (off, on) = (knob_left(false, &tokens), knob_left(true, &tokens));
+        assert_eq!((tokens.toggle_w, tokens.toggle_h, off), (30.0, 17.0, 2.0));
+        assert_eq!(tokens.toggle_w - (on + tokens.toggle_knob), off, "on, it is as far from the right as it was from the left");
+    }
 }

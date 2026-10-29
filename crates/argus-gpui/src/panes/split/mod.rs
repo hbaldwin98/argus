@@ -18,12 +18,14 @@ pub mod cells;
 pub mod focus;
 pub mod gutters;
 pub mod header;
+pub mod keyed;
 
 use argus_desktop_core::connection::page::{Shown, Side};
 use argus_desktop_core::layout::docks::Panel;
 use argus_desktop_core::panes::shown::workspace_grid::Occupant;
 use argus_desktop_core::panes::shown::workspace_grid::rects::cells as placed;
 use argus_desktop_core::panes::shown::workspace_grid::GridPage;
+use argus_desktop_core::panes::shown::workspace_grid::head::halves;
 use gpui_kit::component::v_flex;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, relative, Context, Entity, FocusHandle, SharedString, Subscription, Window};
@@ -42,6 +44,7 @@ use crate::theme::scale::rem;
 use crate::theme::Tokens;
 use cells::Kind;
 use gutters::Gutters;
+use keyed::Standing;
 
 pub struct SplitView {
     heard: Entity<Heard>,
@@ -56,6 +59,8 @@ pub struct SplitView {
     drawn: (Option<Shown>, GridPage),
     gutters: Gutters,
     keys: focus::Keys,
+    /// The cell under the pointer, which an unkeyed cell is drawn whole for.
+    pointed: Option<u8>,
     _observing: Subscription,
     _focusing: Subscription,
 }
@@ -77,6 +82,7 @@ impl SplitView {
             drawn,
             gutters: Gutters::new(cx),
             keys: focus::Keys::default(),
+            pointed: None,
             _observing: observing,
             _focusing: focusing,
         };
@@ -219,11 +225,17 @@ impl SplitView {
         let keyed = split && self.heard.read(cx).keyed_cell().unwrap_or(0) == n;
         let named = match (&panel, pane) {
             (Some(panel), _) => {
-                Some(header::Named { held: Occupant::Panel(panel.clone()), title: header::panel_title(&self.heard.read(cx).docks, panel), status: None })
+                let title = header::panel_title(&self.heard.read(cx).docks, panel);
+                Some(header::Named { held: Occupant::Panel(panel.clone()), name: title.clone(), task: None, title, status: None })
             }
-            (None, Some(pane)) => Some(header::Named { held: Occupant::Pane(pane.pane), title: pane.title.clone(), status: Some(pane.status) }),
+            (None, Some(pane)) => {
+                let named = halves(&pane.title);
+                let (name, task) = (named.name.to_owned(), named.task.map(str::to_owned));
+                Some(header::Named { held: Occupant::Pane(pane.pane), title: pane.title.clone(), name, task, status: Some(pane.status) })
+            }
             (None, None) => None,
         };
+        let standing = Standing::of(split, keyed, self.pointed == Some(n));
         let head = named.filter(|_| split).map(|named| self.head(n, named, keyed, tokens, cx));
         let kind = Kind::of(pane);
         let body = match (&panel, kind, self.screen_of(n), self.browser_in(n)) {
@@ -252,10 +264,25 @@ impl SplitView {
                     .overflow_hidden()
                     .rounded(rem(tokens.r_md))
                     .border_1()
-                    .border_color(tokens.line)
+                    .border_color(standing.edge(tokens))
                     .bg(tokens.bg_surface)
-                    .children(head)
-                    .child(div().flex_1().min_h_0().child(body)),
+                    .child(
+                        v_flex()
+                            .id(SharedString::from(format!("cell-face-{n}")))
+                            .size_full()
+                            .opacity(standing.strength(tokens))
+                            // Followed by hand rather than as a hover style, so the cell is whole while the pointer is over it and not
+                            // only where GPUI's hit test last put it (an unshown window's first frame finds every cell under it).
+                            .on_hover(cx.listener(move |this, over: &bool, _, cx| {
+                                let pointed = if *over { Some(n) } else { this.pointed.filter(|at| *at != n) };
+                                if pointed != this.pointed {
+                                    this.pointed = pointed;
+                                    cx.notify();
+                                }
+                            }))
+                            .children(head)
+                            .child(div().flex_1().min_h_0().child(body)),
+                    ),
             )
     }
 

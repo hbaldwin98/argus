@@ -84,7 +84,7 @@ impl RailView {
         gpui_kit::component::h_flex()
             .items_center()
             .gap(rem(tokens.sp_4))
-            .child(div().id("nav-browsers-count").typed(tokens.type_small).text_color(tokens.fg_muted).child(if count > 0 { count.to_string() } else { String::new() }))
+            .child(div().id("nav-browsers-count").typed(tokens.type_small).text_color(tokens.fg_fainter).child(if count > 0 { count.to_string() } else { String::new() }))
             .children(chevron)
     }
 
@@ -99,17 +99,17 @@ impl RailView {
         let carrier = Carrier::of(cx);
         let title = sub.agent.clone();
         let tooltip = SharedString::from(sub.tooltip.clone());
-        line(format!("nav-browser-{pane}"), tokens.nav_h, tokens)
+        line(format!("nav-browser-{pane}"), tokens.rail_row_h, tokens)
             .w_full()
             .px(rem(tokens.sp_8))
             .gap(rem(tokens.sp_12))
             .text_size(rem(tokens.fs_md))
-            .text_color(tokens.fg)
+            .text_color(if sub.on { tokens.fg } else { tokens.fg_muted })
             .aria_selected(sub.on)
             .aria_label(tooltip.clone())
             .tooltip(tip(tooltip))
             .when(sub.on, |row| row.bg(tokens.bg_selected))
-            .when(!sub.on, |row| row.hover(move |style| style.bg(fill)))
+            .when(!sub.on, |row| row.hover(move |style| style.bg(fill).text_color(tokens.fg)))
             .on_click(cx.listener(move |this, _, _, _| this.ask(held, Call::ShowBrowsers { pane: Some(pane) })))
             .on_mouse_down(
                 MouseButton::Left,

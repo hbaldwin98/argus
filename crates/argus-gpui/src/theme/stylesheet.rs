@@ -297,9 +297,6 @@ fn ledgers_scale_is_the_stylesheets() {
         ("dot-md", t.dot_md),
         ("dot-lg", t.dot_lg),
         ("meter-h", t.meter_h),
-        ("header-h", t.header_h),
-        ("strip-h", t.strip_h),
-        ("pane-head-h", t.pane_head_h),
         ("rail-folded", t.rail_folded),
         ("rail-tile", t.rail_tile),
         ("icon-glyph", t.icon_glyph),
@@ -354,6 +351,8 @@ fn the_ports_own_sizes_are_named_not_themed() {
     // Sizes with no variable are the same in every theme, so a theme that sets none keeps them.
     let t = ledger::tokens();
     assert_eq!(t.window_control_w, 46.0);
+    // The port's frame is lower than the page's 56, 40 and 32 (`--header-h`, `--strip-h`, `--pane-head-h`).
+    assert_eq!((t.header_h, t.strip_h, t.pane_head_h), (40.0, 34.0, 26.0));
     assert_eq!(t.status_box, 9.0);
     assert_eq!(t.dialog_w, 420.0);
 }
@@ -636,26 +635,18 @@ fn the_settings_sheets_sizes_are_the_rules_they_were_written_from() {
   width: min(1120px, 94vw);
   height: min(760px, 90vh);");
     assert_eq!((t.settings_w, t.settings_h, t.settings_max_w_share), (1120.0, 760.0, 0.94));
-    sheet_has(".settings-nav {
-  width: 200px;");
-    assert_eq!(t.settings_nav_w, 200.0);
-    sheet_has("grid-template-columns: repeat(5, minmax(0, 1fr));");
-    assert_eq!(t.theme_cards_per_row, 5);
-    sheet_has(".themecard .pv {
-  background: var(--base);
-  height: 56px;
-  border-radius: var(--pv-r);");
+    // The nav, the cards and the switch are the port's own, smaller than the page's (`.settings-nav`
+    // 200px, five 56px cards a row, `.toggle` 40 by 24): a nav that says what each section holds, and
+    // cards short enough that the rows under them show.
+    assert_eq!(t.settings_nav_w, 228.0);
+    assert_eq!(t.theme_cards_per_row, 6);
+    // Only the preview's rounding is still the page's.
     sheet_has(".pv .side {
   background: var(--mantle);
   width: 24px;
   border-radius: 3px;");
-    sheet_has(".pv .lines span {
-  height: 6px;
-  border-radius: 3px;");
-    assert_eq!((t.preview_h, t.preview_side_w, t.preview_line_h, t.preview_rounding), (56.0, 24.0, 6.0, 3.0));
-    sheet_has(".toggle {
-  width: 40px;");
-    assert_eq!(t.toggle_w, 40.0);
+    assert_eq!((t.preview_h, t.preview_side_w, t.preview_line_h, t.preview_rounding), (34.0, 12.0, 3.0, 3.0));
+    assert_eq!((t.toggle_w, t.toggle_h, t.toggle_knob), (30.0, 17.0, 13.0));
     sheet_has(".opacity input {
   width: 200px;");
     assert_eq!(t.opacity_slider_w, 200.0);

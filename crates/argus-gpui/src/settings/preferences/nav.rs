@@ -1,5 +1,5 @@
-//! The sheet's sections and the column that names them: six sections, each with its icon and the
-//! line about it, and the one lit that is in view.
+//! The sheet's sections and the column that names them: six sections, each with its icon and, under
+//! its name, the line about what it holds, and the one lit that is in view.
 //!
 //! A press on a name scrolls the body to its section; scrolling lights the last section whose top
 //! has reached the top of the body (`spy` of the page's `preferences.ts`), so a long page says
@@ -56,11 +56,11 @@ pub fn in_view(body: &ScrollHandle, tokens: &Tokens) -> usize {
     current(&tops, f32::from(body.bounds().origin.y), tokens.sp_24, room > 0.0 && -scrolled >= room - 1.0)
 }
 
-/// `.settings-nav`: a row per section, the one in view lit, and the version at the foot.
 /// What a name in the nav does when pressed.
 pub type Press = Rc<dyn Fn(&mut Window, &mut App)>;
 
-/// `presses` is what each name does when pressed, in the order of [`SECTIONS`].
+/// `.settings-nav`: a row per section, its name over the line about it, the one in view lit, and the
+/// version at the foot. `presses` is what each name does when pressed, in the order of [`SECTIONS`].
 pub fn column(lit: usize, version: &str, tokens: &Tokens, presses: Vec<Press>) -> impl IntoElement {
     v_flex()
         .id("settings-nav")
@@ -85,16 +85,32 @@ pub fn column(lit: usize, version: &str, tokens: &Tokens, presses: Vec<Press>) -
                 .flex_shrink_0()
                 .min_h(rem(tokens.control_h))
                 .px(rem(tokens.sp_8))
+                .py(rem(tokens.sp_6))
                 .gap(rem(tokens.sp_8))
-                .items_center()
+                .items_start()
                 .rounded(rem(tokens.r_sm))
                 .cursor_pointer()
                 .text_color(tokens.fg)
                 .when(at == lit, |row| row.bg(tokens.bg_selected))
                 .when(at != lit, |row| row.hover(move |style| style.bg(tokens.fill)))
                 .on_click(move |_, window, cx| go(window, cx))
-                .child(div().flex_shrink_0().text_color(tokens.fg_faint).child(section.icon.at(tokens.icon_sm)))
-                .child(SharedString::from(section.name))
+                // The icon sits on the name's line, not centred on the two lines.
+                .child(div().flex_shrink_0().pt(rem(tokens.sp_2)).text_color(tokens.fg_faint).child(section.icon.at(tokens.icon_sm)))
+                .child(
+                    v_flex()
+                        .min_w_0()
+                        .gap(rem(tokens.sp_2))
+                        .child(SharedString::from(section.name))
+                        .child(
+                            div()
+                                .id(("settings-nav-about", at))
+                                .test_support()
+                                .aria_label(SharedString::from(section.about))
+                                .typed(tokens.type_small)
+                                .text_color(tokens.fg_faint)
+                                .child(SharedString::from(section.about)),
+                        ),
+                )
         }))
         .child(div().flex_1())
         .when(!version.is_empty(), |nav| nav.child(div().p(rem(tokens.sp_8)).typed(tokens.type_small).text_color(tokens.fg_muted).child(SharedString::from(format!("argus {version}")))))

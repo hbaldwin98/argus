@@ -194,7 +194,8 @@ pub fn branch(checkout: &CheckoutInfo) -> String {
 /// two words or the first two letters of one word, lower-cased (`claude · trim context` is `tc`).
 /// The agent's name before the dot is the same on most rows, so it would make the tiles alike.
 pub fn pane_mark(title: &str) -> String {
-    let task = title.split_once(" \u{b7} ").map_or(title, |(_, task)| task);
+    let named = crate::panes::shown::workspace_grid::head::halves(title);
+    let task = named.task.unwrap_or(named.name);
     let spaced: String = task.chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
     let mut words = spaced.split_whitespace();
     let (first, second) = (words.next().unwrap_or(""), words.next());
