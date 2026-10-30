@@ -46,6 +46,8 @@ use argus_protocol::{
 
 use crate::chrome::add_project::{AddProject, Adding};
 use crate::chrome::add_page::{AddKind, AddProjectGesture};
+use crate::chrome::combine::{Combine, Combining};
+use crate::chrome::combine_page::CombineGesture;
 use crate::dictation::{self, Deliver, Dictation, DictationGesture};
 use crate::chrome::cursor::{RailCursor, Then};
 use crate::browser::Browsers;
@@ -118,6 +120,8 @@ enum Made {
     /// A repository added into this project: the dialog closes when every one it asked for is held,
     /// and the project is the one on the rail.
     AddedRepository(ProjectId),
+    /// Projects folded into this one: the dialog closes and the project is the one on the rail.
+    Combined,
     /// Show the new console in the console, which shows itself for it.
     ShowConsole,
     /// Show the new console on the second side of the split asked for.
@@ -188,6 +192,8 @@ pub struct Session {
     switcher: Switcher,
     /// The add-a-project dialog.
     adding: Adding,
+    /// The combine-projects dialog.
+    combining: Combining,
     /// The command palette is open, so what it can go to is sent.
     palette: bool,
     /// The host was switched since the settings were saved.
@@ -283,6 +289,7 @@ impl Session {
             tracker_dialogs: TrackerDialogs::default(),
             switcher: Switcher::with_visited(settings.hosts.clone()),
             adding: Adding::default(),
+            combining: Combining::default(),
             palette: false,
             palette_sent: Sent::default(),
             code: Code::default(),
@@ -390,6 +397,9 @@ impl Session {
             }
         }
         self.switcher.forget_making();
+        if let Some(dialog) = self.combining.get_mut() {
+            dialog.reconnected();
+        }
         if let Some(dialog) = self.adding.get_mut() {
             dialog.reconnected(self.awaited.name(), &mut self.out);
         }
@@ -574,6 +584,7 @@ impl Session {
             return;
         }
         let said = self.adding.get_mut().is_some_and(|d| d.refused(&refusal))
+            || self.combining.get_mut().is_some_and(|d| d.refused(&refusal))
             || self.dialogs.refused(&refusal, &mut self.passing)
             || self.sessions.failed(id, &refusal.reason);
         if said {
@@ -707,6 +718,10 @@ impl Session {
                     self.adding.close();
                     self.choose_project(project);
                 }
+                (Created::Project(project), Made::Combined) => {
+                    self.combining.close();
+                    self.choose_project(project);
+                }
                 (Created::Repository(_), Made::AddedRepository(project)) => {
                     if self.adding.get_mut().is_some_and(AddProject::settled) {
                         self.adding.close();
@@ -785,6 +800,8 @@ impl Session {
             Call::OpenAddProject => self.open_add_project(),
             Call::OpenAddToProject { project, kind } => self.open_add_to_project(ProjectId(project), kind),
             Call::AddProject { gesture } => self.add_project(gesture),
+            Call::OpenCombineProjects { into, tick } => self.open_combine(into.map(ProjectId), tick.map(ProjectId)),
+            Call::CombineProjects { gesture } => self.combine_projects(gesture),
             Call::ToggleRepository { repository } => self.toggle_repository(RepositoryId(repository)),
             Call::ToggleCheckout { checkout } => self.toggle_checkout(CheckoutId(checkout)),
             Call::RailPick { checkout, pane } => {
@@ -1723,6 +1740,37 @@ impl Session {
             }
             AddProjectGesture::AddTo { project } => dialog.add_to(project.map(ProjectId)),
             AddProjectGesture::Close => self.adding.close(),
+        }
+        self.finish()
+    }
+
+    /// The dialog that folds projects into one, open on `into` (the project the rail lists by
+    /// default) with `tick` ticked. An add dialog that linked here is put away: this is what it
+    /// pointed to.
+    fn open_combine(&mut self, into: Option<ProjectId>, tick: Option<ProjectId>) -> Vec<ClientMsg> {
+        if !self.status.daemon_can(argus_protocol::connection::hello::COMBINE_PROJECTS) {
+            return self.note("argusd is too old to combine projects: run `argus server restart`");
+        }
+        let into = into.or(self.project).filter(|into| self.tree.iter().any(|p| p.id == *into));
+        if let Some(into) = into.filter(|_| !self.combining.is_open()) {
+            self.adding.close();
+            self.combining.open(Combine::new(into, tick));
+        }
+        self.finish()
+    }
+
+    fn combine_projects(&mut self, gesture: CombineGesture) -> Vec<ClientMsg> {
+        let Some(dialog) = self.combining.get_mut() else {
+            return self.finish();
+        };
+        match gesture {
+            CombineGesture::Into { project } => dialog.set_into(ProjectId(project)),
+            CombineGesture::Tick { project } => dialog.tick(ProjectId(project)),
+            CombineGesture::Combine => {
+                let awaited = &mut self.awaited;
+                self.out.extend(dialog.combine(&self.tree, || awaited.ask(Made::Combined)));
+            }
+            CombineGesture::Close => self.combining.close(),
         }
         self.finish()
     }
@@ -3682,6 +3730,7 @@ impl Session {
         let repository = scope.as_ref().map_or("", |scope| scope.repository_name.as_str());
         events.extend(self.capture.take(repository));
         events.extend(self.adding.take(&self.tree, self.project));
+        events.extend(self.combining.take(&self.tree));
         let listing = self.palette.then(|| palette::build(self.current_project(), self.features.board(), &self.tree));
         if let Some(listing) = self.palette_sent.take(listing) {
             events.push(Event::Palette(Box::new(listing)));
@@ -3740,6 +3789,7 @@ impl Session {
         self.recent.reload();
         self.tracker_dialogs.reload();
         self.adding.reload();
+        self.combining.reload();
         self.capture.reload();
         self.console.reload();
         self.docks.reload();
@@ -3805,6 +3855,7 @@ impl Session {
         }
         rail.removing = self.switcher.removing(&self.tree);
         rail.new_workspace = self.switcher.making();
+        rail.can_combine = self.status.daemon_can(argus_protocol::connection::hello::COMBINE_PROJECTS);
         rail.width = self.rail_width.get();
         rail.outline_width = self.outline_width.get();
         rail.brief_height = self.brief_height.get();
@@ -6495,7 +6546,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 165] = [
+    const CALLS: [&str; 167] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -6608,6 +6659,8 @@ mod tests {
         r#"{"call":"open_add_to_project","project":1,"kind":"repository"}"#,
         r#"{"call":"create_workspace","name":"side"}"#,
         r#"{"call":"dismiss_new_workspace"}"#,
+        r#"{"call":"open_combine_projects","into":1,"tick":2}"#,
+        r#"{"call":"combine_projects","gesture":{"on":"tick","project":2}}"#,
         r#"{"call":"toggle_extensions"}"#,
         r#"{"call":"reconnect"}"#,
         r#"{"call":"set_host","host":"devbox"}"#,
@@ -7246,6 +7299,67 @@ mod tests {
         assert_eq!(s.rail(0).new_workspace.and_then(|n| n.refusal).as_deref(), Some("workspace already exists: default"));
     }
 
+
+    fn combining(s: &mut Session) -> Option<crate::chrome::combine_page::CombinePage> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::Combine(page) => Some(*page),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn combining_is_offered_and_opened_only_for_a_daemon_that_lists_it() {
+        let mut s = session(Hello { capabilities: Vec::new(), ..Hello::this_build() });
+        assert!(!s.rail(0).can_combine);
+        let sent = s.call(Call::OpenCombineProjects { into: None, tick: None });
+        assert!(sent.is_empty());
+        assert!(combining(&mut s).is_none(), "an older daemon is told so and nothing opens");
+        assert!(s.events(0).iter().all(|e| !matches!(e, Event::Combine(_))));
+        let mut s = session(Hello { capabilities: vec![argus_protocol::connection::hello::COMBINE_PROJECTS.into()], ..Hello::this_build() });
+        assert!(s.rail(0).can_combine);
+        s.call(Call::OpenCombineProjects { into: None, tick: Some(2) });
+        let page = combining(&mut s).expect("open");
+        assert_eq!((page.into.map(|p| p.id), page.rows.iter().map(|r| r.ticked).collect::<Vec<_>>()), (Some(1), vec![true]), "into the project on the rail");
+    }
+
+    #[test]
+    fn projects_are_combined_when_the_daemon_answers_and_the_window_stays_on_the_project_folded_into() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::SelectProject { project: 2 });
+        s.call(Call::OpenCombineProjects { into: Some(1), tick: Some(2) });
+        let sent = s.call(Call::CombineProjects { gesture: CombineGesture::Combine });
+        let [ClientMsg::CombineProjects { into, from, request_id }] = sent.as_slice() else { panic!("{sent:?}") };
+        assert_eq!((*into, from.as_slice()), (ProjectId(1), [ProjectId(2)].as_slice()));
+        assert!(combining(&mut s).is_some_and(|p| p.combining), "asked, not done");
+        assert_eq!(s.rail(0).project.map(|p| p.id), Some(2), "nothing is predicted");
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Project(ProjectId(1))) });
+        s.receive(with_tree(tree()[..1].to_vec()));
+        assert!(combining(&mut s).is_some_and(|p| !p.open), "the dialog goes with the answer");
+        assert_eq!(s.rail(0).project.map(|p| p.id), Some(1));
+    }
+
+    #[test]
+    fn a_refusal_to_combine_is_said_in_the_dialog_which_stays_open() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::OpenCombineProjects { into: Some(1), tick: Some(2) });
+        let sent = s.call(Call::CombineProjects { gesture: CombineGesture::Combine });
+        let [ClientMsg::CombineProjects { request_id, .. }] = sent.as_slice() else { panic!("{sent:?}") };
+        s.receive(refusal(*request_id, "project 2 is being removed", false));
+        let events = s.events(0);
+        assert!(!events.iter().any(|e| matches!(e, Event::Notice { .. })));
+        let page = events.into_iter().find_map(|e| if let Event::Combine(page) = e { Some(*page) } else { None }).expect("sent");
+        assert_eq!((page.open, page.combining, page.refusal.as_deref()), (true, false, Some("project 2 is being removed")));
+        assert!(page.rows[0].ticked);
+    }
+
+    #[test]
+    fn closing_the_combine_dialog_asks_nothing() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::OpenCombineProjects { into: Some(1), tick: Some(2) });
+        combining(&mut s);
+        assert!(s.call(Call::CombineProjects { gesture: CombineGesture::Close }).is_empty());
+        assert!(combining(&mut s).is_some_and(|p| !p.open));
+    }
     /// A session with the dialog open on a project, `/home/work` browsed and `found` its preview.
     fn adding_into(project: u64, kind: AddKind, found: &[&str]) -> Session {
         let mut s = session(Hello::this_build());

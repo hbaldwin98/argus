@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::browser::{BrowserShot, BrowsersPage};
 use crate::chrome::add_page::{AddKind, AddProjectGesture, AddProjectPage};
+use crate::chrome::combine_page::{CombineGesture, CombinePage};
 use crate::board::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::files::FilesGesture;
 use crate::checkouts::table::Checkouts;
@@ -133,6 +134,11 @@ pub enum Call {
     DismissNewWorkspace,
     /// A gesture in the add-a-project dialog.
     AddProject { gesture: AddProjectGesture },
+    /// Opens the combine-projects dialog folding into `into` (the project the rail lists when
+    /// `None`), with `tick` already ticked to be folded in.
+    OpenCombineProjects { into: Option<u64>, tick: Option<u64> },
+    /// A gesture in the combine-projects dialog.
+    CombineProjects { gesture: CombineGesture },
     ToggleRepository { repository: u64 },
     /// Folds a checkout's panes off the rail, or unfolds them.
     ToggleCheckout { checkout: u64 },
@@ -555,6 +561,8 @@ pub enum Event {
     /// The add-a-project dialog, whole, whenever it changes; `open` false
     /// once it closes.
     AddProject(Box<AddProjectPage>),
+    /// The combine-projects dialog, whole, whenever it changes; `open` false once it closes.
+    Combine(Box<CombinePage>),
     /// The console, whole, whenever it changes.
     Console(Box<ConsolePage>),
     /// Each dock's tabs, the one it shows and how big it is, whole,
@@ -714,6 +722,11 @@ pub struct Rail {
     pub removing: Option<Removing>,
     /// A workspace being made from the switcher: asked of the daemon, or refused by it.
     pub new_workspace: Option<NewWorkspace>,
+    /// The daemon can fold projects together, so the switcher offers it. Only the GPUI window
+    /// draws the switcher from this; the page has no such dialog, so it never crosses to it.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub can_combine: bool,
     /// The width the person dragged the rail to, in CSS pixels; `None`
     /// leaves the page's own.
     pub width: Option<u32>,
@@ -2079,6 +2092,7 @@ mod tests {
             workspaces: vec![WorkspaceChoice { id: 7, name: "personal".into(), open: true, projects: 1, panes: 1 }],
             removing: Some(Removing { project: 1, name: "src".into(), repositories: 1, panes: 0 }),
             new_workspace: Some(NewWorkspace { creating: false, refusal: Some("workspace already exists: work".into()) }),
+            can_combine: false,
             width: Some(320),
             outline_width: None,
             brief_height: None,

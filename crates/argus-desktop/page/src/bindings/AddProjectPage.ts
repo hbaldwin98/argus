@@ -59,9 +59,9 @@ projects: Array<ProjectRef>,
  */
 current: ProjectRef | null, 
 /**
- * For one repository added into a project: it is already a project of its own, which stays.
+ * For one repository added into a project: the project of its own it already is, which stays.
  */
-ownProject: boolean, 
+ownProject: ProjectRef | null, 
 /**
  * The add is with the daemon.
  */

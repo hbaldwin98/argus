@@ -156,11 +156,13 @@ fn a_folder_already_held_says_where_and_a_repository_that_is_a_project_says_it_s
     assert_eq!(held_words(Held::InTarget, &p), "already in argus");
     assert_eq!(held_words(Held::OwnProject, &p), "in its own project");
     assert_eq!(own_project_note(&p), None);
-    p.own_project = true;
+    p.own_project = Some(ProjectRef { id: 2, name: "me".into() });
+    let note = own_project_note(&p).expect("said");
     assert_eq!(
-        own_project_note(&p).as_deref(),
-        Some("me is already its own project. Adding it here keeps that project too; to fold the whole project into argus, use Combine projects\u{2026}")
+        note.words(),
+        "me is already its own project. Adding it here keeps that project too; to fold the whole project into argus, use Combine projects\u{2026}"
     );
+    assert_eq!((note.into, note.tick, note.link), (1, 2, "Combine projects\u{2026}"), "the link opens the combine dialog on both");
 }
 
 #[test]

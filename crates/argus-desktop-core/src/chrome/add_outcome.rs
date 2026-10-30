@@ -77,13 +77,35 @@ pub fn held_words(held: Held, page: &AddProjectPage) -> String {
     }
 }
 
-/// For one repository added into a project that is a project of its own already.
-pub fn own_project_note(page: &AddProjectPage) -> Option<String> {
-    let into = page.into.as_ref().filter(|_| page.own_project)?;
-    Some(format!(
-        "{} is already its own project. Adding it here keeps that project too; to fold the whole project into {}, use Combine projects\u{2026}",
-        page.default_name, into.name
-    ))
+/// The note under a repository added into a project when it is a project of its own already. Its
+/// last words are a link: the dialog that folds that project in, opened with it ticked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnProjectNote {
+    pub before: String,
+    pub link: &'static str,
+    /// The project the add goes into, which the combine dialog folds into.
+    pub into: u64,
+    /// The project of its own, which the combine dialog opens with ticked.
+    pub tick: u64,
+}
+
+impl OwnProjectNote {
+    pub fn words(&self) -> String {
+        format!("{}{}", self.before, self.link)
+    }
+}
+
+pub fn own_project_note(page: &AddProjectPage) -> Option<OwnProjectNote> {
+    let (into, own) = page.into.as_ref().zip(page.own_project.as_ref())?;
+    Some(OwnProjectNote {
+        before: format!(
+            "{} is already its own project. Adding it here keeps that project too; to fold the whole project into {}, use ",
+            page.default_name, into.name
+        ),
+        link: super::combine_outcome::ACTION,
+        into: into.id,
+        tick: own.id,
+    })
 }
 
 pub const NEW_FOLDER_LABEL: &str = "New repository\u{2019}s folder";

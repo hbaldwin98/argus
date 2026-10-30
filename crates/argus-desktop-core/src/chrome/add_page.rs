@@ -81,8 +81,8 @@ pub struct AddProjectPage {
     pub projects: Vec<ProjectRef>,
     /// The project the rail lists, which is the usual one to add to.
     pub current: Option<ProjectRef>,
-    /// For one repository added into a project: it is already a project of its own, which stays.
-    pub own_project: bool,
+    /// For one repository added into a project: the project of its own it already is, which stays.
+    pub own_project: Option<ProjectRef>,
     /// The add is with the daemon.
     pub adding: bool,
     /// What the daemon said when it refused the last add.

@@ -309,7 +309,12 @@ impl AddProject {
             into: self.into.and_then(named),
             projects: tree.iter().map(|p| ProjectRef { id: p.id.0, name: p.name.clone() }).collect(),
             current: current.and_then(named),
-            own_project: self.kind == AddKind::Repository && listing.is_some_and(|l| held(&l.path) == Some(Held::OwnProject)),
+            own_project: self
+                .into
+                .filter(|_| self.kind == AddKind::Repository)
+                .zip(listing)
+                .and_then(|(project, l)| own_project_at(tree, project, &l.path))
+                .map(|p| ProjectRef { id: p.id.0, name: p.name.clone() }),
             adding: self.is_adding(),
             refusal: self.refusal.clone(),
         }
@@ -382,11 +387,19 @@ fn same_path(a: &str, b: &str) -> bool {
 
 /// Where the tree holds the repository at `path`, from the point of view of adding to `target`.
 fn held_at(tree: &[ProjectInfo], target: ProjectId, path: &str) -> Option<Held> {
-    let holds = |project: &ProjectInfo| project.repositories.iter().any(|r| r.checkouts.iter().any(|c| same_path(&c.path, path)));
-    if tree.iter().any(|p| p.id == target && holds(p)) {
+    if tree.iter().any(|p| p.id == target && holds(p, path)) {
         return Some(Held::InTarget);
     }
-    tree.iter().any(|p| p.id != target && p.repositories.len() == 1 && holds(p)).then_some(Held::OwnProject)
+    own_project_at(tree, target, path).map(|_| Held::OwnProject)
+}
+
+fn holds(project: &ProjectInfo, path: &str) -> bool {
+    project.repositories.iter().any(|r| r.checkouts.iter().any(|c| same_path(&c.path, path)))
+}
+
+/// The project, other than `target`, whose only repository is the one at `path`.
+fn own_project_at<'a>(tree: &'a [ProjectInfo], target: ProjectId, path: &str) -> Option<&'a ProjectInfo> {
+    tree.iter().find(|p| p.id != target && p.repositories.len() == 1 && holds(p, path))
 }
 
 fn last_segment(path: &str) -> &str {

@@ -5,6 +5,7 @@
 //! nothing: a project, workspace or host is shown chosen when the daemon says so. The page unfolds
 //! Switch workspace and Connect to a host in place; here each opens beside the menu (`MenuItem::fold`).
 
+use argus_desktop_core::chrome::combine_outcome::ACTION;
 use argus_desktop_core::chrome::projects::{menu, Entry, Tone, HostRow, WorkspaceRow, NEW_WORKSPACE, NO_HOSTS};
 use argus_desktop_core::connection::page::{Call, Rail};
 
@@ -42,6 +43,7 @@ pub fn items(rail: &Rail) -> Vec<MenuItem<Does>> {
             }
             Entry::Rule => MenuItem::Rule,
             Entry::AddProject => MenuItem::choice("Add a project\u{2026}", Does::Send(vec![Call::OpenAddProject])).led("+"),
+            Entry::CombineProjects => MenuItem::choice(ACTION, Does::Send(vec![Call::OpenCombineProjects { into: None, tick: None }])),
             Entry::Workspaces { open, rows } => {
                 // The way to make another is at the end of the list of the ones there are.
                 let mut listed: Vec<MenuItem<Does>> = rows.iter().map(workspace).collect();

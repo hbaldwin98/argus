@@ -26,6 +26,7 @@ fn shape(entries: &[Entry]) -> Vec<&'static str> {
             Entry::Project { .. } => "project",
             Entry::Rule => "rule",
             Entry::AddProject => "add",
+            Entry::CombineProjects => "combine",
             Entry::Workspaces { .. } => "workspaces",
             Entry::Hosts { .. } => "hosts",
             Entry::Remove { .. } => "remove",
@@ -63,6 +64,19 @@ fn with_no_project_the_menu_is_still_the_way_to_add_the_first() {
 fn a_single_project_has_the_menu_too() {
     let entries = menu(&rail(vec![choice(1, "orion", 0, 0)], Some(1)));
     assert_eq!(shape(&entries), ["label", "project", "rule", "add", "hosts", "rule", "remove"]);
+}
+
+/// Combining is offered under Add a project only when the daemon can fold projects and the open
+/// workspace holds two to fold, since one project has nothing to fold into it.
+#[test]
+fn combine_is_offered_only_with_the_daemon_s_word_and_two_projects() {
+    let mut two = rail(vec![choice(1, "orion", 0, 0), choice(2, "work", 0, 0)], Some(1));
+    assert!(!shape(&menu(&two)).contains(&"combine"), "an older daemon cannot");
+    two.can_combine = true;
+    assert_eq!(shape(&menu(&two)), ["label", "project", "project", "rule", "add", "combine", "hosts", "rule", "remove"]);
+    let mut one = rail(vec![choice(1, "orion", 0, 0)], Some(1));
+    one.can_combine = true;
+    assert!(!shape(&menu(&one)).contains(&"combine"));
 }
 
 /// SHELL-SWITCH-2: Switch workspace only when the daemon lists workspaces, naming the open one.

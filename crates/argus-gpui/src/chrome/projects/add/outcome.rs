@@ -4,11 +4,12 @@
 //! The words are core's (`chrome::add_outcome`); the fields are the view's own and keep what is
 //! typed over what was sent (`add`, `schedule`).
 
-use argus_desktop_core::chrome::add_outcome::{always_skipped, outcome, own_project_note, Outcome, NEW_FOLDER_LABEL, NEW_NOTE, NOT_A_REPOSITORY};
+use argus_desktop_core::chrome::add_outcome::{always_skipped, outcome, own_project_note, Outcome, OwnProjectNote, NEW_FOLDER_LABEL, NEW_NOTE, NOT_A_REPOSITORY};
 use argus_desktop_core::chrome::add_page::AddProjectPage;
 use gpui_kit::component::input::Input;
-use gpui_kit::component::v_flex;
-use gpui_kit::{div, prelude::*, Context, SharedString, TestSupportExt as _};
+use argus_desktop_core::connection::page::Call;
+use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::{div, prelude::*, Context, Role, SharedString, TestSupportExt as _};
 
 use super::AddView;
 use crate::kit::dialog::{field_label, label};
@@ -52,10 +53,36 @@ impl AddView {
                 )
                 .children(searched.map(|words| meta(words, tokens))),
         };
-        drawn.children(own_project_note(page).map(|words| {
-            let words = SharedString::from(words);
-            meta(words.clone(), tokens).id("ap-own").test_support().aria_label(words)
-        }))
+        drawn.children(own_project_note(page).map(|note| self.own_note(note, tokens)))
+    }
+
+    /// The note under a repository that is a project of its own already. Its last words are a link
+    /// to the dialog that folds that project in, which opens with it ticked. The words are laid out
+    /// one by one so the link sits in the line and wraps with it.
+    fn own_note(&self, note: OwnProjectNote, tokens: &Tokens) -> impl IntoElement {
+        let caller = self.caller.clone();
+        let (into, tick, hover) = (note.into, note.tick, tokens.accent);
+        h_flex()
+            .id("ap-own")
+            .test_support()
+            .aria_label(SharedString::from(note.words()))
+            .flex_wrap()
+            .gap_x(rem(tokens.sp_4))
+            .typed(tokens.type_small)
+            .text_color(tokens.fg_muted)
+            .children(note.before.split_whitespace().map(|word| div().child(word.to_owned())).collect::<Vec<_>>())
+            .child(
+                div()
+                    .id("ap-own-link")
+                    .role(Role::Link)
+                    .test_support()
+                    .aria_label(note.link)
+                    .cursor_pointer()
+                    .text_color(tokens.ref_)
+                    .hover(move |style| style.text_color(hover))
+                    .on_click(move |_, _, _| caller.call(Call::OpenCombineProjects { into: Some(into), tick: Some(tick) }))
+                    .child(note.link),
+            )
     }
 
     /// `Project name`, with the default name showing while it is empty.

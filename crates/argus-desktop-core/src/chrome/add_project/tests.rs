@@ -193,13 +193,13 @@ fn a_repository_that_is_its_own_project_is_said_when_added_into_another() {
     dialog.listed(listing(1, "/home/work/web"), || 2, &mut out);
     dialog.previewed(preview(2, &[""]));
     let page = dialog.page(&held_tree(), Some(ProjectId(1)));
-    assert!(page.own_project);
+    assert_eq!(page.own_project.as_ref().map(|p| (p.id, p.name.as_str())), Some((2, "web")), "the project that stays");
     assert_eq!(page.into.map(|p| p.name), Some("src".into()));
     assert_eq!(page.projects.len(), 2);
     dialog.add_to(Some(ProjectId(2)));
-    assert!(!dialog.page(&held_tree(), None).own_project, "into its own project it is just the repository");
+    assert!(dialog.page(&held_tree(), None).own_project.is_none(), "into its own project it is just the repository");
     dialog.add_to(None);
-    assert!(!dialog.page(&held_tree(), None).own_project);
+    assert!(dialog.page(&held_tree(), None).own_project.is_none());
 }
 
 #[test]

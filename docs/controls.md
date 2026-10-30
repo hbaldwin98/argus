@@ -204,7 +204,16 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
   folder** (one add per repository the scan finds) and **A new one (git init)**, the button reads
   **Add to <project>**, and the project name field is gone. The folder list marks a repository
   already in that project ("already in argus") or in a project of its own, and one that is already a
-  project of its own says adding it here keeps that project too.
+  project of its own says adding it here keeps that project too, with a **Combine projects…** link.
+- **Combine projects…** (GPUI window; under **Add a project…** in the switcher, shown when the
+  daemon offers it and the workspace holds two projects): fold other projects' repositories into
+  one. **Into** picks the project that keeps its name and settings (the one the rail lists to start
+  with); tick the projects to fold in, and the summary says what the target will hold, that running
+  panes move and keep running, that feature boards come along with their numbers, and that the
+  folded projects' own worktree and setup settings are dropped and their rows leave the switcher.
+  Nothing on disk changes. **Combine N into <project>** asks the daemon; the dialog closes when it
+  answers and the window stays on the project folded into, and a refusal is said in the dialog,
+  which stays open. Esc cancels.
 - **Checkouts** (`3`) lists the repository's checkouts, and with `B` its branches: Enter opens or
   switches, `F` fetches, `P` pulls, `S`/`A` start a shell or agent, `N` makes a worktree, `D` deletes
   a branch or removes a worktree, `R` reviews, `H` opens history, `E` shows its files.

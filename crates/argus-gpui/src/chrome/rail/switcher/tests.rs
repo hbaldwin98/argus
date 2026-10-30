@@ -111,3 +111,18 @@ fn with_no_hosts_the_list_says_where_they_come_from() {
     assert_eq!(lines(&rows), ["This machine", "# No hosts in ~/.ssh/config, or set ARGUS_DESKTOP_HOST"]);
     assert!(calls(&rows[0]).is_empty(), "this machine is the one reached, so it asks nothing");
 }
+
+/// Combine projects sits under Add a project, only when the rail says the daemon can and there are
+/// two projects; it opens the dialog on the project the rail lists.
+#[test]
+fn combine_projects_is_offered_under_add_when_the_daemon_can_and_there_are_two_projects() {
+    let mut two = rail(&[(1, "orion", 0, 0), (2, "work", 0, 0)], Some(1));
+    assert!(!lines(&items(&two)).iter().any(|line| line.starts_with("Combine projects")));
+    two.can_combine = true;
+    let items = items(&two);
+    assert_eq!(lines(&items)[4..6], ["Add a project\u{2026}", "Combine projects\u{2026}"]);
+    assert_eq!(calls(&items[5]), ["OpenCombineProjects { into: None, tick: None }"]);
+    let mut one = rail(&[(1, "orion", 0, 0)], Some(1));
+    one.can_combine = true;
+    assert!(!lines(&super::items(&one)).iter().any(|line| line.starts_with("Combine projects")));
+}

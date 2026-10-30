@@ -96,6 +96,8 @@ pub enum Entry {
     Project { id: u64, name: String, current: bool, tally: Tally },
     Rule,
     AddProject,
+    /// Only when the daemon can fold projects together and the workspace holds two to fold.
+    CombineProjects,
     /// Only when the daemon lists workspaces; `open` is the open one's name.
     Workspaces { open: Option<String>, rows: Vec<WorkspaceRow> },
     Hosts { connected: Option<String>, rows: Vec<HostRow> },
@@ -121,6 +123,9 @@ pub fn menu(rail: &Rail) -> Vec<Entry> {
         entries.push(Entry::Rule);
     }
     entries.push(Entry::AddProject);
+    if rail.can_combine && rail.projects.len() >= 2 {
+        entries.push(Entry::CombineProjects);
+    }
     if !rail.workspaces.is_empty() {
         entries.push(Entry::Workspaces { open: rail.workspaces.iter().find(|w| w.open).map(|w| w.name.clone()), rows: workspaces(&rail.workspaces) });
     }

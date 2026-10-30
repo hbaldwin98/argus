@@ -296,6 +296,15 @@ fn folder_rows_say_where_they_are_held_and_a_repository_that_is_its_own_project_
     assert!(has_label(cx, &opened, "already in argus"));
     assert!(has_label(cx, &opened, "in its own project"));
     assert!(!has_label(cx, &opened, "me is already its own project. Adding it here keeps that project too; to fold the whole project into argus, use Combine projects\u{2026}"));
-    hear(cx, &opened, vec![say(AddProjectPage { own_project: true, ..into_argus() })]);
+    hear(cx, &opened, vec![say(AddProjectPage { own_project: Some(project(2, "me")), ..into_argus() })]);
     assert!(has_label(cx, &opened, "me is already its own project. Adding it here keeps that project too; to fold the whole project into argus, use Combine projects\u{2026}"));
+}
+
+/// The note's last words are a link: they open the combine dialog folding into the project added to,
+/// with the project of its own already ticked.
+#[gpui_kit::test]
+fn the_combine_link_in_the_note_opens_the_dialog_with_that_project_ticked(cx: &mut TestAppContext) {
+    let opened = dialog(cx, AddProjectPage { own_project: Some(project(2, "me")), ..into_argus() });
+    click_label(cx, &opened, "Combine projects\u{2026}");
+    assert_eq!(drain(&opened), ["OpenCombineProjects { into: Some(1), tick: Some(2) }"]);
 }

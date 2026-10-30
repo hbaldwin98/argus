@@ -7051,7 +7051,7 @@ export const sent = [
   "listingError": null,
   "name": "",
   "open": true,
-  "ownProject": false,
+  "ownProject": null,
   "parent": null,
   "path": null,
   "previewing": false,
