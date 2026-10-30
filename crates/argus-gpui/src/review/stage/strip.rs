@@ -68,7 +68,6 @@ impl GitStage {
                 strip.child(div().typed(tokens.type_small).text_color(tokens.fg_muted).child("newest 100 on HEAD"))
             })
             .child(div().flex_1())
-            .when(!changes_on && history.is_some(), |strip| strip.child(self.filter.clone()))
             .when(changes_on && review.is_some(), |strip| {
                 strip.child(
                     icon_button("review-refresh", "Refresh", false, tokens)

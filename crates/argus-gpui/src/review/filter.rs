@@ -24,9 +24,6 @@ use crate::keys::field::{Fields, Registered};
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
-/// `.filter`: the field's width.
-const FIELD_W: f32 = 220.0;
-
 pub struct Filter {
     heard: Entity<Heard>,
     caller: Caller,
@@ -42,7 +39,7 @@ pub struct Filter {
 
 impl Filter {
     pub fn new(heard: Entity<Heard>, caller: Caller, stage: FocusHandle, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let field = cx.new(|cx| InputState::new(window, cx).placeholder("Filter commits"));
+        let field = cx.new(|cx| InputState::new(window, cx).placeholder("Filter by message, author or hash"));
         let typing = cx.subscribe(&field, |this, input, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 let text = input.read(cx).value();
@@ -101,13 +98,13 @@ impl Filter {
 impl Render for Filter {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
-        // `.field.filter`: a plain field, 220px wide and `--control-h` tall,
-        // with no mark in it: the `/` that takes it is in the footer's hints.
+        // A plain field the width of the commits column, `--control-h` tall, with no mark in
+        // it: the `/` that takes it is in the footer's hints.
         div()
             .id("history-filter")
             .test_support()
-            .w(rem(FIELD_W))
-            .flex_shrink_0()
+            .w_full()
+            .min_w_0()
             .child(
                 Input::new(&self.field)
                     .id("history-filter-field")
