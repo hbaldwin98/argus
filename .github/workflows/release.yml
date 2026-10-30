@@ -62,7 +62,9 @@ jobs:
           - runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             format: tar
-          - runner: macos-15-intel
+          # Cross-built on Apple Silicon: the Intel runner took 54 minutes of the job's hour for
+          # 0.43.0, against 20 here. transcribe.cpp builds for the target with a fixed x86_64 floor.
+          - runner: macos-15
             target: x86_64-apple-darwin
             format: tar
           - runner: macos-15
