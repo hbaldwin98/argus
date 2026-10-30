@@ -110,7 +110,7 @@ impl Render for NoticeView {
             .pr(rem(if closes { tokens.sp_4 } else { tokens.sp_8 }))
             .gap(rem(tokens.sp_6))
             .items_center()
-            .rounded(rem(tokens.r_sm))
+            .rounded_full()
             .border_1()
             .border_color(colour.opacity(0.40))
             .bg(colour.opacity(0.12))

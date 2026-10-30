@@ -127,7 +127,9 @@ fn out_dir() -> PathBuf {
 /// no edit events (the page's own harness delivers them by hand), so the file's text is the lines the page
 /// was sent, answered as the daemon answers an open.
 fn edits_in(name: &str, events: &[Event]) -> Vec<Event> {
-    if name != "code-edit" {
+    // The scene's own name, whatever width it is shot at: every scene that reads a file has its text answered.
+    let base = name.split('@').next().unwrap_or(name);
+    if !matches!(base, "code" | "code-edit" | "code-markdown") {
         return Vec::new();
     }
     let Some(page) = events.iter().find_map(|event| match event {
@@ -243,7 +245,7 @@ fn write_gpui_screens() {
                     act(cx, handle, acts).await;
                     cx.background_executor().timer(Duration::from_millis(300)).await;
                 }
-                if let Some(id) = pressed.as_deref().or_else(|| click_for(scene)) {
+                if let Some(id) = pressed.as_deref().or_else(|| click_for(scene.split('@').next().unwrap_or(scene))) {
                     cx.update(|cx| press(cx, handle, id));
                     cx.background_executor().timer(Duration::from_millis(500)).await;
                 }

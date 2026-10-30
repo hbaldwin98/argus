@@ -22,5 +22,5 @@ pub(super) fn status_colour(word: &str, tokens: &Tokens) -> Option<Hsla> {
 /// The one status a pane row says in words, `needs you`: every other is its dot alone, so a column
 /// of rows has one loud word at most per row (`project/Blend.dc.html`).
 pub(super) fn pane_word(status: &str) -> Option<&'static str> {
-    (status == "waiting").then_some("needs you")
+    matches!(status, "waiting" | "needs-review").then_some("needs you")
 }

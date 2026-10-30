@@ -77,11 +77,21 @@ pub fn crop(text: SharedString, marks: Vec<Range<usize>>, look: Look) -> Canvas<
                     let (from, to) = if to_clear { (look.ground, look.ground.opacity(0.0)) } else { (look.ground.opacity(0.0), look.ground) };
                     fill(Bounds { origin: point(x, bounds.origin.y), size: size(fade, bounds.size.height) }, linear_gradient(90.0, linear_color_stop(from, 0.0), linear_color_stop(to, 1.0)))
                 };
+                // A cut edge reads as an ellipsis on the row's own ground, as a path's does, with the
+                // fade easing the text into it.
+                let dots = window.text_system().shape_line(SharedString::from("\u{2026}"), font_size, &[run("\u{2026}".len(), false)], None);
+                let pad = px(2.0);
+                let ellipsis = |window: &mut gpui_kit::Window, cx: &mut gpui_kit::App, x| {
+                    window.paint_quad(fill(Bounds { origin: point(x, bounds.origin.y), size: size(dots.width() + pad, bounds.size.height) }, look.ground));
+                    dots.paint(point(x, bounds.origin.y), line_height, TextAlign::Left, None, window, cx).ok();
+                };
                 if cut_left {
                     window.paint_quad(edge(bounds.origin.x, true));
+                    ellipsis(window, cx, bounds.origin.x);
                 }
                 if cut_right {
                     window.paint_quad(edge(bounds.origin.x + bounds.size.width - fade, false));
+                    ellipsis(window, cx, bounds.origin.x + bounds.size.width - dots.width() - pad);
                 }
             });
         },

@@ -198,7 +198,7 @@ impl Render for RailView {
                 .min_w_0()
                 .h_full()
                 .child(self.header(&rail, &slice, ctx, &tokens, cx))
-                .child(self.chips(rail.needs_you, rail.working, &tokens, cx))
+                .child({ let (needs_you, working) = counts::in_view(&rail); self.chips(needs_you, working, &tokens, cx) })
                 .child(list);
             (None, Some(panel))
         };

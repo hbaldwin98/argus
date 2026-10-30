@@ -31,7 +31,7 @@ pub fn chip(page: &ChipPage, hold: &str, toggle: &str, tokens: &Tokens, rem_size
         .px(rem(tokens.sp_8))
         .gap(rem(tokens.sp_6))
         .items_center()
-        .rounded(rem(tokens.r_sm))
+        .rounded_full()
         .border_1()
         .border_color(edge)
         .text_size(rem(tokens.fs_xs))

@@ -24,8 +24,8 @@ fn the_rail_lists_the_rows_of_the_rail_it_was_given(cx: &mut TestAppContext) {
     assert_eq!(label(cx, &opened, "checkout-110").as_deref(), Some("main checkout on main"));
     assert_eq!(label(cx, &opened, "pane-1").as_deref(), Some("Trim context · agent, working"));
     assert_eq!(label(cx, &opened, "pane-2").as_deref(), Some("zsh · shell, idle"));
-    // Only a pane that needs the person says so in words; the rest are their dot alone.
-    assert!(!present(cx, &opened, "pane-4-word"));
+    // Only a pane that needs the person says so in words (a review waiting is one); the rest are their dot alone.
+    assert_eq!(label(cx, &opened, "pane-4-word").as_deref(), Some("needs you"));
     assert!(!present(cx, &opened, "pane-1-word"));
     assert!(!present(cx, &opened, "pane-2-word"));
     // A folded checkout draws no pane and speaks for them: how many, and who shares it.

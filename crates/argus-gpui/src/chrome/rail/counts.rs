@@ -12,7 +12,7 @@ use crate::connection::heard::Heard;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct Counts {
-    /// Panes that need the person, across every project.
+    /// Panes that need the person, in the project the panel lists.
     pub needs_you: usize,
     /// Features in flight or queued in the repository the Features stage reads.
     pub features: Option<usize>,
@@ -27,10 +27,17 @@ pub(super) struct Counts {
     pub views: usize,
 }
 
+/// What needs the person and what is at work in the project the panel lists: the numbers its tree
+/// shows. A window with no project open says the window-wide ones.
+pub(super) fn in_view(rail: &Rail) -> (usize, usize) {
+    let mine = rail.project.as_ref().and_then(|project| rail.projects.iter().find(|choice| choice.id == project.id));
+    mine.map_or((rail.needs_you, rail.working), |choice| (choice.needs_you, choice.working))
+}
+
 impl Counts {
     pub fn of(heard: &Heard, rail: &Rail) -> Counts {
         Counts {
-            needs_you: rail.needs_you,
+            needs_you: in_view(rail).0,
             features: heard.features.as_ref().filter(|features| features.loaded).map(|features| features.active + features.queued),
             checkouts: heard.checkouts.as_ref().filter(|table| table.repository.is_some()).map(|table| table.checkouts),
             git: heard

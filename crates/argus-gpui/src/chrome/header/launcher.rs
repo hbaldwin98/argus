@@ -39,6 +39,8 @@ pub fn launcher(waiting: usize, out: bool, press: Option<Call>, held: bool, call
             // The page says aria-pressed; the kit re-exports no toggled state, so it is the selected one.
             .aria_selected(out)
             .when(out, |button| button.bg(tokens.bg_selected).border_color(tokens.line_strong))
+            .h(rem(tokens.dictate_chip_h))
+            .rounded_full()
             .gap(rem(tokens.sp_6))
             .border_1()
             .border_color(tokens.line_strong)

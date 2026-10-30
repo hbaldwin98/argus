@@ -20,10 +20,9 @@ use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, AnyElement, App, MouseButton, SharedString, Window, WindowControlArea};
 
 use self::tabs::Tabs;
-use super::stage::route::narrow;
 use super::window_controls::{control, Control};
 use crate::kit::icons::Glyph;
-use crate::kit::pill::{status_pill, status_word};
+use crate::kit::pill::status_pill;
 use crate::kit::status_dot::status_dot;
 use crate::style::Typed as _;
 use crate::theme::scale::{css, rem};
@@ -126,9 +125,9 @@ impl RenderOnce for Header {
         let mono = SharedString::from(tokens.font_mono);
         let width = css(window.viewport_size().width, window.rem_size());
         let maximize = if window.is_maximized() { Glyph::WinRestore } else { Glyph::WinMax };
-        let StripPage { crumb, title, status, resumed, meta, meta_tip, pill, .. } = self.strip;
-        // `.head-status` is drawn for the folded rail alone, where the row is not seen.
-        let chip = status.filter(|_| narrow(width, tokens.narrow_below));
+        let StripPage { crumb, title, resumed, meta, meta_tip, pill, .. } = self.strip;
+        // The pane's status is the dot before its name at every width; a status word would take the
+        // room the name needs when the window is narrow.
         let tools = self.notice.is_some() || self.dictation.is_some() || self.launcher.is_some() || self.tools.is_some();
         let tabbed = self.tabs.is_some();
         let sized = !self.size.is_empty() && width > tokens.head_size_hidden_below;
@@ -174,7 +173,6 @@ impl RenderOnce for Header {
                                     // The pane's status leads its name, as it does in the rail.
                                     .children(self.dot.map(|status| status_dot("head-dot", status, &tokens)))
                                     .child(div().typed(tokens.type_body).weighted(tokens.weight_medium).text_color(tokens.fg).truncate().child(SharedString::from(title)))
-                                    .children(chip.map(|status| status_pill("head-status", status_word(status).to_owned(), status, &tokens)))
                                     .children(pill.map(|pill| status_pill("head-pill", pill.word, pill.status, &tokens)))
                                     .when(!meta.is_empty(), |row| row.child(self::meta::meta(&meta, meta_tip, &tokens)))
                                     .children(resumed.map(|resumed| {

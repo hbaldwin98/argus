@@ -1024,7 +1024,7 @@ impl Scale {
             dictate_bar_w: 2.0,
             dictate_bar_h: 14.0,
             dictate_bar_floor: 3.0,
-            dictate_chip_h: 22.0,
+            dictate_chip_h: 26.0,
             motion_turn: Duration::from_millis(150),
             motion_spin: Duration::from_millis(900),
             motion_spin_slow: Duration::from_millis(1000),

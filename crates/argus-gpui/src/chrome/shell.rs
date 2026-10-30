@@ -8,6 +8,7 @@
 //! it. The header says what `StripPage` (core) makes of the pane on screen or the stage up, with
 //! the stage's own words and tools from `chrome/header/slots`.
 
+use argus_desktop_core::chrome::empty::{self, Empty, NoPane};
 use argus_desktop_core::chrome::strip::{Part, Says, StripPage};
 use argus_desktop_core::connection::page::{Call, Side, Stage};
 use argus_desktop_core::panes::console::ConsolePlace;
@@ -168,7 +169,14 @@ impl Shell {
             let crumb = repository.map(Part::Text).into_iter().chain(branch.filter(|branch| !branch.is_empty()).map(Part::Mono)).collect();
             return StripPage { crumb, ..StripPage::titled("Git") };
         }
-        StripPage::of(&heard.rail, heard.console.place == ConsolePlace::Fullscreen, says, clock)
+        let page = StripPage::of(&heard.rail, heard.console.place == ConsolePlace::Fullscreen, says, clock);
+        // With no pane on screen the Workspace still says where it is, as the empty stage does.
+        if page.title.is_empty() && page.crumb.is_empty() && heard.rail.stage == Stage::Workspace {
+            if let Some(Empty::NoPane(NoPane { shell: Some(here), .. })) = empty::of(&heard.rail, None, None) {
+                return StripPage { crumb: vec![Part::Text(here.repository), Part::Mono(here.branch_or_name)], ..StripPage::titled("Workspace") };
+            }
+        }
+        page
     }
 
     /// The stage the strip is of: a fullscreen console counts as the Console, whatever is under it.

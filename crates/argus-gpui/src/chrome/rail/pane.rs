@@ -23,7 +23,7 @@ use crate::kit::icons::Glyph;
 use crate::kit::status_dot::status_dot;
 use crate::kit::tip::tip;
 use crate::layout::carry::{Carried, Carrier};
-use crate::theme::scale::{rem, Mark};
+use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// `.pn`: a pane row is 30px, a little taller than the checkout and repository lines above it.
@@ -78,7 +78,7 @@ impl RailView {
         let boxed = pane.on && !ctx.offstage;
         let group = SharedString::from(format!("pane-row-{id}"));
         // `--mark-sel`: a bar down the leading edge, or a hairline all round, or the fill alone.
-        let hairline = boxed && tokens.mark_sel != Mark::Bar;
+        let hairline = boxed;
         let ring = if picked {
             tokens.ring
         } else if hairline {
@@ -88,8 +88,6 @@ impl RailView {
         };
         let edge = if pane.on && ctx.offstage {
             Some(tokens.pane_mark_w)
-        } else if boxed && tokens.mark_sel == Mark::Bar {
-            Some(tokens.mark_bar_w)
         } else {
             None
         };

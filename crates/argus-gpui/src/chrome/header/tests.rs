@@ -86,22 +86,13 @@ fn click_menu_item(cx: &mut TestAppContext, opened: &Opened, nth: u64) {
 }
 
 #[gpui_kit::test]
-fn the_status_chip_is_drawn_only_where_the_rails_own_row_is_not_seen(cx: &mut TestAppContext) {
+fn the_pane_status_is_its_dot_at_every_width_and_never_a_word_that_takes_the_names_room(cx: &mut TestAppContext) {
     let opened = open(cx);
     hear(cx, &opened, vec![connected(), rail(Some(shown("working", true)), Stage::Workspace)]);
-    resize(cx, &opened, 1200.0);
-    assert_eq!(said(cx, &opened, "head-status").as_deref(), Some("working"), "at the breakpoint itself");
-    resize(cx, &opened, 1201.0);
-    assert!(!has(cx, &opened, "head-status"));
-}
-
-#[gpui_kit::test]
-fn the_chip_says_a_needs_you_status_in_a_persons_words_and_a_quiet_shell_says_none(cx: &mut TestAppContext) {
-    let opened = open(cx);
-    hear(cx, &opened, vec![connected(), rail(Some(shown("waiting", false)), Stage::Workspace)]);
-    assert_eq!(said(cx, &opened, "head-status").as_deref(), Some("needs you"));
-    hear(cx, &opened, vec![rail(Some(shown("idle", false)), Stage::Workspace)]);
-    assert!(!has(cx, &opened, "head-status"));
+    for width in [860.0, 1200.0, 1201.0] {
+        resize(cx, &opened, width);
+        assert!(!has(cx, &opened, "head-status"), "{width}");
+    }
 }
 
 #[gpui_kit::test]

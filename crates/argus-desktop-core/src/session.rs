@@ -1425,7 +1425,7 @@ impl Session {
         }
         self.live();
         // There is no undo to offer: the daemon keeps the file and pastes its path in one go.
-        self.passing.push(Event::arrived(format!("pasted {name}")));
+        self.passing.push(Event::arrived(format!("{name} \u{2192} {}", self.pane_name(pane))));
         self.out.push(ClientMsg::PasteFile { pane, name, bytes });
         self.finish()
     }

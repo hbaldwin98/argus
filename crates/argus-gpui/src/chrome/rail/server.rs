@@ -71,9 +71,10 @@ impl RailView {
             .flex()
             .items_center()
             .justify_center()
-            .size(rem(18.0))
+            .size(rem(20.0))
             .rounded_full()
-            .border_1()
+            // 2px reads as a ring at the strip's size; the board's 1.5px is a hairline here.
+            .border_2()
             .border_color(if ringed { tokens.attention } else { gpui_kit::transparent_black() })
             .child(dot);
         let (rail, heard) = (cx.weak_entity(), self.heard.clone());

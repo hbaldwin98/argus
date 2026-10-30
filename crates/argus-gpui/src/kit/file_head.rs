@@ -63,7 +63,7 @@ pub fn file_head(id: impl Into<ElementId>, head: &Head, tools: Vec<AnyElement>, 
         .child(div().flex_none().text_size(rem(tokens.fs_md)).weighted(tokens.weight_semibold).text_color(tokens.fg).child(SharedString::from(head.name.to_owned())))
         .when(!head.dir.is_empty(), |line| line.child(left_cut("file-head-dir", SharedString::from(head.dir.to_owned()), tokens)))
         .children(head.counts.filter(|(a, r)| a + r > 0).map(|(a, r)| counts(a, r, tokens).text_size(rem(tokens.fs_sm))))
-        .children(head.meta.clone().map(|meta| div().id("file-head-meta").test_support().aria_label(meta.clone()).flex_none().text_size(rem(tokens.fs_sm)).text_color(tokens.fg_muted).child(meta)))
+        .children(head.meta.clone().map(|meta| div().id("file-head-meta").test_support().aria_label(meta.clone()).flex_shrink(1.0).min_w_0().truncate().text_size(rem(tokens.fs_sm)).text_color(tokens.fg_muted).child(meta)))
         .child(div().flex_1().min_w_0())
         .child(h_flex().flex_none().gap(rem(tokens.sp_4)).items_center().children(tools))
 }

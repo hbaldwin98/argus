@@ -7,34 +7,79 @@
 
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, ElementId, SharedString};
+use gpui_kit::{canvas, div, font, point, prelude::*, px, ContentMask, ElementId, SharedString, TextAlign, TextRun};
 
 use super::icon_button::Node;
 use crate::style::Typed as _;
 
-use crate::theme::scale::rem;
+use crate::theme::scale::{pixels, rem};
 use crate::theme::Tokens;
 
 /// The least of a folder that is kept before it is dropped altogether.
 pub const LEAST: f32 = 40.0;
 
 /// `text` in the faint mono face (its box is `(id, 0)`, the text `(id, 1)`), cut from the left when
-/// its box is narrower than it. The box has the text's own width until the line asks it to shrink,
-/// and shrinks no further than [`LEAST`].
+/// its box is narrower than it, with a leading `…` where it was cut. The box has the text's own
+/// width until the line asks it to shrink, and shrinks no further than [`LEAST`].
+///
+/// The inner text only gives the box its width, so it is drawn clear; the canvas over it paints the
+/// visible text, because only at paint time is it known whether the text fit and where to cut it.
 pub fn left_cut(id: &'static str, text: impl Into<SharedString>, tokens: &Tokens) -> Node {
+    let text: SharedString = text.into();
+    let (family, size, colour) = (SharedString::from(tokens.font_mono), tokens.fs_sm, tokens.fg_faint);
+    let painted = text.clone();
     div()
         .id((id, 0usize))
         .test_support()
+        .relative()
         .flex_shrink(1.0)
         .min_w(rem(LEAST))
         .overflow_hidden()
         .flex()
         .justify_end()
         .whitespace_nowrap()
-        .font_family(SharedString::from(tokens.font_mono))
-        .text_size(rem(tokens.fs_sm))
-        .text_color(tokens.fg_faint)
-        .child(div().id((id, 1usize)).test_support().flex_none().child(text.into()))
+        .font_family(family.clone())
+        .text_size(rem(size))
+        .text_color(gpui_kit::transparent_black())
+        .child(div().id((id, 1usize)).test_support().flex_none().child(text))
+        .child(
+            canvas(
+                |_, _, _| (),
+                move |bounds, (), window, cx| {
+                    let face = font(family.clone());
+                    let size = pixels(size, window.rem_size());
+                    let shape = |window: &mut gpui_kit::Window, line: String| {
+                        let run = TextRun { len: line.len(), font: face.clone(), color: colour, background_color: None, underline: None, strikethrough: None };
+                        window.text_system().shape_line(SharedString::from(line), size, &[run], None)
+                    };
+                    let room = bounds.size.width;
+                    let whole = shape(window, painted.to_string());
+                    let line = if whole.width() <= room {
+                        whole
+                    } else {
+                        // The least start whose tail, after the ellipsis, still fits the box.
+                        let starts: Vec<usize> = painted.char_indices().map(|(at, _)| at).collect();
+                        let (mut low, mut high) = (0, starts.len());
+                        while low < high {
+                            let mid = (low + high) / 2;
+                            if shape(window, format!("\u{2026}{}", &painted[starts[mid]..])).width() <= room {
+                                high = mid;
+                            } else {
+                                low = mid + 1;
+                            }
+                        }
+                        let start = starts.get(low).copied().unwrap_or(painted.len());
+                        shape(window, format!("\u{2026}{}", &painted[start..]))
+                    };
+                    let origin = point(bounds.origin.x + (room - line.width()).max(px(0.0)), bounds.origin.y);
+                    window.with_content_mask(Some(ContentMask { bounds }), |window| {
+                        line.paint(origin, bounds.size.height, TextAlign::Left, None, window, cx).ok();
+                    });
+                },
+            )
+            .absolute()
+            .size_full(),
+        )
 }
 
 /// A name then its folder on one line: the name whole and semibold, the folder after it faint and
