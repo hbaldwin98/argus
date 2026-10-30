@@ -195,6 +195,16 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
   workspace…**: name it, Enter creates and opens it, and a name the daemon refuses (one already in
   use) is said under the field, which keeps what you typed. A workspace with no projects says that
   one added now lands in it.
+- **Adding a repository to a project** (GPUI window): a repository's right-click menu offers **Add a
+  repository to <project>…** and **New repository in <project>…**, and the foot of the project's
+  repositories has a quiet **+ Add a repository** row; each opens the add dialog already pointed at
+  that project. **Add a project…** from the switcher defaults to **A new project**. The dialog's
+  **Add to** choice picks the project the rail lists, **Another project** (a menu of the rest) or **A
+  new project**. With a project chosen, the kinds read **A repository**, **Every repository in a
+  folder** (one add per repository the scan finds) and **A new one (git init)**, the button reads
+  **Add to <project>**, and the project name field is gone. The folder list marks a repository
+  already in that project ("already in argus") or in a project of its own, and one that is already a
+  project of its own says adding it here keeps that project too.
 - **Checkouts** (`3`) lists the repository's checkouts, and with `B` its branches: Enter opens or
   switches, `F` fetches, `P` pulls, `S`/`A` start a shell or agent, `N` makes a worktree, `D` deletes
   a branch or removes a worktree, `R` reviews, `H` opens history, `E` shows its files.

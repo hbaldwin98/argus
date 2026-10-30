@@ -25,7 +25,7 @@ use argus_desktop_core::checkouts::table::Checkouts;
 use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::code::stage::CodePage;
 use argus_desktop_core::code::start::Opened;
-use argus_desktop_core::chrome::add_project::AddProjectPage;
+use argus_desktop_core::chrome::add_page::AddProjectPage;
 use argus_desktop_core::connection::page::{Connection, Event, Features, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
 use argus_desktop_core::board::tracker::link_dialog::LinkPage;
 use argus_desktop_core::board::tracker::reconcile_dialog::ReconcilePage;

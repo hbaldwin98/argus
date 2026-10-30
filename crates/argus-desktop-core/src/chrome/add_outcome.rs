@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use super::add_project::{AddKind, AddProjectPage};
+use super::add_page::{AddKind, AddProjectPage, Held, ProjectRef};
 use super::projects::counted;
 
 /// How long typing pauses before the fields are sent: a changed skip scans the folder again, so a
@@ -18,6 +18,73 @@ pub const FIELDS_PAUSE: Duration = Duration::from_millis(250);
 /// The kinds of add, as the control offers them.
 pub const KINDS: [(AddKind, &str); 3] =
     [(AddKind::Folder, "A folder of repositories"), (AddKind::Repository, "One repository"), (AddKind::New, "A new repository")];
+
+/// The kinds, as they read when a project is the one added to: a repository goes into it.
+pub const KINDS_INTO: [(AddKind, &str); 3] =
+    [(AddKind::Repository, "A repository"), (AddKind::Folder, "Every repository in a folder"), (AddKind::New, "A new one (git init)")];
+
+/// What to add, in the order the control offers it for the page's target.
+pub fn kinds(page: &AddProjectPage) -> [(AddKind, &'static str); 3] {
+    if page.into.is_some() {
+        KINDS_INTO
+    } else {
+        KINDS
+    }
+}
+
+/// The segments of Add to: the project the rail lists, another, or a project of its own.
+pub const ANOTHER_PROJECT: &str = "Another project";
+pub const A_NEW_PROJECT: &str = "A new project";
+
+/// Where an add goes, as the Add to control reads the page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddTo {
+    /// The project the rail lists.
+    Current,
+    /// Another project of the tree.
+    Another,
+    /// A project of its own, made for it.
+    New,
+}
+
+pub fn add_to(page: &AddProjectPage) -> AddTo {
+    match (&page.into, &page.current) {
+        (None, _) => AddTo::New,
+        (Some(into), Some(current)) if into.id == current.id => AddTo::Current,
+        _ => AddTo::Another,
+    }
+}
+
+/// The projects Another project offers: every one but the project the rail lists, which has a
+/// segment of its own.
+pub fn other_projects(page: &AddProjectPage) -> Vec<&ProjectRef> {
+    page.projects.iter().filter(|p| page.current.as_ref().is_none_or(|current| current.id != p.id)).collect()
+}
+
+/// The dialog's title: where the add goes.
+pub fn title(page: &AddProjectPage) -> String {
+    match &page.into {
+        Some(into) => format!("Add a repository to {}", into.name),
+        None => "Add a project".to_owned(),
+    }
+}
+
+/// What a folder row says of where it is held already, with a project to add to.
+pub fn held_words(held: Held, page: &AddProjectPage) -> String {
+    match held {
+        Held::InTarget => format!("already in {}", page.into.as_ref().map_or("the project", |into| into.name.as_str())),
+        Held::OwnProject => "in its own project".to_owned(),
+    }
+}
+
+/// For one repository added into a project that is a project of its own already.
+pub fn own_project_note(page: &AddProjectPage) -> Option<String> {
+    let into = page.into.as_ref().filter(|_| page.own_project)?;
+    Some(format!(
+        "{} is already its own project. Adding it here keeps that project too; to fold the whole project into {}, use Combine projects\u{2026}",
+        page.default_name, into.name
+    ))
+}
 
 pub const NEW_FOLDER_LABEL: &str = "New repository\u{2019}s folder";
 pub const NEW_FOLDER_PLACEHOLDER: &str = "scratch";
@@ -103,6 +170,9 @@ pub fn footer(kind: AddKind) -> &'static str {
 pub fn add_label(typed_name: &str, page: &AddProjectPage) -> String {
     if page.adding {
         return "Adding\u{2026}".to_owned();
+    }
+    if let Some(into) = &page.into {
+        return format!("Add to {}", into.name);
     }
     let typed = typed_name.trim();
     let name = if typed.is_empty() { page.default_name.as_str() } else { typed };

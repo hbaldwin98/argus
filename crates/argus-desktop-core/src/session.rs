@@ -44,7 +44,8 @@ use argus_protocol::{
     PASTE_FILE, RENAME_PANE, MOVE_TO_CHECKOUT, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion, FILES, BROWSERS, BROWSER_POINTER,
 };
 
-use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
+use crate::chrome::add_project::{AddProject, Adding};
+use crate::chrome::add_page::{AddKind, AddProjectGesture};
 use crate::dictation::{self, Deliver, Dictation, DictationGesture};
 use crate::chrome::cursor::{RailCursor, Then};
 use crate::browser::Browsers;
@@ -111,6 +112,9 @@ enum Made {
     Resumed(page::Resumed),
     /// Put the added project on the rail, closing the dialog that added it.
     SelectProject,
+    /// A repository added into this project: the dialog closes when every one it asked for is held,
+    /// and the project is the one on the rail.
+    AddedRepository(ProjectId),
     /// Show the new console in the console, which shows itself for it.
     ShowConsole,
     /// Show the new console on the second side of the split asked for.
@@ -427,6 +431,9 @@ impl Session {
                 self.tree.as_mut_slice().apply_telemetry(pane, telemetry);
             }
             ServerMsg::Created { request_id, created } => {
+                if let Some(dialog) = self.adding.get_mut().filter(|_| created.is_some()) {
+                    dialog.made(request_id);
+                }
                 self.awaited.answer(request_id, created);
                 self.settle_made();
             }
@@ -669,6 +676,12 @@ impl Session {
                     self.adding.close();
                     self.choose_project(project);
                 }
+                (Created::Repository(_), Made::AddedRepository(project)) => {
+                    if self.adding.get_mut().is_some_and(AddProject::settled) {
+                        self.adding.close();
+                        self.choose_project(project);
+                    }
+                }
                 (Created::Pane(pane), Made::ShowConsole) => self.show_console(pane),
                 (Created::Pane(pane), Made::ShowBeside) => self.show_beside(pane),
                 _ => {}
@@ -739,6 +752,7 @@ impl Session {
                 self.finish()
             }
             Call::OpenAddProject => self.open_add_project(),
+            Call::OpenAddToProject { project, kind } => self.open_add_to_project(ProjectId(project), kind),
             Call::AddProject { gesture } => self.add_project(gesture),
             Call::ToggleRepository { repository } => self.toggle_repository(RepositoryId(repository)),
             Call::ToggleCheckout { checkout } => self.toggle_checkout(CheckoutId(checkout)),
@@ -1627,11 +1641,25 @@ impl Session {
     }
 
     fn open_add_project(&mut self) -> Vec<ClientMsg> {
+        self.open_adding(None)
+    }
+
+    /// The dialog open on a project of the tree: a repository added to it, or made in it.
+    fn open_add_to_project(&mut self, project: ProjectId, kind: AddKind) -> Vec<ClientMsg> {
+        let into = self.tree.iter().any(|p| p.id == project).then_some((project, kind));
+        self.open_adding(into)
+    }
+
+    fn open_adding(&mut self, into: Option<(ProjectId, AddKind)>) -> Vec<ClientMsg> {
         if !self.status.daemon_can(ADD_PROJECT) {
             return self.note("argusd is too old to add a project from here: run `argus server restart`");
         }
         if self.adding.get().is_none() {
-            self.adding.open(AddProject::new(self.awaited.name(), &mut self.out));
+            let dialog = AddProject::new(self.awaited.name(), &mut self.out);
+            self.adding.open(match into {
+                Some((project, kind)) => dialog.for_project(project, kind),
+                None => dialog,
+            });
         }
         self.finish()
     }
@@ -1649,13 +1677,15 @@ impl Session {
             }
             AddProjectGesture::Add { name, skip, folder } => {
                 dialog.set_fields(name, skip, folder, || self.awaited.name(), &mut self.out);
-                let request_id = self.awaited.ask(Made::SelectProject);
-                match dialog.add(request_id) {
-                    Ok(msg) => self.out.push(msg),
-                    // The dialog says why; nothing was asked.
-                    Err(()) => self.awaited.answer(request_id, None),
+                // Asked only once the dialog allows the add, and once for each repository it makes.
+                let awaited = &mut self.awaited;
+                let ask = |into: Option<ProjectId>| awaited.ask(into.map_or(Made::SelectProject, Made::AddedRepository));
+                // The dialog says why when nothing was asked.
+                if let Ok(msgs) = dialog.add(ask) {
+                    self.out.extend(msgs);
                 }
             }
+            AddProjectGesture::AddTo { project } => dialog.add_to(project.map(ProjectId)),
             AddProjectGesture::Close => self.adding.close(),
         }
         self.finish()
@@ -3612,7 +3642,7 @@ impl Session {
         events.extend(self.tracker_dialogs.take(self.features.board(), &self.tree, scope.as_ref(), now));
         let repository = scope.as_ref().map_or("", |scope| scope.repository_name.as_str());
         events.extend(self.capture.take(repository));
-        events.extend(self.adding.take());
+        events.extend(self.adding.take(&self.tree, self.project));
         let listing = self.palette.then(|| palette::build(self.current_project(), self.features.board(), &self.tree));
         if let Some(listing) = self.palette_sent.take(listing) {
             events.push(Event::Palette(Box::new(listing)));
@@ -6426,7 +6456,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 164] = [
+    const CALLS: [&str; 165] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -6536,6 +6566,7 @@ mod tests {
         r#"{"call":"extension_command","extension":"docker","command":"up","checkout":100,"pane":null}"#,
         r#"{"call":"answer_dialog","dialog":3,"answer":{"picked":"web"}}"#,
         r#"{"call":"extension_mode","panel":"extension:docker/containers","page":true}"#,
+        r#"{"call":"open_add_to_project","project":1,"kind":"repository"}"#,
         r#"{"call":"create_workspace","name":"side"}"#,
         r#"{"call":"dismiss_new_workspace"}"#,
         r#"{"call":"toggle_extensions"}"#,
@@ -7010,7 +7041,7 @@ mod tests {
 
     // ---- Projects: switch, add and remove ----------------------------------
 
-    fn add_page(s: &mut Session) -> Option<crate::chrome::add_project::AddProjectPage> {
+    fn add_page(s: &mut Session) -> Option<crate::chrome::add_page::AddProjectPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::AddProject(page) => Some(*page),
             _ => None,
@@ -7174,6 +7205,99 @@ mod tests {
         s.call(Call::CreateWorkspace { name: "default".into() });
         s.receive(ServerMsg::Error { message: "workspace already exists: default".into() });
         assert_eq!(s.rail(0).new_workspace.and_then(|n| n.refusal).as_deref(), Some("workspace already exists: default"));
+    }
+
+    /// A session with the dialog open on a project, `/home/work` browsed and `found` its preview.
+    fn adding_into(project: u64, kind: AddKind, found: &[&str]) -> Session {
+        let mut s = session(Hello::this_build());
+        let sent = s.call(Call::OpenAddToProject { project, kind });
+        let Some(ClientMsg::ListDirectories { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        let sent = s.receive(ServerMsg::Directories(argus_protocol::DirListing {
+            request_id: *request_id,
+            path: "/home/work".into(),
+            parent: Some("/home".into()),
+            entries: Vec::new(),
+            error: None,
+        }));
+        let Some(ClientMsg::PreviewProject { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        s.receive(ServerMsg::ProjectPreview(argus_protocol::ProjectPreview {
+            request_id: *request_id,
+            path: "/home/work".into(),
+            repositories: found.iter().map(|r| r.to_string()).collect(),
+            depth: 8,
+            always_skipped: Vec::new(),
+            error: None,
+        }));
+        s
+    }
+
+    fn add_now(s: &mut Session) -> Vec<ClientMsg> {
+        s.call(Call::AddProject { gesture: AddProjectGesture::Add { name: String::new(), skip: String::new(), folder: String::new() } })
+    }
+
+    #[test]
+    fn a_repository_added_to_a_project_goes_into_it_and_the_dialog_waits_for_the_tree() {
+        let mut s = adding_into(2, AddKind::Repository, &[""]);
+        let page = add_page(&mut s).unwrap();
+        assert_eq!(page.into.map(|p| p.name), Some("work".into()));
+        let sent = add_now(&mut s);
+        let [ClientMsg::AddRepository { project: ProjectId(2), path, request_id }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        assert_eq!(path, "/home/work");
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Repository(RepositoryId(21))) });
+        assert!(s.adding.get().is_some(), "no tree holds it yet");
+        let mut grown = tree();
+        grown[1].repositories.push(repository(21, "work", None, vec![checkout(210, "main", true, vec![])]));
+        s.receive(with_tree(grown));
+        assert!(add_page(&mut s).is_some_and(|p| !p.open), "the dialog closes");
+        assert_eq!(s.rail(0).project.map(|p| p.id), Some(2));
+    }
+
+    #[test]
+    fn a_folder_added_to_a_project_adds_each_repository_and_closes_after_the_last() {
+        let mut s = adding_into(1, AddKind::Folder, &["web", "infra/k8s"]);
+        let sent = add_now(&mut s);
+        let paths: Vec<_> = sent.iter().map(|m| match m {
+            ClientMsg::AddRepository { project: ProjectId(1), path, .. } => path.clone(),
+            other => panic!("{other:?}"),
+        }).collect();
+        assert_eq!(paths, ["/home/work/web", "/home/work/infra/k8s"]);
+        let ids: Vec<_> = sent.iter().map(|m| if let ClientMsg::AddRepository { request_id, .. } = m { *request_id } else { 0 }).collect();
+        let mut grown = tree();
+        for (n, id) in ids.iter().enumerate() {
+            s.receive(ServerMsg::Created { request_id: *id, created: Some(Created::Repository(RepositoryId(30 + n as u64))) });
+        }
+        grown[0].repositories.push(repository(30, "web", None, vec![checkout(300, "web", true, vec![])]));
+        s.receive(with_tree(grown.clone()));
+        assert!(s.adding.get().is_some(), "one repository is not in the tree yet");
+        grown[0].repositories.push(repository(31, "k8s", None, vec![checkout(310, "k8s", true, vec![])]));
+        s.receive(with_tree(grown));
+        assert!(s.adding.get().is_none());
+    }
+
+    #[test]
+    fn a_refused_repository_keeps_the_dialog_with_the_reason() {
+        let mut s = adding_into(1, AddKind::New, &[]);
+        let sent = s.call(Call::AddProject { gesture: AddProjectGesture::Add { name: String::new(), skip: String::new(), folder: "fresh".into() } });
+        let [ClientMsg::InitRepository { project: ProjectId(1), path, request_id }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        assert_eq!(path, "/home/work/fresh");
+        s.receive(refusal(*request_id, "that path is not absolute", false));
+        let page = add_page(&mut s).unwrap();
+        assert!(page.open && !page.adding);
+        assert_eq!(page.refusal.as_deref(), Some("that path is not absolute"));
+    }
+
+    #[test]
+    fn the_dialog_opened_for_no_such_project_adds_a_project_of_its_own() {
+        let mut s = adding_into(99, AddKind::Repository, &[""]);
+        assert!(add_page(&mut s).unwrap().into.is_none());
     }
 
     #[test]

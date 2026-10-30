@@ -6,7 +6,8 @@
 //! first closes what the session has open of Git, as a nav item does.
 
 use argus_desktop_core::chrome::cursor::starts;
-use argus_desktop_core::connection::page::{Call, Checkout, Pane, Repository};
+use argus_desktop_core::chrome::add_page::AddKind;
+use argus_desktop_core::connection::page::{Call, Checkout, Pane, Project, Repository};
 
 use crate::kit::menu::item::MenuItem;
 
@@ -24,24 +25,34 @@ pub enum Does {
     NewWorkspace,
 }
 
-/// A repository's menu: its name, Features, the recent sessions, a rule, and Collapse or Expand.
-/// Features chooses the repository first when it is not the chosen one.
-pub fn repository(repo: &Repository, chosen: bool) -> Vec<MenuItem<Does>> {
+/// A repository's menu: its name, Features, the recent sessions, a rule, adding a repository to its
+/// project or making one there, a rule, and Collapse or Expand. Features chooses the repository first
+/// when it is not the chosen one.
+pub fn repository(repo: &Repository, chosen: bool, project: Option<&Project>) -> Vec<MenuItem<Does>> {
     let mut features = Vec::new();
     if !chosen {
         features.push(Call::ChooseRepository { repository: repo.id });
     }
     features.push(Call::ShowFeatures { open: true });
-    vec![
+    let mut items = vec![
         MenuItem::heading(repo.name.clone()),
         MenuItem::choice("Features", Does::Go(features)),
         MenuItem::choice("Recent agent sessions", Does::Send(vec![Call::OpenSessions { repository: repo.id }])),
         MenuItem::Rule,
-        MenuItem::choice(
-            if repo.open { "Collapse" } else { "Expand" },
-            Does::Send(vec![Call::ToggleRepository { repository: repo.id }]),
-        ),
-    ]
+    ];
+    // Into the project this repository is in, which the rail lists: the add dialog opens already
+    // pointed at it.
+    if let Some(project) = project {
+        let add = |kind| Does::Send(vec![Call::OpenAddToProject { project: project.id, kind }]);
+        items.push(MenuItem::choice(format!("Add a repository to {}\u{2026}", project.name), add(AddKind::Repository)));
+        items.push(MenuItem::choice(format!("New repository in {}\u{2026}", project.name), add(AddKind::New)));
+        items.push(MenuItem::Rule);
+    }
+    items.push(MenuItem::choice(
+        if repo.open { "Collapse" } else { "Expand" },
+        Does::Send(vec![Call::ToggleRepository { repository: repo.id }]),
+    ));
+    items
 }
 
 /// A checkout's menu: the branch, a new shell and a new agent per template, a rule, its review, its
@@ -136,17 +147,32 @@ mod tests {
     #[test]
     fn a_repositorys_menu_says_its_name_and_offers_its_features_sessions_and_fold() {
         // SHELL-RAIL-6.
-        let items = repository(&repo(true), true);
+        let items = repository(&repo(true), true, None);
         assert_eq!(lines(&items), ["# argus", "Features", "Recent agent sessions", "---", "Collapse"]);
-        assert_eq!(lines(&repository(&repo(false), true))[4], "Expand");
+        assert_eq!(lines(&repository(&repo(false), true, None))[4], "Expand");
+    }
+
+    fn project() -> Project {
+        Project { id: 1, name: "src".into(), needs_you: 0, repositories: Vec::new(), running: Vec::new() }
+    }
+
+    #[test]
+    fn a_repositorys_menu_adds_a_repository_to_its_project_or_makes_one_there_before_the_fold() {
+        let items = repository(&repo(true), true, Some(&project()));
+        assert_eq!(
+            lines(&items),
+            ["# argus", "Features", "Recent agent sessions", "---", "Add a repository to src\u{2026}", "New repository in src\u{2026}", "---", "Collapse"]
+        );
+        assert_eq!(calls(&items[4]), ["OpenAddToProject { project: 1, kind: Repository }"]);
+        assert_eq!(calls(&items[5]), ["OpenAddToProject { project: 1, kind: New }"]);
     }
 
     #[test]
     fn features_chooses_the_repository_first_unless_it_is_the_chosen_one() {
-        let items = repository(&repo(true), false);
+        let items = repository(&repo(true), false, None);
         assert_eq!(calls(&items[1]), ["ChooseRepository { repository: 11 }", "ShowFeatures { open: true }"]);
         assert!(matches!(items[1].as_choice().unwrap().does, Does::Go(_)), "it goes to a stage, so it leaves Git");
-        assert_eq!(calls(&repository(&repo(true), true)[1]), ["ShowFeatures { open: true }"]);
+        assert_eq!(calls(&repository(&repo(true), true, None)[1]), ["ShowFeatures { open: true }"]);
     }
 
     #[test]

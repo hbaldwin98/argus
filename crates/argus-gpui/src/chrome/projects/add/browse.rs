@@ -1,8 +1,8 @@
 //! The top of the add dialog: what to add, the folder it is in, and the folders in it
 //! (SHELL-ADD-3..5).
 
-use argus_desktop_core::chrome::add_outcome::{folders, Folders, KINDS, NO_FOLDERS};
-use argus_desktop_core::chrome::add_project::{AddProjectGesture, AddProjectPage};
+use argus_desktop_core::chrome::add_outcome::{folders, held_words, kinds, Folders, NO_FOLDERS};
+use argus_desktop_core::chrome::add_page::{AddProjectGesture, AddProjectPage};
 use gpui_kit::component::input::Input;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, Context, Role, SharedString, TestSupportExt as _};
@@ -20,11 +20,10 @@ use crate::theme::Tokens;
 impl AddView {
     /// `What to add`: a radio group of the three kinds; a press asks for the kind and the page says it.
     pub(super) fn kinds(&self, page: &AddProjectPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let words = KINDS.iter().enumerate().map(|(at, (kind, words))| {
-            let kind = *kind;
+        let words = kinds(page).into_iter().enumerate().map(|(at, (kind, words))| {
             pill(("ap-kind", at), Role::RadioButton, page.kind == kind, tokens)
-                .aria_label(SharedString::from(*words))
-                .child(*words)
+                .aria_label(SharedString::from(words))
+                .child(words)
                 .on_click(cx.listener(move |this, _, _, _| this.send(AddProjectGesture::Kind { kind })))
         });
         div().flex().child(track("ap-kinds", "What to add", Role::RadioGroup, tokens).children(words))
@@ -95,6 +94,10 @@ impl AddView {
                         .on_click(cx.listener(move |this, _, _, _| this.send(AddProjectGesture::Into { name: name.clone() })))
                         .child(div().text_color(tokens.fg_faint).child("\u{25b8}"))
                         .child(div().flex_1().min_w_0().truncate().child(SharedString::from(entry.name.clone())))
+                        .children(entry.held.map(|held| {
+                            let words = SharedString::from(held_words(held, page));
+                            div().id(("ap-held", at)).test_support().aria_label(words.clone()).typed(tokens.type_small).text_color(tokens.fg_faint).child(words)
+                        }))
                         .child(div().typed(tokens.type_small).text_color(tokens.fg_muted).child(if entry.is_repo { "git" } else { "folder" }))
                 });
                 shell.children(rows).into_any_element()

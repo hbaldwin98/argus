@@ -15,9 +15,10 @@
 
 mod browse;
 mod outcome;
+mod target;
 
-use argus_desktop_core::chrome::add_outcome::{add_label, can_add, footer, FIELDS_PAUSE};
-use argus_desktop_core::chrome::add_project::{AddKind, AddProjectGesture, AddProjectPage};
+use argus_desktop_core::chrome::add_outcome::{add_label, can_add, footer, title, FIELDS_PAUSE};
+use argus_desktop_core::chrome::add_page::{AddKind, AddProjectGesture, AddProjectPage};
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::keys::keymap::{Action, Place};
 use gpui_kit::component::dialog::Dialog;
@@ -203,9 +204,9 @@ impl Render for AddView {
             .id("add-project")
             .role(Role::Dialog)
             .test_support()
-            .aria_label("Add a project")
+            .aria_label(SharedString::from(title(&page)))
             .max_h(rem(tokens.add_max_h))
-            .child(head("ap", "Add a project", move |window, cx| shut.update(cx, |this, cx| this.close(window, cx)), None, &tokens))
+            .child(head("ap", SharedString::from(title(&page)), move |window, cx| shut.update(cx, |this, cx| this.close(window, cx)), None, &tokens))
             .child(
                 v_flex()
                     .id("ap-body")
@@ -215,6 +216,7 @@ impl Render for AddView {
                     .gap(rem(tokens.sp_12))
                     .px(rem(tokens.sp_24))
                     .pb(rem(tokens.sp_24))
+                    .child(self.target(&page, &tokens, cx))
                     .child(self.kinds(&page, &tokens, cx))
                     .child(self.path_row(&page, &tokens, cx))
                     .child(
@@ -223,7 +225,7 @@ impl Render for AddView {
                             .child(self.folders(&page, &tokens, cx))
                             .child(self.outcome(&page, &tokens, cx)),
                     )
-                    .child(self.name_row(&page, &tokens))
+                    .children(page.into.is_none().then(|| self.name_row(&page, &tokens)))
                     .children((page.kind == AddKind::Folder).then(|| self.skip_row(&page, &tokens)))
                     .children(page.refusal.clone().map(|refusal| {
                         div().id("ap-refusal").role(Role::Alert).test_support().aria_label(SharedString::from(refusal.clone())).text_color(tokens.danger).child(SharedString::from(refusal))

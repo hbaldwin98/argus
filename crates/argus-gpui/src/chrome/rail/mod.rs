@@ -10,6 +10,7 @@
 //! While the daemon is gone the list is dimmed and answers no press (`Heard::held`): no call, and
 //! no pick either.
 
+pub mod add_repository;
 pub mod brand;
 pub mod browsers;
 pub mod calls;

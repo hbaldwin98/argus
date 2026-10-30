@@ -1,12 +1,12 @@
 use super::*;
-use crate::chrome::add_project::FolderEntry;
+use crate::chrome::add_page::{FolderEntry, Held, ProjectRef};
 
 fn page() -> AddProjectPage {
     AddProjectPage { open: true, path: Some("/home/me".into()), depth: Some(8), default_name: "me".into(), ..AddProjectPage::default() }
 }
 
 fn entry(name: &str) -> FolderEntry {
-    FolderEntry { name: name.into(), is_repo: false }
+    FolderEntry { name: name.into(), is_repo: false, held: None }
 }
 
 /// SHELL-ADD-5.
@@ -134,4 +134,48 @@ fn typing_is_sent_after_a_pause_of_a_quarter_second() {
 #[test]
 fn the_kinds_are_the_three_the_daemon_knows_in_the_pages_order() {
     assert_eq!(KINDS.map(|(kind, _)| kind), [AddKind::Folder, AddKind::Repository, AddKind::New]);
+}
+
+#[test]
+fn with_a_project_to_add_to_the_dialog_and_its_kinds_read_as_a_repository_added_to_it() {
+    let mut p = page();
+    assert_eq!((title(&p).as_str(), kinds(&p)[0].1), ("Add a project", "A folder of repositories"));
+    p.into = Some(ProjectRef { id: 1, name: "argus".into() });
+    assert_eq!(title(&p), "Add a repository to argus");
+    assert_eq!(kinds(&p).map(|(_, words)| words), ["A repository", "Every repository in a folder", "A new one (git init)"]);
+    assert_eq!(kinds(&p).map(|(kind, _)| kind), [AddKind::Repository, AddKind::Folder, AddKind::New]);
+    assert_eq!(add_label("typed", &p), "Add to argus", "a project's name is not the repository's");
+    p.adding = true;
+    assert_eq!(add_label("", &p), "Adding\u{2026}");
+}
+
+#[test]
+fn a_folder_already_held_says_where_and_a_repository_that_is_a_project_says_it_stays() {
+    let mut p = page();
+    p.into = Some(ProjectRef { id: 1, name: "argus".into() });
+    assert_eq!(held_words(Held::InTarget, &p), "already in argus");
+    assert_eq!(held_words(Held::OwnProject, &p), "in its own project");
+    assert_eq!(own_project_note(&p), None);
+    p.own_project = true;
+    assert_eq!(
+        own_project_note(&p).as_deref(),
+        Some("me is already its own project. Adding it here keeps that project too; to fold the whole project into argus, use Combine projects\u{2026}")
+    );
+}
+
+#[test]
+fn add_to_reads_the_target_against_the_project_the_rail_lists_and_offers_the_others() {
+    let project = |id: u64, name: &str| ProjectRef { id, name: name.into() };
+    let mut p = page();
+    p.projects = vec![project(1, "argus"), project(2, "work"), project(3, "dots")];
+    p.current = Some(project(1, "argus"));
+    assert_eq!(add_to(&p), AddTo::New, "from the switcher it is a project of its own");
+    p.into = Some(project(1, "argus"));
+    assert_eq!(add_to(&p), AddTo::Current);
+    p.into = Some(project(3, "dots"));
+    assert_eq!(add_to(&p), AddTo::Another);
+    assert_eq!(other_projects(&p).iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["work", "dots"], "the current one has its own segment");
+    p.current = None;
+    assert_eq!(add_to(&p), AddTo::Another);
+    assert_eq!(other_projects(&p).len(), 3);
 }

@@ -4,8 +4,8 @@
 //! The words are core's (`chrome::add_outcome`); the fields are the view's own and keep what is
 //! typed over what was sent (`add`, `schedule`).
 
-use argus_desktop_core::chrome::add_outcome::{always_skipped, outcome, Outcome, NEW_FOLDER_LABEL, NEW_NOTE, NOT_A_REPOSITORY};
-use argus_desktop_core::chrome::add_project::AddProjectPage;
+use argus_desktop_core::chrome::add_outcome::{always_skipped, outcome, own_project_note, Outcome, NEW_FOLDER_LABEL, NEW_NOTE, NOT_A_REPOSITORY};
+use argus_desktop_core::chrome::add_page::AddProjectPage;
 use gpui_kit::component::input::Input;
 use gpui_kit::component::v_flex;
 use gpui_kit::{div, prelude::*, Context, SharedString, TestSupportExt as _};
@@ -31,7 +31,7 @@ fn mono(words: impl Into<SharedString>, tokens: &Tokens) -> gpui_kit::Div {
 impl AddView {
     pub(super) fn outcome(&self, page: &AddProjectPage, tokens: &Tokens, _: &mut Context<Self>) -> impl IntoElement {
         let shell = v_flex().id("ap-outcome").test_support().flex_shrink_0().min_w_0().gap(rem(tokens.sp_6));
-        match outcome(page) {
+        let drawn = match outcome(page) {
             Outcome::New { target } => shell
                 .child(field_label(NEW_FOLDER_LABEL, tokens))
                 .child(div().font_family(SharedString::from(tokens.font_mono)).child(Input::new(self.folder.input()).aria_label(NEW_FOLDER_LABEL).h(rem(tokens.control_h))))
@@ -51,7 +51,11 @@ impl AddView {
                         .children(repositories.into_iter().map(|repo| mono(repo, tokens))),
                 )
                 .children(searched.map(|words| meta(words, tokens))),
-        }
+        };
+        drawn.children(own_project_note(page).map(|words| {
+            let words = SharedString::from(words);
+            meta(words.clone(), tokens).id("ap-own").test_support().aria_label(words)
+        }))
     }
 
     /// `Project name`, with the default name showing while it is empty.

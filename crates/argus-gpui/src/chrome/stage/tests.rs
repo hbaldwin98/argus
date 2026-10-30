@@ -1,7 +1,7 @@
 use argus_desktop_core::connection::page::{
     Checkout, Connection, Event, Project, Rail, Repository, RunningPane, Shown, Stage, Status,
 };
-use argus_desktop_core::chrome::add_project::AddProjectPage;
+use argus_desktop_core::chrome::add_page::AddProjectPage;
 use argus_desktop_core::layout::docks::{DockPage, DockTab, DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
 use gpui_kit::test::TestWindowExt as _;

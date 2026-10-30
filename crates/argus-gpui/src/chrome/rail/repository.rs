@@ -23,12 +23,10 @@ use crate::theme::Tokens;
 
 impl RailView {
     pub(super) fn repository(&self, rail: &Rail, repo: &Repository, first: bool, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let id = repo.id;
-        let chosen = rail.repository == Some(id);
         let body = if ctx.icons {
             self.hairline(repo, first, tokens).into_any_element()
         } else {
-            self.heading(repo, chosen, first, ctx, tokens, cx).into_any_element()
+            self.heading(rail, repo, first, ctx, tokens, cx).into_any_element()
         };
         v_flex()
             .child(body)
@@ -39,8 +37,9 @@ impl RailView {
     }
 
     /// The repository's name row: a button that chooses it, and the clock at its end.
-    fn heading(&self, repo: &Repository, chosen: bool, first: bool, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+    fn heading(&self, rail: &Rail, repo: &Repository, first: bool, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let (id, held) = (repo.id, ctx.held);
+        let chosen = rail.repository == Some(id);
         let count = repo.used.clone().or_else(|| (repo.panes > 0).then(|| repo.panes.to_string()));
         let dot = repo.status.and_then(|word| status_colour(word, tokens));
         let fill = tokens.fill;
@@ -49,7 +48,7 @@ impl RailView {
         // chosen one in the text colour with an accent chevron, a quiet one faint and regular.
         let colour = if chosen { tokens.fg } else if repo.quiet { tokens.fg_faint } else { tokens.fg_muted };
         let group = SharedString::from(format!("repo-row-{id}"));
-        let items = menus::repository(repo, chosen);
+        let items = menus::repository(repo, chosen, rail.project.as_ref());
         let (rail, heard) = (cx.weak_entity(), self.heard.clone());
         // `.repo` is 2px under the nav, and 8 after another repository's rows.
         h_flex()

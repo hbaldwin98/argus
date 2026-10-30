@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use argus_desktop_core::chrome::add_project::{AddKind, AddProjectPage, FolderEntry};
+use argus_desktop_core::chrome::add_page::{AddKind, AddProjectPage, FolderEntry, Held, ProjectRef};
 use argus_desktop_core::connection::page::{Event, Rail, Shown};
 use gpui_kit::prelude::*;
 use gpui_kit::test::TestQueryExt as _;
@@ -17,7 +17,7 @@ fn page() -> AddProjectPage {
         open: true,
         path: Some("/home/me".into()),
         parent: Some("/home".into()),
-        entries: vec![FolderEntry { name: "dotfiles".into(), is_repo: true }, FolderEntry { name: "scratch".into(), is_repo: false }],
+        entries: vec![FolderEntry { name: "dotfiles".into(), is_repo: true, held: None }, FolderEntry { name: "scratch".into(), is_repo: false, held: None }],
         repositories: vec!["dotfiles".into()],
         depth: Some(8),
         always_skipped: vec![".git".into(), "target".into()],
@@ -228,4 +228,74 @@ fn the_dialog_takes_the_keys_from_the_pane_and_gives_them_back(cx: &mut TestAppC
     hear(cx, &opened, Vec::new());
     press(cx, &opened, "q");
     assert!(drain(&opened).iter().any(|call| call.starts_with("Key")), "the pane has the keys again");
+}
+
+fn project(id: u64, name: &str) -> ProjectRef {
+    ProjectRef { id, name: name.into() }
+}
+
+/// The dialog open to add a repository into `argus`, with two more projects in the tree.
+fn into_argus() -> AddProjectPage {
+    AddProjectPage {
+        into: Some(project(1, "argus")),
+        current: Some(project(1, "argus")),
+        projects: vec![project(1, "argus"), project(2, "work"), project(3, "dots")],
+        kind: AddKind::Repository,
+        ..page()
+    }
+}
+
+/// A project to add to changes what the dialog is called, what its kinds and button say, and hides
+/// the project's name, which is no new project's.
+#[gpui_kit::test]
+fn a_project_to_add_to_renames_the_dialog_its_kinds_and_its_button_and_drops_the_name(cx: &mut TestAppContext) {
+    let opened = dialog(cx, page());
+    assert!(has_label(cx, &opened, "Project name"));
+    assert!(has_label(cx, &opened, "A new project"), "the choice is there even when it is the one");
+    hear(cx, &opened, vec![say(into_argus())]);
+    assert!(has_label(cx, &opened, "Add a repository to argus"));
+    for words in ["A repository", "Every repository in a folder", "A new one (git init)", "Add to argus"] {
+        assert!(has_label(cx, &opened, words), "{words}");
+    }
+    assert!(!has_label(cx, &opened, "Project name"), "a repository added to a project is not named");
+    assert!(!has_label(cx, &opened, "One repository"));
+}
+
+/// The Add to choice asks for the target and draws nothing until the page says it is chosen.
+#[gpui_kit::test]
+fn add_to_asks_for_the_target_and_the_page_says_which_is_chosen(cx: &mut TestAppContext) {
+    let opened = dialog(cx, AddProjectPage { into: None, ..into_argus() });
+    assert_eq!(selected(cx, &opened, "A new project"), Some(true));
+    click_label(cx, &opened, "argus");
+    assert_eq!(drain(&opened), ["AddProject { gesture: AddTo { project: Some(1) } }"]);
+    assert_eq!(selected(cx, &opened, "A new project"), Some(true), "the client does not predict the result");
+    hear(cx, &opened, vec![say(into_argus())]);
+    assert_eq!(selected(cx, &opened, "argus"), Some(true));
+    click_label(cx, &opened, "A new project");
+    assert_eq!(drain(&opened), ["AddProject { gesture: AddTo { project: None } }"]);
+}
+
+/// Another project offers every project but the one the rail lists, and only when there is one.
+#[gpui_kit::test]
+fn another_project_is_offered_only_when_there_is_another(cx: &mut TestAppContext) {
+    let opened = dialog(cx, into_argus());
+    assert!(has_label(cx, &opened, "Another project"));
+    hear(cx, &opened, vec![say(AddProjectPage { projects: vec![project(1, "argus")], ..into_argus() })]);
+    assert!(!has_label(cx, &opened, "Another project"));
+    hear(cx, &opened, vec![say(AddProjectPage { into: Some(project(3, "dots")), ..into_argus() })]);
+    assert_eq!(selected(cx, &opened, "Another project"), Some(true));
+    assert!(has_label(cx, &opened, "Add to dots"));
+}
+
+/// A folder row says where the daemon already holds it, and a repository that is a project of its own
+/// says that project stays.
+#[gpui_kit::test]
+fn folder_rows_say_where_they_are_held_and_a_repository_that_is_its_own_project_says_it_stays(cx: &mut TestAppContext) {
+    let held = |held| FolderEntry { name: "web".into(), is_repo: true, held };
+    let opened = dialog(cx, AddProjectPage { entries: vec![held(Some(Held::InTarget)), held(Some(Held::OwnProject)), held(None)], ..into_argus() });
+    assert!(has_label(cx, &opened, "already in argus"));
+    assert!(has_label(cx, &opened, "in its own project"));
+    assert!(!has_label(cx, &opened, "me is already its own project. Adding it here keeps that project too; to fold the whole project into argus, use Combine projects\u{2026}"));
+    hear(cx, &opened, vec![say(AddProjectPage { own_project: true, ..into_argus() })]);
+    assert!(has_label(cx, &opened, "me is already its own project. Adding it here keeps that project too; to fold the whole project into argus, use Combine projects\u{2026}"));
 }

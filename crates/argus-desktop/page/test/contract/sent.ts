@@ -7038,17 +7038,33 @@ export const sent = [
   "alwaysSkipped": [],
   "blocked": "pick a folder",
   "browsing": true,
+  "current": {
+    "id": 1,
+    "name": "src"
+  },
   "defaultName": "",
   "depth": null,
   "entries": [],
   "folder": "",
+  "into": null,
   "kind": "folder",
   "listingError": null,
   "name": "",
   "open": true,
+  "ownProject": false,
   "parent": null,
   "path": null,
   "previewing": false,
+  "projects": [
+    {
+      "id": 1,
+      "name": "src"
+    },
+    {
+      "id": 2,
+      "name": "work"
+    }
+  ],
   "refusal": null,
   "repositories": [],
   "skip": "",

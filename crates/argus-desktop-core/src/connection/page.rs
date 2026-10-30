@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::browser::{BrowserShot, BrowsersPage};
-use crate::chrome::add_project::{AddProjectGesture, AddProjectPage};
+use crate::chrome::add_page::{AddKind, AddProjectGesture, AddProjectPage};
 use crate::board::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::files::FilesGesture;
 use crate::checkouts::table::Checkouts;
@@ -123,6 +123,9 @@ pub enum Call {
     /// The answer to that question.
     AnswerRemoveProject { yes: bool },
     OpenAddProject,
+    /// Opens the add dialog with `project` already the one added to: from a repository's menu or the
+    /// rail's foot. `kind` is what is added into it, a repository or a new one.
+    OpenAddToProject { project: u64, kind: AddKind },
     /// Makes a workspace of this name, which the daemon opens. Refused, the rail's `new_workspace`
     /// says why.
     CreateWorkspace { name: String },
@@ -1895,7 +1898,7 @@ pub const WIDE: u8 = 16;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chrome::add_project::{AddKind, FolderEntry};
+    use crate::chrome::add_page::FolderEntry;
     use serde_json::json;
 
     fn as_json(event: Event) -> serde_json::Value {
@@ -2107,7 +2110,7 @@ mod tests {
         let page = AddProjectPage {
             open: true,
             kind: AddKind::New,
-            entries: vec![FolderEntry { name: "web".into(), is_repo: true }],
+            entries: vec![FolderEntry { name: "web".into(), is_repo: true, held: None }],
             always_skipped: vec![".git".into()],
             default_name: "web".into(),
             ..AddProjectPage::default()

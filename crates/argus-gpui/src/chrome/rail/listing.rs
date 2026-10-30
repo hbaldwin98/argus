@@ -46,6 +46,10 @@ impl RailView {
             // The project's name is the brand row's, so the list opens on its first repository.
             Some(project) => {
                 list = list.children(project.repositories.iter().enumerate().map(|(at, repo)| self.repository(rail, repo, at == 0, ctx, tokens, cx)));
+                // A folded rail has no room for the words; the repository's menu still adds one.
+                if !ctx.icons {
+                    list = list.child(self.add_repository(project, ctx, tokens, cx));
+                }
             }
         }
         list

@@ -1,6 +1,7 @@
 //! The rail, the strip and the status bar around the stage.
 
 pub mod add_outcome;
+pub mod add_page;
 pub mod add_project;
 pub mod cursor;
 pub mod empty;
