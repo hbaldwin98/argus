@@ -273,6 +273,32 @@ fn tree() -> Vec<ProjectInfo> {
     ]
 }
 
+/// A repository nothing runs in, its only checkout clean on `main`.
+fn quiet_repository(id: u64, name: &str, idle: u64) -> RepositoryInfo {
+    let last = commit("0a1b2c3d4e5f60718293a4b5c6d7e8f901234567", "Tidy the notes", idle);
+    repository(id, name, idle, vec![checkout(id * 10, "main", format!(r"C:\Source\{name}"), true, clean("main", last), Vec::new())])
+}
+
+/// `tree` with a worktree of `argus` that has no panes, and quiet repositories after the active
+/// ones: the rail's "no panes" line and its fold of quiet repositories.
+fn quiet_tree() -> Vec<ProjectInfo> {
+    let mut tree = tree();
+    let project = &mut tree[0];
+    let log = history();
+    project.repositories[0].checkouts.push(checkout(
+        104,
+        "sidebar-blend",
+        worktree("sidebar-blend"),
+        false,
+        clean("sidebar-blend", log[3].clone()),
+        Vec::new(),
+    ));
+    for (at, name) in ["budgeting_app", "control-center", "crap", "dotfiles", "ephem"].into_iter().enumerate() {
+        project.repositories.push(quiet_repository(30 + at as u64, name, (at as u64 + 3) * 86_400));
+    }
+    tree
+}
+
 fn consoles() -> Vec<PaneInfo> {
     vec![pane(C_CONSOLE, PaneKind::Shell, "pwsh", PaneStatus::Idle, 900), pane(C_DEV, PaneKind::Shell, "npm run dev", PaneStatus::Idle, 2_000)]
 }
@@ -1804,6 +1830,11 @@ struct Window {
 impl Window {
     /// A window that has just reached the daemon and heard its tree.
     fn connected() -> Window {
+        Window::connected_to(Hello::this_build())
+    }
+
+    /// A window that has reached a daemon that greeted as `daemon`, another build than this one when it says so.
+    fn connected_to(daemon: Hello) -> Window {
         let mut s = Session::default();
         let opening = vec![
             ServerMsg::Tree(tree()),
@@ -1813,7 +1844,7 @@ impl Window {
             extension_views(),
             extension_commands(),
         ];
-        let sent = s.connected(Some(Hello::this_build()), None, opening);
+        let sent = s.connected(Some(daemon), None, opening);
         answer(&mut s, &sent);
         Window { s }
     }
@@ -2025,6 +2056,17 @@ fn main_scenes() -> Vec<Scene> {
         scene("workspace-shell", "Workspace — a shell after a test run", || Window::showing(P_SHELL).s),
         scene("workspace-waiting", "Workspace — an agent waiting on a yes", || Window::showing(P_RATATUI).s),
         scene("workspace-failed", "Workspace — an agent that failed", || Window::showing(P_FAULTS).s),
+        scene("rail-mismatch", "Rail — the daemon is an older build than the window", || {
+            let mut w = Window::connected_to(Hello { version: "0.42.2".into(), ..Hello::this_build() });
+            w.call(Call::Resize { side: Side::Workspace, rows: ROWS, cols: COLS });
+            w.call(Call::Select { pane: P_TRIM });
+            w.s
+        }),
+        scene("rail-quiet", "Rail — an empty worktree and a fold of quiet repositories", || {
+            let mut w = Window::showing(P_TRIM);
+            w.receive(ServerMsg::Tree(quiet_tree()));
+            w.s
+        }),
         scene("workspace-exited", "Workspace — a pane whose program exited", || Window::showing(P_FAULTS_TEST).s),
         scene("workspace-editor", "Workspace — an editor pane", || Window::showing(P_EDITOR).s),
         scene("workspace-split", "Workspace — two panes side by side", || {
