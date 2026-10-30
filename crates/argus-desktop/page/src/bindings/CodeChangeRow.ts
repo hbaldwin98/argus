@@ -4,4 +4,12 @@
  * A run of changed lines, or a place lines were removed, by its first
  * line and what it says.
  */
-export type CodeChangeRow = { line: number, text: string, on: boolean, };
+export type CodeChangeRow = { line: number, text: string, on: boolean, 
+/**
+ * How many lines the run is: lines added, or lines removed here.
+ */
+lines: number, 
+/**
+ * Lines went away here; otherwise the run was added or changed.
+ */
+removed: boolean, };

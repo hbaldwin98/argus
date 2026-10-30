@@ -36,11 +36,11 @@ pub(crate) fn mark(line: u32, span: u32, kind: &'static str) -> CodeMark {
 }
 
 pub(crate) fn symbol(name: &str, line: u32, on: bool, changed: bool) -> CodeOutlineRow {
-    CodeOutlineRow { name: name.into(), kind: "fn", line, on, changed }
+    CodeOutlineRow { name: name.into(), kind: "fn", line, on, changed, method: false }
 }
 
 pub(crate) fn change(line: u32, text: &str, on: bool) -> CodeChangeRow {
-    CodeChangeRow { line, text: text.into(), on }
+    CodeChangeRow { line, text: text.into(), on, lines: 1, removed: text.starts_with('\u{2212}') }
 }
 
 pub(crate) fn bounds_of(cx: &mut TestAppContext, opened: &Opened, id: impl Into<ElementId>) -> gpui_kit::Bounds<gpui_kit::Pixels> {
