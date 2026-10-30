@@ -5,7 +5,7 @@
 //! The box is drawn from what the session said the diff is, never from the press: a tick is a
 //! request, and the box changes when the diff read after the index moved says so.
 
-use argus_desktop_core::connection::page::DiffSide;
+use argus_desktop_core::connection::page::{DiffRow, DiffSide};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, Context, MouseButton, MouseDownEvent};
 
@@ -25,6 +25,11 @@ pub struct Ticks {
     pub staged: bool,
     /// A write is out, and the boxes wait on the diff that answers it.
     pub busy: bool,
+}
+
+/// Whether a line's box shows without the pointer on it: the cursor's line and the picked range.
+pub fn shown(row: &DiffRow) -> bool {
+    row.picked || row.cursor
 }
 
 /// Whether a side is a line a box is drawn on: one that was added or removed.
@@ -51,10 +56,10 @@ impl DiffView {
             return Some(cell.into_any_element());
         }
         let number = self.rows[ix].row;
-        let picked = self.rows[ix].picked;
-        // The column is reserved on every line; the box shows only on the line under the pointer
-        // or in the picked range, where it is filled, so nothing shifts as the pointer moves
-        // (`Kit.dc.html`, "Diff line").
+        let (picked, shown) = (self.rows[ix].picked, shown(&self.rows[ix]));
+        // The column is reserved on every line; the box shows only on the line under the pointer,
+        // on the cursor's line, which lifts as a hovered one does, and in the picked range, where
+        // it is filled, so nothing shifts as the pointer moves (`Kit.dc.html`, "Diff line").
         let filled = |mark: gpui_kit::Div| mark.bg(tokens.accent).border_color(tokens.accent).text_color(tokens.fg_on_accent).child(Glyph::Check.at(10.0));
         let mark = div()
             .size(rem(MARK))
@@ -71,7 +76,7 @@ impl DiffView {
                 }
             })
             .when(ticks.busy, |mark| mark.opacity(0.5))
-            .when(!picked, |mark| mark.invisible().group_hover(Self::group(ix), |mark| mark.visible()));
+            .when(!shown, |mark| mark.invisible().group_hover(Self::group(ix), |mark| mark.visible()));
         Some(
             cell.id(("diff-tick", ix * 2 + half))
                 .test_support()
@@ -93,6 +98,16 @@ impl DiffView {
 mod tests {
     use super::*;
     use crate::kit::diff::tests::side;
+
+    /// `Kit.dc.html`, "Diff line": the line the keys are on lifts as a hovered one does, so it
+    /// shows its box too; any other line keeps it hidden until the pointer comes.
+    #[test]
+    fn the_cursors_line_and_the_picked_range_show_their_box() {
+        let row = |cursor, picked| DiffRow { cursor, picked, ..crate::kit::diff::tests::line(0) };
+        assert!(shown(&row(true, false)));
+        assert!(shown(&row(false, true)));
+        assert!(!shown(&row(false, false)));
+    }
 
     #[test]
     fn only_an_added_or_removed_line_has_a_box() {

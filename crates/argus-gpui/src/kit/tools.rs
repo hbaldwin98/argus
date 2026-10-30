@@ -14,7 +14,8 @@ use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// `.gb`: 28px, no edge, muted until the pointer is on it; `pressed` is a toggle that is on
-/// (`Outline`). `key` is the key that does the same, in mono after the label.
+/// (`Outline`). `key` is the key that does the same, after the label in the label's own face: at
+/// this size the mono face's O reads as a zero.
 pub fn ghost(id: impl Into<ElementId>, words: impl Into<SharedString>, key: Option<&str>, pressed: bool, tokens: &Tokens) -> Node {
     let (fill, text, over) = (tokens.fill, tokens.fg, tokens.hover_fill);
     let words = words.into();
@@ -36,7 +37,7 @@ pub fn ghost(id: impl Into<ElementId>, words: impl Into<SharedString>, key: Opti
         .map(|button| if pressed { button.bg(fill).text_color(text) } else { button.text_color(tokens.fg_muted).hover(move |style| style.bg(over).text_color(text)) })
         .child(words)
         .children(key.map(|key| {
-            div().font_family(SharedString::from(tokens.font_mono)).text_size(rem(tokens.fs_xs)).text_color(tokens.fg_faint).child(SharedString::from(key.to_owned()))
+            div().text_size(rem(tokens.fs_xs)).weighted(tokens.weight_medium).text_color(tokens.fg_faint).child(SharedString::from(key.to_owned()))
         }))
 }
 
