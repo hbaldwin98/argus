@@ -18,6 +18,7 @@ mod ruler;
 mod scroll;
 mod states;
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -26,13 +27,14 @@ use argus_desktop_core::code::scroll::cursor_key;
 use argus_desktop_core::code::stage::{CodeClick, CodeGesture, CodePage};
 use argus_desktop_core::connection::page::Call;
 use gpui_kit::component::{h_flex, v_flex};
-use gpui_kit::{div, prelude::*, AnyElement, Context, Entity, Subscription, TestSupportExt as _, Window};
+use gpui_kit::{div, prelude::*, AnyElement, Bounds, Context, Entity, Pixels, Subscription, TestSupportExt as _, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
+use crate::kit::area;
 use crate::kit::diff::{DiffEvent, DiffView, Slot};
 use crate::review::comment::{self, ways, CommentBox};
-use crate::theme::scale::{rem, zoom};
+use crate::theme::scale::{css, rem, zoom};
 use crate::theme::Tokens;
 use editor::CodeEditor;
 use rendered::mode::{is_markdown, Mode, Modes};
@@ -61,6 +63,8 @@ pub struct CodeFile {
     cursor: (Option<String>, u32),
     /// A move of the cursor to bring into view once the list has been laid out.
     settle: bool,
+    /// Where the file area was laid out, whose width says how much of the head's line there is.
+    area: Rc<Cell<Bounds<Pixels>>>,
     _pressed: Subscription,
     _laid_out: Subscription,
 }
@@ -87,7 +91,7 @@ impl CodeFile {
         });
         // The list's first layout says how tall it is, which the cursor's place on screen waits for.
         let laid_out = cx.observe(&diff, |_, _, cx| cx.notify());
-        Self { heard, caller, diff, comment, ruler, editor, document, modes: Modes::default(), scrolled: HashMap::new(), shown: None, cursor: (None, 0), settle: false, _pressed: pressed, _laid_out: laid_out }
+        Self { heard, caller, diff, comment, ruler, editor, document, modes: Modes::default(), scrolled: HashMap::new(), shown: None, cursor: (None, 0), settle: false, area: Rc::default(), _pressed: pressed, _laid_out: laid_out }
     }
 
     /// The list of lines, for the stage's sideways keys and a test.
@@ -190,7 +194,7 @@ impl CodeFile {
 }
 
 impl Render for CodeFile {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
         let Some(page) = self.heard.read(cx).code.clone().filter(|page| page.open) else {
             return div().into_any_element();
@@ -200,12 +204,19 @@ impl Render for CodeFile {
         let choose: Choose = Rc::new(move |mode, window, cx| {
             me.update(cx, |this, cx| this.choose(mode, window, cx)).ok();
         });
+        // The first frame has not been measured: it is drawn with room, and the next is true.
+        let room = match self.area.get().size.width {
+            width if width > gpui_kit::px(0.0) => css(width, window.rem_size()),
+            _ => f32::MAX,
+        };
         v_flex()
             .id("code-file-area")
             .test_support()
+            .relative()
             .size_full()
             .min_h_0()
-            .children(header(&page, &self.heard, &self.caller, &tokens, self.reading(&page).map(|mode| (mode, choose))))
+            .child(area::measure(self.area.clone()))
+            .children(header(&page, &self.heard, &self.caller, &tokens, self.reading(&page).map(|mode| (mode, choose)), room))
             .child(div().flex_1().min_h_0().bg(tokens.bg_sunken).child(self.body(&page, &tokens)))
             .into_any_element()
     }

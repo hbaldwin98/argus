@@ -4,26 +4,28 @@ use gpui_kit::TestAppContext;
 
 use super::*;
 use crate::checkouts::stage::tests::{click_id, label, present};
+use crate::code::stage::tests::is_selected;
 
 /// CODE-40: the name and folder, the facts joined by a middle dot, then the counts.
 #[gpui_kit::test]
 fn the_header_names_the_file_and_says_what_is_known_of_it(cx: &mut TestAppContext) {
     let opened = with(cx, CodePage { added: 4, removed: 1, ..reading(30, 12) });
-    assert_eq!(label(cx, &opened, "code-path").as_deref(), Some("src/lib.rs"));
-    assert_eq!(label(cx, &opened, "code-facts").as_deref(), Some("Ln 12 \u{b7} Rust \u{b7} 30 lines \u{b7} +4 \u{2212}1"));
-    assert!(!present(cx, &opened, "code-version"), "the working tree is not named");
+    assert_eq!(label(cx, &opened, "code-head").as_deref(), Some("src/lib.rs"));
+    assert_eq!(label(cx, &opened, "file-head-meta").as_deref(), Some("Ln 12 \u{b7} Rust \u{b7} 30 lines"));
     says(cx, &opened, CodePage { version: Some("a1b2c3d".into()), ..reading(30, 12) });
-    assert_eq!(label(cx, &opened, "code-version").as_deref(), Some("a1b2c3d"));
+    assert_eq!(label(cx, &opened, "file-head-meta").as_deref(), Some("a1b2c3d \u{b7} Ln 12 \u{b7} Rust \u{b7} 30 lines"), "the version leads what is read when it is not the working tree");
 }
 
-/// CODE-40: Open in editor, and Outline only while the outline is put away.
+/// CODE-40: Open in editor, and Outline, pressed while the column is up.
 #[gpui_kit::test]
 fn the_buttons_send_what_their_keys_send(cx: &mut TestAppContext) {
     let opened = with(cx, reading(30, 1));
-    assert!(!present(cx, &opened, "code-outline-show") && !present(cx, &opened, "code-back"));
+    assert_eq!(is_selected(cx, &opened, "code-outline-show"), Some(true), "the outline is up, so the toggle is pressed");
+    assert!(!present(cx, &opened, "code-back"));
     click_id(cx, &opened, "code-edit");
     assert_eq!(sent(&opened), ["Code { gesture: Action { action: OpenEditor } }"]);
     says(cx, &opened, CodePage { outline: false, ..reading(30, 1) });
+    assert_eq!(is_selected(cx, &opened, "code-outline-show"), Some(false));
     click_id(cx, &opened, "code-outline-show");
     assert_eq!(sent(&opened), ["Code { gesture: Click { target: Outline } }"]);
 }

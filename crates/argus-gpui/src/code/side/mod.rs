@@ -5,9 +5,11 @@
 //! press sends its gesture and the list changes when the session's next page says it did. The
 //! column keeps where each list was scrolled and brings the row the person moved to into view.
 
+mod chain;
 mod find;
 mod jump;
 mod search;
+mod typed;
 mod tree;
 
 pub(in crate::code) use find::wire as wire_find;
@@ -38,9 +40,10 @@ pub fn lit_child(page: &CodePage, unfolded: bool) -> Option<Lit> {
         Body::Tree => {
             let folded = fold_ignored(&page.tree);
             let at = page.tree.iter().position(|row| row.on)?;
-            match folded.shown.iter().position(|&shown| shown == at) {
+            let drawn = chain::lines(&page.tree, &folded.shown);
+            match drawn.iter().position(|line| line.chain.contains(&at)) {
                 Some(shown) => Some(Lit::Tree(shown)),
-                None => unfolded.then_some(Lit::Tree(folded.shown.len() + 1)),
+                None => unfolded.then_some(Lit::Tree(drawn.len() + 1)),
             }
         }
         Body::Jump => page.jump.as_ref()?.at.map(Lit::Jump),

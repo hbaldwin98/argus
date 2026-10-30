@@ -32,28 +32,33 @@ fn press(heard: &Entity<Heard>, caller: &Caller, gesture: CodeGesture) -> impl F
 /// The kit's file head over the lines: the name, the folder cut from its left, `+a −r` and the
 /// facts, then the tools. Nothing without a file or a way back.
 /// `reading` is how a markdown file is being read and what to call when the other way is chosen; it
-/// is none for any other file, which has only its text.
-pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tokens, reading: Option<(Mode, Choose)>) -> Option<AnyElement> {
+/// is none for any other file, which has only its text. `room` is the width the line has, in the
+/// page's pixels: the folder gives way first, then the keys after the tools and the facts, so the
+/// line stays one line and no tool is cut (a markdown file has the most tools to hold).
+pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tokens, reading: Option<(Mode, Choose)>, room: f32) -> Option<AnyElement> {
     if !has_header(page) {
         return None;
     }
     // This window has no editor, so the lines stand for the file and Rust's cursor is the one shown.
     let said = facts(page, false);
+    let markdown = reading.is_some();
+    let (keys, facts_fit) = if markdown { (room >= 620.0, room >= 560.0) } else { (room >= 500.0, room >= 400.0) };
+    let key = |key: &'static str| keys.then_some(key);
     let mut tools: Vec<AnyElement> = Vec::new();
     tools.extend(reading.map(|(mode, choose)| choice(mode, &choose, tokens)));
     tools.extend(page.back.as_ref().map(|back| {
-        tools::ghost("code-back", format!("Back to {back}"), Some("B"), false, tokens)
+        tools::ghost("code-back", format!("Back to {back}"), key("B"), false, tokens)
             .on_click(press(heard, caller, CodeGesture::Click { target: CodeClick::Back }))
             .into_any_element()
     }));
     // The toggle is the outline's own state: pressed while the column is up, as the page says.
     tools.push(
-        tools::ghost("code-outline-show", "Outline", Some("O"), page.outline, tokens)
+        tools::ghost("code-outline-show", "Outline", key("O"), page.outline, tokens)
             .on_click(press(heard, caller, CodeGesture::Click { target: CodeClick::Outline }))
             .into_any_element(),
     );
     tools.extend(page.path.as_ref().map(|_| {
-        tools::ghost("code-edit", "Open in editor", Some("E"), false, tokens)
+        tools::ghost("code-edit", "Open in editor", key("E"), false, tokens)
             .on_click(press(heard, caller, CodeGesture::Action { action: Action::OpenEditor }))
             .into_any_element()
     }));
@@ -65,7 +70,7 @@ pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tok
     let (name, dir) = path_parts(path);
     let lead = said.lead.trim_end_matches(" \u{b7} ").to_owned();
     // The version names what is read when it is not the working tree, ahead of the rest.
-    let meta = match (&page.version, lead.is_empty()) {
+    let meta = match (&page.version, lead.is_empty() || !facts_fit) {
         (Some(version), true) => Some(version.clone()),
         (Some(version), false) => Some(format!("{version} \u{b7} {lead}")),
         (None, true) => None,

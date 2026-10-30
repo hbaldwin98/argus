@@ -13,7 +13,7 @@ use argus_desktop_core::keys::keymap::Place;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::component::v_flex;
-use gpui_kit::{div, prelude::*, AnyElement, Context, Entity, FontWeight, Focusable as _, Hsla, SharedString, Subscription, TestSupportExt as _, Window};
+use gpui_kit::{div, prelude::*, AnyElement, Context, Entity, Focusable as _, Hsla, SharedString, Subscription, TestSupportExt as _, Window};
 
 use super::super::stage::CodeStage;
 use crate::connection::caller::Caller;
@@ -23,6 +23,7 @@ use crate::kit::crop::{crop, Look};
 use crate::kit::field::Field;
 use crate::keys::layer::{action_for, Verdict};
 use crate::kit::icons::Glyph;
+use crate::kit::path::path_label;
 use crate::kit::selected::selected;
 use crate::kit::tip::tip;
 use crate::theme::scale::rem;
@@ -102,26 +103,10 @@ impl CodeStage {
             .hover(move |style| style.bg(fill))
             .on_click(cx.listener(move |this, _, _, cx| this.send(CodeGesture::Click { target: CodeClick::HitFile { path: path.clone() } }, cx)))
             .child(div().flex_shrink_0().w(rem(tokens.icon_sm)).flex().justify_center().text_color(tokens.fg_faint).child(if file.open { Glyph::Down } else { Glyph::Right }.at(tokens.icon_sm)))
-            // The file's own name first, which is what is scanned for; its folder trails it and gives way.
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(rem(tokens.sp_8))
-                    .child(div().flex_shrink_0().font_weight(FontWeight(tokens.weight_semibold)).child(SharedString::from(file.name.clone())))
-                    .child(div().min_w_0().truncate().text_size(rem(tokens.fs_sm)).text_color(tokens.fg_faint).child(SharedString::from(file.dir.clone()))),
-            )
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .px(rem(tokens.sp_6))
-                    .rounded(rem(tokens.r_pill))
-                    .bg(tokens.fill)
-                    .text_size(rem(tokens.fs_xs))
-                    .font_weight(FontWeight(tokens.weight_semibold))
-                    .text_color(tokens.fg_muted)
-                    .child(file.count.to_string()),
-            )
+            // The file's own name first, which is what is scanned for; its folder trails it, faint, and
+            // is the only part that gives way, from its left (`kit::path`).
+            .child(h_flex().flex_1().min_w_0().child(path_label(("code-hit-path", at), &file.name, &file.dir, tokens)))
+            .child(div().flex_shrink_0().text_size(rem(tokens.fs_sm)).text_color(tokens.fg_muted).child(file.count.to_string()))
             .into_any_element()
     }
 

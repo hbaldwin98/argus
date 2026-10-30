@@ -22,9 +22,9 @@ fn a_click_moves_nothing_until_the_session_says_the_cursor_moved(cx: &mut TestAp
     let opened = with(cx, reading(30, 1));
     settle(cx, &opened);
     click_id(cx, &opened, ("diff-row", 4usize));
-    assert_eq!(label(cx, &opened, "code-facts").as_deref(), Some("Ln 1 \u{b7} Rust \u{b7} 30 lines"), "still the cursor the session sent");
+    assert_eq!(label(cx, &opened, "file-head-meta").as_deref(), Some("Ln 1 \u{b7} Rust \u{b7} 30 lines"), "still the cursor the session sent");
     says(cx, &opened, reading(30, 5));
-    assert_eq!(label(cx, &opened, "code-facts").as_deref(), Some("Ln 5 \u{b7} Rust \u{b7} 30 lines"));
+    assert_eq!(label(cx, &opened, "file-head-meta").as_deref(), Some("Ln 5 \u{b7} Rust \u{b7} 30 lines"));
 }
 
 /// CODE-37: lines removed are a note above the line after them.
