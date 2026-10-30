@@ -15,7 +15,7 @@ use crate::code::stage::CodeStage;
 use crate::kit::button::{button, Look};
 use crate::kit::flow::{flow, Piece};
 use crate::kit::icons::Glyph;
-use crate::kit::keycap::keycap;
+use crate::kit::keycap::{keycap, keycap_on_accent};
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
@@ -111,7 +111,7 @@ impl CodeStage {
             .child(self.section(said.heading.clone(), tokens).child(changed))
             .children(lately)
             .child(
-                flow(vec![Piece::Run(before.to_owned()), Piece::Part(keycap(key, mono, tokens).into_any_element()), Piece::Run(after.to_owned())])
+                flow(vec![Piece::Run(before.to_owned()), Piece::Part(keycap(key, mono, tokens).into_any_element()), Piece::Text(after.to_owned())])
                     .id("code-hint")
                     .test_support()
                     .aria_label(SharedString::from(format!("{before}{key}{after}")))
@@ -149,7 +149,7 @@ impl CodeStage {
             .child(
                 button("code-open-match", "Open it", Look::Primary, false, tokens)
                     .child("Open it")
-                    .child(keycap("Enter", SharedString::from(tokens.font_mono), tokens))
+                    .child(keycap_on_accent("Enter", SharedString::from(tokens.font_mono), tokens))
                     .on_click(cx.listener(move |this, _, _, cx| this.send(CodeGesture::Click { target: CodeClick::Match { index } }, cx))),
             )
     }

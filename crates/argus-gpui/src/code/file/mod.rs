@@ -65,6 +65,8 @@ pub struct CodeFile {
     settle: bool,
     /// Where the file area was laid out, whose width says how much of the head's line there is.
     area: Rc<Cell<Bounds<Pixels>>>,
+    /// Whether the stage has room for the outline's column, which the stage says as it lays out.
+    pub(super) outline_up: bool,
     _pressed: Subscription,
     _laid_out: Subscription,
 }
@@ -91,7 +93,7 @@ impl CodeFile {
         });
         // The list's first layout says how tall it is, which the cursor's place on screen waits for.
         let laid_out = cx.observe(&diff, |_, _, cx| cx.notify());
-        Self { heard, caller, diff, comment, ruler, editor, document, modes: Modes::default(), scrolled: HashMap::new(), shown: None, cursor: (None, 0), settle: false, area: Rc::default(), _pressed: pressed, _laid_out: laid_out }
+        Self { heard, caller, diff, comment, ruler, editor, document, modes: Modes::default(), scrolled: HashMap::new(), shown: None, cursor: (None, 0), settle: false, area: Rc::default(), outline_up: true, _pressed: pressed, _laid_out: laid_out }
     }
 
     /// The list of lines, for the stage's sideways keys and a test.
@@ -216,7 +218,7 @@ impl Render for CodeFile {
             .size_full()
             .min_h_0()
             .child(area::measure(self.area.clone()))
-            .children(header(&page, &self.heard, &self.caller, &tokens, self.reading(&page).map(|mode| (mode, choose)), room))
+            .children(header(&page, &self.heard, &self.caller, &tokens, self.reading(&page).map(|mode| (mode, choose)), room, self.outline_up))
             .child(div().flex_1().min_h_0().bg(tokens.bg_sunken).child(self.body(&page, &tokens)))
             .into_any_element()
     }

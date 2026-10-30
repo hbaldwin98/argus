@@ -34,15 +34,18 @@ fn press(heard: &Entity<Heard>, caller: &Caller, gesture: CodeGesture) -> impl F
 /// `reading` is how a markdown file is being read and what to call when the other way is chosen; it
 /// is none for any other file, which has only its text. `room` is the width the line has, in the
 /// page's pixels: the folder gives way first, then the keys after the tools and the facts, so the
-/// line stays one line and no tool is cut (a markdown file has the most tools to hold).
-pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tokens, reading: Option<(Mode, Choose)>, room: f32) -> Option<AnyElement> {
+/// line stays one line and no tool is cut. `outline_up` is whether the outline's column is drawn,
+/// which the toggle's pressed look follows (a markdown file has the most tools to hold).
+pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tokens, reading: Option<(Mode, Choose)>, room: f32, outline_up: bool) -> Option<AnyElement> {
     if !has_header(page) {
         return None;
     }
     // This window has no editor, so the lines stand for the file and Rust's cursor is the one shown.
     let said = facts(page, false);
     let markdown = reading.is_some();
-    let (keys, facts_fit) = if markdown { (room >= 620.0, room >= 560.0) } else { (room >= 500.0, room >= 400.0) };
+    // Each head holds its tools whole at every width the screens test; what gives way first is the
+    // folder, then the facts and the keys only where the tools alone would not fit.
+    let (keys, facts_fit) = if markdown { (room >= 520.0, room >= 460.0) } else { (room >= 400.0, room >= 340.0) };
     let key = |key: &'static str| keys.then_some(key);
     let mut tools: Vec<AnyElement> = Vec::new();
     tools.extend(reading.map(|(mode, choose)| choice(mode, &choose, tokens)));
@@ -51,9 +54,9 @@ pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tok
             .on_click(press(heard, caller, CodeGesture::Click { target: CodeClick::Back }))
             .into_any_element()
     }));
-    // The toggle is the outline's own state: pressed while the column is up, as the page says.
+    // The toggle is the outline's own state: pressed while the column is up. It has no key after it, as the board's has none.
     tools.push(
-        tools::ghost("code-outline-show", "Outline", key("O"), page.outline, tokens)
+        tools::ghost("code-outline-show", "Outline", None, page.outline && outline_up, tokens)
             .on_click(press(heard, caller, CodeGesture::Click { target: CodeClick::Outline }))
             .into_any_element(),
     );

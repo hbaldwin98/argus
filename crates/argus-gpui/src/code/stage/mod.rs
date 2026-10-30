@@ -60,6 +60,8 @@ pub struct CodeStage {
     /// What the session was last told each field says, so a field put back to what the page says
     /// sends nothing.
     pub(super) known_find: SharedString,
+    /// Whether the find field says its short hint, because the files column is too narrow for the whole.
+    short_hint: bool,
     pub(super) known_glob: SharedString,
     /// Where the keys rest while no field holds them: the stage itself.
     pub(super) focus: FocusHandle,
@@ -122,6 +124,7 @@ impl CodeStage {
             find,
             glob,
             known_find: SharedString::default(),
+            short_hint: false,
             known_glob: SharedString::default(),
             focus: cx.focus_handle(),
             tree_scroll: ScrollHandle::new(),
@@ -237,6 +240,10 @@ impl CodeStage {
 }
 
 
+/// The files column's width under which the find field says [`SHORT_HINT`].
+const SHORT_HINT_BELOW: f32 = 300.0;
+const SHORT_HINT: &str = "Go to file or #";
+
 impl Render for CodeStage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
@@ -268,6 +275,13 @@ impl Render for CodeStage {
         files = match widths::tree(frame, &tokens) {
             Tree::Fixed { width, at_most } => {
                 let width = self.drawn(&self.tree_split, width, frame.narrow.then_some(tokens.code_tree_narrow), cx);
+                // The placeholder cannot be cut with an ellipsis inside the field, so a column too
+                // narrow for the whole hint says the short one.
+                let short = width.min(at_most * stage) < SHORT_HINT_BELOW;
+                if short != self.short_hint {
+                    self.short_hint = short;
+                    self.find.say_when_empty(if short { SHORT_HINT } else { argus_desktop_core::code::side::FIND_HINT }, window, cx);
+                }
                 files.flex_shrink_0().w(rem(width)).max_w(relative(at_most))
             }
             Tree::Alone { at_most } => files.w(rem(at_most)),
@@ -282,13 +296,15 @@ impl Render for CodeStage {
             v_flex()
                 .size_full()
                 .min_h_0()
-                .children(file::header(&page, &self.heard, &self.caller, &tokens, None, f32::MAX))
+                .children(file::header(&page, &self.heard, &self.caller, &tokens, None, f32::MAX, true))
                 .child(div().flex_1().min_h_0().child(body))
                 .into_any_element()
         } else {
             self.file.clone().into_any_element()
         };
         let outline = (page.outline && page.path.is_some()).then(|| widths::outline(frame, &tokens)).flatten();
+        let room_for_outline = widths::outline(frame, &tokens).is_some();
+        self.file.update(cx, |file, _| file.outline_up = room_for_outline);
         root.child(area::measure(self.area.clone()))
             .child(
                 h_flex()

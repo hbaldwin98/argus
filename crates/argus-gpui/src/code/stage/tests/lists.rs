@@ -9,7 +9,8 @@ use super::*;
 #[gpui_kit::test]
 fn the_scope_row_names_the_checkout_and_says_which_files_are_listed(cx: &mut TestAppContext) {
     let opened = with(cx, page());
-    assert_eq!(label(cx, &opened, "code-scope").as_deref(), Some("main"));
+    // Code.dc.html: the files column is the field, then the tree; the branch is in the title bar's crumb.
+    assert!(!present(cx, &opened, "code-scope"));
     assert_eq!((is_selected(cx, &opened, "code-all"), is_selected(cx, &opened, "code-changed-only")), (Some(true), Some(false)));
     click_id(cx, &opened, "code-changed-only");
     assert_eq!(sent(&opened), ["Code { gesture: Click { target: ChangedOnly { only: true } } }"]);

@@ -7,7 +7,6 @@
 
 use argus_desktop_core::checkouts::fold::fold_ignored;
 use argus_desktop_core::checkouts::marks::{self, Tone};
-use argus_desktop_core::code::side::scope_tip;
 use argus_desktop_core::code::stage::{CodeClick, CodeGesture, CodePage};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::{div, prelude::*, AnyElement, App, Context, SharedString, TestSupportExt as _, Window};
@@ -23,32 +22,6 @@ use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl CodeStage {
-    /// `.code-tools`: the checkout's name. Which files the tree lists is the title bar's to choose
-    /// (`stage::tabs`).
-    fn scope(&self, page: &CodePage, tokens: &Tokens) -> impl IntoElement {
-        h_flex()
-            .id("code-scope-row")
-            .test_support()
-            .flex_shrink_0()
-            .flex_wrap()
-            .items_center()
-            .gap(rem(tokens.sp_6))
-            .child(
-                div()
-                    .id("code-scope")
-                    .test_support()
-                    .aria_label(SharedString::from(page.name.clone()))
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .font_family(SharedString::from(tokens.font_mono))
-                    .text_size(rem(tokens.fs_sm))
-                    .text_color(tokens.fg_muted)
-                    .tooltip(tip(scope_tip(page).to_owned()))
-                    .child(SharedString::from(page.name.clone())),
-            )
-    }
-
     /// One drawn row, with the guide lines of the levels it hangs in on its left.
     fn tree_line(&self, line: &Line, page: &CodePage, under: &std::collections::HashMap<&str, usize>, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
         let entry = &page.tree[line.at()];
@@ -124,7 +97,6 @@ impl CodeStage {
             .flex_1()
             .min_h_0()
             .gap(rem(tokens.sp_6))
-            .child(self.scope(page, tokens))
             .child(
                 v_flex()
                     .id("code-list")

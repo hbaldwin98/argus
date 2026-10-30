@@ -130,6 +130,8 @@ impl CodeStage {
                     .min_h_0()
                     .pt(rem(tokens.sp_8))
                     .pb(rem(tokens.sp_12))
+                    // `.row` margin: 0 6px, so a picked row's ring stops short of the column's edge.
+                    .px(rem(tokens.sp_6))
                     .overflow_y_scroll()
                     .when(page.symbols.is_empty(), |rows| {
                         rows.child(div().id("code-outline-none").test_support().aria_label(empty(page)).px(rem(14.0)).typed(tokens.type_small).text_color(tokens.fg_muted).child(empty(page)))

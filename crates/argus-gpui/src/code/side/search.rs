@@ -105,7 +105,7 @@ impl CodeStage {
             .child(div().flex_shrink_0().w(rem(tokens.icon_sm)).flex().justify_center().text_color(tokens.fg_faint).child(if file.open { Glyph::Down } else { Glyph::Right }.at(tokens.icon_sm)))
             // The file's own name first, which is what is scanned for; its folder trails it, faint, and
             // is the only part that gives way, from its left (`kit::path`).
-            .child(h_flex().flex_1().min_w_0().child(path_label(("code-hit-path", at), &file.name, &file.dir, tokens)))
+            .child(h_flex().flex_1().min_w_0().child(path_label(("code-hit-path", at), &file.name, file.dir.trim_end_matches('/'), tokens)))
             .child(div().flex_shrink_0().text_size(rem(tokens.fs_sm)).text_color(tokens.fg_muted).child(file.count.to_string()))
             .into_any_element()
     }
