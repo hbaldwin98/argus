@@ -139,7 +139,16 @@ fn open(microphone: Option<&str>, deliver: impl FnMut(Vec<f32>) + Send + 'static
     let device = input(microphone).ok_or(Refusal::NoMicrophone)?;
     let supported = device.default_input_config().map_err(refusal)?;
     let format = supported.sample_format();
-    let config = supported.config();
+    #[allow(unused_mut)]
+    let mut config = supported.config();
+    // WASAPI's default ring is one device period, about 10 ms, so a capture thread held up any
+    // longer (a model loading, the window busy) loses a packet. In shared mode the requested size
+    // only deepens that ring; callbacks still come each period. Elsewhere a fixed size sets the
+    // period itself, which a device may refuse, so it is asked for here only.
+    #[cfg(windows)]
+    {
+        config.buffer_size = cpal::BufferSize::Fixed(config.sample_rate / 5);
+    }
     let mut converter = Converter { channels: usize::from(config.channels).max(1), resampler: Resampler::new(config.sample_rate, SAMPLE_RATE), pending: Vec::new(), deliver, level };
     let mut floats = Vec::new();
     macro_rules! as_floats {
@@ -165,7 +174,11 @@ fn open(microphone: Option<&str>, deliver: impl FnMut(Vec<f32>) + Send + 'static
                     converter.take(&floats);
                 }
             },
-            |err| tracing::warn!("the microphone stopped: {err}"),
+            // An xrun is a gap in the audio, and the stream carries on after it.
+            |err| match err.kind() {
+                ErrorKind::Xrun => tracing::warn!("the microphone dropped some audio: {err}"),
+                _ => tracing::warn!("the microphone stopped: {err}"),
+            },
             Some(Duration::from_secs(5)),
         )
         .map_err(refusal)?;
