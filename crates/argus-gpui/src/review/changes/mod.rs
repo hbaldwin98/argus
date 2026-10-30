@@ -27,6 +27,7 @@ pub mod head;
 pub mod lines;
 pub mod lists;
 pub mod narrow;
+pub mod rows;
 pub mod side;
 pub mod tree;
 

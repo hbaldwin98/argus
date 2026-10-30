@@ -1,8 +1,7 @@
-//! The head over the diff, as the prototype's `.view-head` draws it: the way back to the files
-//! while they take turns with the diff, the file's path with its folders faint, what changed in it
-//! (its status, its counts, how many hunks), and its tools — the layout, the whole file, the
-//! editor, the review's drafts, what is picked, and the stage of the whole file. Too narrow for
-//! the tools, the lesser ones fold into a menu.
+//! The head over the diff: the kit's file head (`kit::file_head`), one 44px line with the file's
+//! status, name and folder, what changed in it (its counts, how many hunks) and its tools — the
+//! layout, the whole file, the editor, the review's drafts, what is picked, and the stage of the
+//! whole file. Too narrow for the tools, the lesser ones fold into a menu.
 //!
 //! Every press sends the call the review's keys send; nothing on screen changes until the session
 //! says so, but the turn back to the files, which is the window's own.
@@ -10,24 +9,28 @@
 use argus_desktop_core::connection::page::{Call, ReviewPage, ReviewReading};
 use argus_desktop_core::keys::keymap::Action;
 use argus_desktop_core::review::staging::StageGesture;
+use gpui_kit::component::h_flex;
 use gpui_kit::component::menu::DropdownMenu as _;
-use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, Context, Role, SharedString};
+use gpui_kit::{div, prelude::*, AnyElement, Context, Role, SharedString};
 
-use super::lists::{badge, ghost, status};
+use super::lists::{ghost, status};
 use super::Changes;
+use crate::kit::file_head::{file_head, Head};
+use crate::kit::icon_button::Node;
 use crate::kit::icons::Glyph;
 use crate::kit::menu::item::MenuItem;
 use crate::kit::segment;
 use crate::kit::strip;
 use crate::kit::tip::tip;
+use crate::kit::tools;
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
-/// Below this many CSS pixels across the diff, its lesser tools are a menu.
-pub const TOOLS_FOLD: f32 = 620.0;
+/// Below this many CSS pixels across the diff, its lesser tools are a menu: the full set, with the
+/// review button and the stage button, is about 540px and the head must stay one line.
+pub const TOOLS_FOLD: f32 = 760.0;
 
 /// How many hunks the diff on screen holds.
 pub fn hunks(page: &ReviewPage) -> usize {
@@ -53,116 +56,107 @@ fn folded(split: bool) -> Vec<MenuItem<Call>> {
     ]
 }
 
+/// A path as the head says it: its folder, without the last slash, and its name.
+fn split_path(path: &str) -> (&str, &str) {
+    path.rsplit_once('/').unwrap_or(("", path))
+}
+
 impl Changes {
-    /// `.view-head`. `back` is whether the files and the diff take turns, and `fold` whether the
-    /// lesser tools are a menu.
+    /// `back` is whether the files and the diff take turns, and `fold` whether the lesser tools
+    /// are a menu.
     pub(super) fn head(&self, page: &ReviewPage, back: bool, fold: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let file = page.file.and_then(|i| page.files.get(i));
-        let mono = cx.theme().mono_font_family.clone();
         let layout = |id: &'static str, label: &'static str, on: bool, split: bool, cx: &mut Context<Self>| {
-            segment::pill(id, Role::RadioButton, on, tokens).child(label).on_click(cx.listener(move |this, _, _, cx| {
+            segment::switch_option(id, Role::RadioButton, on, tokens).child(label).on_click(cx.listener(move |this, _, _, cx| {
                 // The one already on sends nothing.
                 if super::page_split(&this.heard, cx) != split {
                     this.ask(Call::ReviewAction { action: Action::Split }, cx);
                 }
             }))
         };
-        let tool = |id: &'static str, words: &'static str, action: Action, cx: &mut Context<Self>| {
-            ghost(id, words, tokens).tooltip(tip(words)).on_click(cx.listener(move |this, _, _, cx| this.ask(Call::ReviewAction { action }, cx)))
+        let tool = |id: &'static str, words: &'static str, key: Option<&str>, action: Action, cx: &mut Context<Self>| {
+            tools::ghost(id, words, key, false, tokens).tooltip(tip(words)).on_click(cx.listener(move |this, _, _, cx| this.ask(Call::ReviewAction { action }, cx)))
         };
-        let (caller, heard) = (self.caller.clone(), self.heard.clone());
-        let items = folded(page.split);
+        let mut bar: Vec<AnyElement> = Vec::new();
+        if fold {
+            let (caller, heard, items, tokens) = (self.caller.clone(), self.heard.clone(), folded(page.split), *tokens);
+            bar.push(
+                div()
+                    .flex_shrink_0()
+                    .child(
+                        strip::menu_button("review-more", Glyph::More, 14.0, &tokens, cx)
+                            .tooltip("More")
+                            .dropdown_menu(move |menu, window, cx| crate::layout::dock_menu::build(menu, &items, &caller, &heard, tokens, window, cx)),
+                    )
+                    .into_any_element(),
+            );
+        } else {
+            bar.push(
+                segment::track("review-view", "Layout", Role::RadioGroup, tokens)
+                    .child(layout("review-view-unified", "Unified", !page.split, false, cx))
+                    .child(layout("review-view-split", "Split", page.split, true, cx))
+                    .into_any_element(),
+            );
+            bar.push(tool("review-whole", "Whole file", None, Action::UnfoldAll, cx).into_any_element());
+            bar.push(tool("review-open", "Open in editor", Some("E"), Action::OpenEditor, cx).into_any_element());
+        }
+        bar.extend(self.review_button(page, tokens, cx).map(IntoElement::into_any_element));
+        // `.ktag`: what is picked, as a pill.
+        // Folded, there is no room for it beside the stage button: the head stays one line.
+        bar.extend(page.pick.clone().filter(|_| !fold).map(|pick| {
+            div()
+                .id("review-pick")
+                .test_support()
+                .aria_label(SharedString::from(format!("{pick} picked")))
+                .flex_shrink_0()
+                .px(rem(tokens.sp_8))
+                .rounded(rem(tokens.r_pill))
+                .border_1()
+                .border_color(tokens.line_strong)
+                .typed(tokens.type_small)
+                .text_color(tokens.fg_muted)
+                .whitespace_nowrap()
+                .child(SharedString::from(format!("{pick} picked")))
+                .into_any_element()
+        }));
+        if let Some(((words, staged), file)) = stage_words(page).zip(file) {
+            let path = file.path.clone();
+            bar.push(
+                tools::primary("review-stage-file", words, tokens)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.ask(Call::Stage { gesture: StageGesture::File { staged, path: path.clone() } }, cx);
+                    }))
+                    .into_any_element(),
+            );
+        }
+        let n = hunks(page);
+        let (letter, colour, _) = file.map_or(("M", tokens.changed, ""), |f| status(f.kind, tokens));
+        let (dir, name) = file.map_or(("", ""), |f| split_path(&f.path));
+        let head = Head {
+            status: file.map(|_| (letter, colour)),
+            name,
+            dir,
+            counts: file.map(|f| (f.added, f.removed)),
+            meta: (n > 0).then(|| SharedString::from(format!("{n} hunk{}", if n == 1 { "" } else { "s" }))),
+        };
+        self.with_back(back, file_head("review-diff-head", &head, bar, tokens), tokens, cx)
+    }
+
+    /// The head, with the way back to the files in front of it while they and the diff take turns.
+    fn with_back(&self, back: bool, head: Node, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
+        if !back {
+            return head.into_any_element();
+        }
         h_flex()
-            .id("review-diff-head")
             .flex_shrink_0()
-            .flex_wrap()
-            .min_h(rem(tokens.sp_44))
-            .py(rem(tokens.sp_8))
-            .pl(rem(tokens.sp_12))
-            .pr(rem(10.0))
-            .gap(rem(tokens.sp_8))
+            .w_full()
+            .min_w_0()
             .items_center()
-            .bg(tokens.bg_surface)
             .border_b_1()
             .border_color(tokens.line)
-            .when(back, |head| head.child(self.back(tokens, cx)))
-            .when_some(file, |head, file| head.child(path(&file.path, tokens)))
-            // `.meta`: the status, the counts, and how many hunks.
-            .when_some(file, |head, file| {
-                let (letter, colour, said) = status(file.kind, tokens);
-                let n = hunks(page);
-                head.child(
-                    h_flex()
-                        .flex_shrink_0()
-                        .gap(rem(tokens.sp_8))
-                        .items_center()
-                        .font_family(mono.clone())
-                        .text_size(rem(11.5))
-                        .child(badge("review-file-on-status", letter, colour, said, tokens, cx))
-                        .child(div().text_color(tokens.ok).child(SharedString::from(format!("+{}", file.added))))
-                        .child(div().text_color(tokens.danger).child(SharedString::from(format!("\u{2212}{}", file.removed))))
-                        .when(!fold && n > 0, |meta| {
-                            meta.child(div().text_color(tokens.fg_faint).child(SharedString::from(format!("{n} hunk{}", if n == 1 { "" } else { "s" }))))
-                        }),
-                )
-            })
-            .child(
-                h_flex()
-                    .id("review-tools")
-                    .flex_shrink_0()
-                    .ml_auto()
-                    .gap(rem(tokens.sp_6))
-                    .items_center()
-                    .when(!fold, |tools| {
-                        tools
-                            .child(
-                                segment::track("review-view", "Layout", Role::RadioGroup, tokens)
-                                    .child(layout("review-view-unified", "Unified", !page.split, false, cx))
-                                    .child(layout("review-view-split", "Split", page.split, true, cx)),
-                            )
-                            .child(tool("review-whole", "Whole file", Action::UnfoldAll, cx).child("Whole file"))
-                            .child(tool("review-open", "Read it in Code, at this line", Action::OpenCode, cx).child(Glyph::Code.at(14.0)).child("Open"))
-                    })
-                    .when(fold, |tools| {
-                        let tokens = *tokens;
-                        tools.child(
-                            div().flex_shrink_0().child(
-                                strip::menu_button("review-more", Glyph::More, 14.0, &tokens, cx)
-                                    .tooltip("More")
-                                    .dropdown_menu(move |menu, window, cx| crate::layout::dock_menu::build(menu, &items, &caller, &heard, tokens, window, cx)),
-                            ),
-                        )
-                    })
-                    .children(self.review_button(page, tokens, cx))
-                    // `.ktag`: what is picked, as a pill.
-                    .when_some(page.pick.clone(), |tools, pick| {
-                        tools.child(
-                            div()
-                                .id("review-pick")
-                                .test_support()
-                                .aria_label(SharedString::from(format!("{pick} picked")))
-                                .flex_shrink_0()
-                                .px(rem(tokens.sp_8))
-                                .rounded(rem(tokens.r_pill))
-                                .border_1()
-                                .border_color(tokens.line_strong)
-                                .typed(tokens.type_small)
-                                .text_color(tokens.fg_muted)
-                                .whitespace_nowrap()
-                                .child(SharedString::from(format!("{pick} picked"))),
-                        )
-                    })
-                    .when_some(stage_words(page).zip(file), |tools, ((words, staged), file)| {
-                        let path = file.path.clone();
-                        tools.child(
-                            crate::kit::button::button("review-stage-file", words, crate::kit::button::Look::Plain, true, tokens)
-                                .child(words)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.ask(Call::Stage { gesture: StageGesture::File { staged, path: path.clone() } }, cx);
-                                })),
-                        )
-                    }),
-            )
+            .child(div().flex_none().pl(rem(tokens.sp_8)).child(self.back(tokens, cx)))
+            .child(head.flex_1().border_b_0().pl(rem(tokens.sp_8)))
+            .into_any_element()
     }
 
     /// The way back to the files, while they and the diff take turns.
@@ -173,46 +167,27 @@ impl Changes {
         }))
     }
 
-    /// `.view-head` over a file with no change, read whole: its path, that it is unchanged, and
-    /// the way to read it in Code.
+    /// The head over a file with no change, read whole: its path, that it is unchanged, and the
+    /// way to read it in Code.
     pub(super) fn reading_head(&self, reading: &ReviewReading, back: bool, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .id("review-diff-head")
+        let (dir, name) = split_path(&reading.path);
+        let head = Head { status: None, name, dir, counts: None, meta: None };
+        let unchanged = div()
+            .id("review-unchanged")
+            .test_support()
+            .aria_label("Unchanged")
             .flex_shrink_0()
-            .min_h(rem(tokens.sp_44))
-            .py(rem(tokens.sp_8))
-            .pl(rem(tokens.sp_12))
-            .pr(rem(10.0))
-            .gap(rem(tokens.sp_8))
-            .items_center()
-            .bg(tokens.bg_surface)
-            .border_b_1()
-            .border_color(tokens.line)
-            .when(back, |head| head.child(self.back(tokens, cx)))
-            .child(path(&reading.path, tokens))
-            .child(
-                div()
-                    .id("review-unchanged")
-                    .test_support()
-                    .aria_label("Unchanged")
-                    .flex_shrink_0()
-                    .px(rem(tokens.sp_8))
-                    .rounded(rem(tokens.r_pill))
-                    .border_1()
-                    .border_color(tokens.line_strong)
-                    .typed(tokens.type_small)
-                    .text_color(tokens.fg_muted)
-                    .child("Unchanged"),
-            )
-            .child(
-                h_flex().flex_shrink_0().ml_auto().child(
-                    ghost("review-open", "Read it in Code", tokens)
-                        .tooltip(tip("Read it in Code"))
-                        .child(Glyph::Code.at(14.0))
-                        .child("Open")
-                        .on_click(cx.listener(|this, _, _, cx| this.ask(Call::ReviewAction { action: Action::OpenCode }, cx))),
-                ),
-            )
+            .px(rem(tokens.sp_8))
+            .rounded(rem(tokens.r_pill))
+            .border_1()
+            .border_color(tokens.line_strong)
+            .typed(tokens.type_small)
+            .text_color(tokens.fg_muted)
+            .child("Unchanged");
+        let open = tools::ghost("review-open", "Open in Code", None, false, tokens)
+            .tooltip(tip("Read it in Code"))
+            .on_click(cx.listener(|this, _, _, cx| this.ask(Call::ReviewAction { action: Action::OpenCode }, cx)));
+        self.with_back(back, file_head("review-diff-head", &head, vec![unchanged.into_any_element(), open.into_any_element()], tokens), tokens, cx)
     }
 
     /// `.review-btn`: the review's drafts, counted, which opens the panel that sends them.
@@ -226,13 +201,12 @@ impl Changes {
                 .flex_shrink_0()
                 .gap(rem(7.0))
                 .items_center()
-                .h(rem(tokens.control_h_sm))
+                .h(rem(tokens.icon_btn))
                 .pl(rem(10.0))
                 .pr(rem(tokens.sp_8))
                 .rounded(rem(tokens.r_sm))
                 .border_1()
                 .border_color(if pending > 0 { tokens.accent.opacity(0.6) } else { tokens.line_strong })
-                .bg(tokens.bg_surface)
                 .typed(tokens.type_small)
                 .weighted(tokens.weight_medium)
                 .text_color(tokens.fg)
@@ -255,28 +229,6 @@ impl Changes {
     }
 }
 
-/// `.path`: the folders faint, cut short from the end when there is no room, and the file's own
-/// name bright, never cut.
-fn path(path: &str, tokens: &Tokens) -> impl IntoElement {
-    let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
-    h_flex()
-        .id("review-path")
-        .test_support()
-        .aria_label(SharedString::from(path.to_owned()))
-        .flex_1()
-        .min_w(rem(120.0))
-        .gap(rem(tokens.sp_4))
-        .items_center()
-        .overflow_hidden()
-        .typed(tokens.type_heading)
-        .tooltip(tip(SharedString::from(path.to_owned())))
-        .when(!dir.is_empty(), |path| {
-            path.child(div().min_w_0().flex_shrink(1.0).truncate().text_color(tokens.fg_faint).weighted(tokens.weight_regular).child(SharedString::from(dir.replace('/', " / "))))
-                .child(div().flex_shrink_0().text_color(tokens.fg_fainter).child("/"))
-        })
-        .child(div().flex_shrink_0().text_color(tokens.fg).child(SharedString::from(name.to_owned())))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,5 +247,11 @@ mod tests {
         assert_eq!(stage_words(&page), Some(("Unstage file", true)));
         page.file = None;
         assert_eq!(stage_words(&page), None, "no file on screen");
+    }
+
+    #[test]
+    fn a_path_splits_into_its_folder_and_its_name() {
+        assert_eq!(split_path("crates/a/src/mod.rs"), ("crates/a/src", "mod.rs"));
+        assert_eq!(split_path("Cargo.toml"), ("", "Cargo.toml"));
     }
 }

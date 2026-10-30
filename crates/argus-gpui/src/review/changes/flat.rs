@@ -11,8 +11,10 @@ use gpui_kit::{div, prelude::*, Context, SharedString, Window};
 use crate::kit::counts::counts;
 use crate::kit::long_list::long_list;
 use crate::kit::tip::tip;
-use crate::review::changes::lists::{badge, status};
-use crate::review::changes::side::{folder, lit, order, Files, Opened};
+use crate::kit::path::path_label;
+use crate::review::changes::lists::status;
+use crate::review::changes::rows::letter;
+use crate::review::changes::side::{lit, order, Files, Opened};
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
@@ -54,7 +56,7 @@ pub const FILE_ROW: f32 = 28.0;
 fn file_row(i: usize, file: &ReviewFile, on: bool, tokens: &Tokens, cx: &mut Context<Files>) -> impl IntoElement {
     let (fill, selected_hover, fg) = (tokens.fill, tokens.selected_hover, tokens.fg);
     let tooltip = SharedString::from(file.path.clone());
-    let (letter, colour, said) = status(file.kind, tokens);
+    let (mark, colour, said) = status(file.kind, tokens);
     h_flex()
         .id(("review-file", i))
         .test_support()
@@ -80,9 +82,8 @@ fn file_row(i: usize, file: &ReviewFile, on: bool, tokens: &Tokens, cx: &mut Con
             cx.emit(Opened);
             this.ask(Call::ReviewClick { target: ReviewClick::File { file: i } }, cx)
         }))
-        .child(badge(("review-file-status", i), letter, colour, said, tokens, cx))
-        .child(div().flex_shrink(1.0).min_w(rem(48.0)).truncate().text_color(tokens.fg).weighted(tokens.weight_medium).child(SharedString::from(file.name.clone())))
-        .child(div().flex_1().min_w_0().truncate().typed(tokens.type_small).text_color(tokens.fg_faint).child(SharedString::from(folder(&file.dir).to_owned())))
+        .child(letter(("review-file-status", i), mark, colour, said, tokens))
+        .child(div().flex_1().min_w_0().overflow_hidden().child(path_label(("review-file-path", i), &file.name, file.dir.trim_end_matches('/'), tokens)))
         .child(div().flex_shrink_0().text_size(rem(11.0)).child(counts(file.added, file.removed, tokens)))
 }
 
