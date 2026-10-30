@@ -96,8 +96,10 @@ mod tests {
         let leader = Hold { shift: false, ..Hold::default() };
         assert_eq!(leader.refusal().as_deref(), Some("Ctrl Space is the leader"));
         assert!(Hold { key: "k".into(), ctrl: true, shift: false, ..Hold::default() }.refusal().is_some(), "the palette");
-        assert!(Hold { key: "v".into(), ctrl: true, shift: false, ..Hold::default() }.refusal().is_some(), "paste");
-        assert!(Hold { key: "=".into(), ctrl: true, shift: false, ..Hold::default() }.refusal().is_some(), "zoom");
+        // Paste and zoom are on the command key on a Mac and on Ctrl elsewhere (`keymap::PASTE`).
+        let primary = |key: &str| Hold { key: key.into(), ctrl: !cfg!(target_os = "macos"), shift: false, meta: cfg!(target_os = "macos"), ..Hold::default() };
+        assert!(primary("v").refusal().is_some(), "paste");
+        assert!(primary("=").refusal().is_some(), "zoom");
         assert!(Hold { key: " ".into(), ctrl: false, shift: true, ..Hold::default() }.refusal().is_some(), "shift alone types");
         assert!(Hold { key: "Shift".into(), ..Hold::default() }.refusal().is_some(), "a modifier alone");
         assert_eq!(Hold { key: "F9".into(), ctrl: false, alt: true, shift: false, meta: false }.refusal(), None);
