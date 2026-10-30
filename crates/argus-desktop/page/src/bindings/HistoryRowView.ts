@@ -6,6 +6,10 @@ export type HistoryRowView = { row: number, kind: "commit" | "file", short: stri
  */
 text: string, ago: string, 
 /**
+ * A commit's author; empty on a file row.
+ */
+author: string, 
+/**
  * How many files a commit touched, once asked.
  */
 files: number | null, loading: boolean, expanded: boolean, added: number, removed: number, on: boolean, };
