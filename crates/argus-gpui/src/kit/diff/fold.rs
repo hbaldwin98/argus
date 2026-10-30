@@ -56,7 +56,9 @@ impl DiffView {
             .border_b_1()
             .border_dashed()
             .border_color(if row.cursor { tokens.line_strong } else { tokens.line })
-            .child(SharedString::from(format!("\u{22ef} {}", row.text)))
+            // `N lines not in the diff · Show`: the words, a faint dot, then the buttons.
+            .child(SharedString::from(row.text.clone()))
+            .when(self.interactive, |fold| fold.child(div().text_color(tokens.fg_faint).child("\u{b7}")))
             .when(self.interactive, |fold| {
                 fold.children(match row.step {
                     Some(step) => vec![

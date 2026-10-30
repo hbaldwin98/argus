@@ -45,9 +45,66 @@ pub fn heading(id: impl Into<ElementId>, words: impl Into<SharedString>, count: 
         .child(div().flex_shrink_0().text_color(tokens.fg_faint).child(SharedString::from(count.to_string())))
 }
 
+/// The section head of a list column (`project/Kit.dc.html`, "Section head"): 28px, the title in
+/// 11px capitals muted, its count beside it, and `action` (a text action such as "Stage all", see
+/// [`action`]) at the right. Eight pixels of air above it set it off from the rows before.
+pub fn head(id: impl Into<ElementId>, title: impl Into<SharedString>, count: Option<usize>, action: Option<gpui_kit::AnyElement>, tokens: &Tokens) -> crate::kit::icon_button::Node {
+    let title = title.into();
+    h_flex()
+        .id(id)
+        .test_support()
+        .aria_label(title.clone())
+        .flex_shrink_0()
+        .h(rem(tokens.sp_24 + tokens.sp_4))
+        .mt(rem(tokens.sp_8))
+        .px(rem(14.0))
+        .gap(rem(tokens.sp_8))
+        .items_center()
+        .typed(tokens.type_label)
+        .text_color(tokens.fg_muted)
+        .child(div().min_w_0().truncate().child(SharedString::from(title.to_uppercase())))
+        .children(count.map(|n| div().flex_none().weighted(tokens.weight_medium).child(SharedString::from(n.to_string()))))
+        .child(div().flex_1())
+        .children(action)
+}
+
+/// The text action at a section head's end: muted, the text colour under the pointer.
+pub fn action(id: impl Into<ElementId>, words: impl Into<SharedString>, tokens: &Tokens) -> crate::kit::icon_button::Node {
+    let (text, over) = (tokens.fg, tokens.fg);
+    let words = words.into();
+    h_flex()
+        .id(id)
+        .role(gpui_kit::Role::Button)
+        .test_support()
+        .aria_label(words.clone())
+        .flex_none()
+        .items_center()
+        .text_size(rem(tokens.fs_sm))
+        .weighted(tokens.weight_medium)
+        .text_color(tokens.fg_muted)
+        .cursor_pointer()
+        .hover(move |style| style.text_color(over))
+        .active(move |style| style.text_color(text))
+        .child(words)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kit::host;
+    use gpui_kit::TestAppContext;
+
+    /// Kit.dc.html: the head is 28px and its action sits at the right edge, past the count.
+    #[gpui_kit::test]
+    fn a_section_head_is_28px_with_its_action_at_the_end(cx: &mut TestAppContext) {
+        let handle = host::open(cx, 260.0, |tokens| {
+            div().w(rem(260.0)).child(head("h", "Changed", Some(2), Some(action("all", "Stage all", tokens).into_any_element()), tokens)).into_any_element()
+        });
+        let (left, _, width, height) = host::bounds(cx, handle, "h");
+        let (a_left, _, a_width, _) = host::bounds(cx, handle, "all");
+        assert_eq!(height, 28.0);
+        assert!((left + width - 14.0 - (a_left + a_width)).abs() < 1.0);
+    }
 
     #[test]
     fn rows_group_under_their_heading_in_the_order_the_heading_was_first_met() {

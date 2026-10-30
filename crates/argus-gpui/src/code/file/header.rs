@@ -18,6 +18,7 @@ use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::button::{button, Look};
 use crate::kit::keycap::keycap;
+use crate::kit::path::path_label;
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
@@ -46,18 +47,8 @@ pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tok
     let key = |text: &'static str| keycap(text, mono.clone(), tokens);
     let path = page.path.as_deref().map(|path| {
         let (name, dir) = path_parts(path);
-        // The name first and whole; only the folder after it gives way.
-        h_flex()
-            .id("code-path")
-            .test_support()
-            .aria_label(SharedString::from(path.to_owned()))
-            .min_w_0()
-            .gap(rem(tokens.sp_8))
-            .items_baseline()
-            .whitespace_nowrap()
-            .font_family(mono.clone())
-            .child(div().flex_none().weighted(tokens.weight_semibold).text_color(tokens.fg).child(SharedString::from(name.to_owned())))
-            .when(!dir.is_empty(), |row| row.child(div().min_w_0().truncate().text_color(tokens.fg_faint).child(SharedString::from(dir.to_owned()))))
+        // The name first and whole; only the folder after it gives way, from its left.
+        path_label("code-path", name, dir, tokens)
     });
     let version = page.version.as_ref().map(|version| {
         div()

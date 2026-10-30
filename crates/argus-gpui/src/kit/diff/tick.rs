@@ -51,6 +51,11 @@ impl DiffView {
             return Some(cell.into_any_element());
         }
         let number = self.rows[ix].row;
+        let picked = self.rows[ix].picked;
+        // The column is reserved on every line; the box shows only on the line under the pointer
+        // or in the picked range, where it is filled, so nothing shifts as the pointer moves
+        // (`Kit.dc.html`, "Diff line").
+        let filled = |mark: gpui_kit::Div| mark.bg(tokens.accent).border_color(tokens.accent).text_color(tokens.fg_on_accent).child(Glyph::Check.at(10.0));
         let mark = div()
             .size(rem(MARK))
             .rounded(rem(3.0))
@@ -58,15 +63,20 @@ impl DiffView {
             .flex()
             .items_center()
             .justify_center()
-            .when(ticks.staged, |mark| mark.bg(tokens.accent).border_color(tokens.accent).text_color(tokens.fg_on_accent).child(Glyph::Check.at(10.0)))
-            .when(!ticks.staged, |mark| mark.bg(tokens.bg_sunken).border_color(tokens.line_strong))
-            .when(ticks.busy, |mark| mark.opacity(0.5));
+            .map(|mark| {
+                if picked || ticks.staged {
+                    filled(mark)
+                } else {
+                    mark.bg(tokens.bg_sunken).border_color(tokens.line_strong)
+                }
+            })
+            .when(ticks.busy, |mark| mark.opacity(0.5))
+            .when(!picked, |mark| mark.invisible().group_hover(Self::group(ix), |mark| mark.visible()));
         Some(
             cell.id(("diff-tick", ix * 2 + half))
                 .test_support()
                 .aria_label(if ticks.staged { "Unstage the line" } else { "Stage the line" })
                 .cursor_pointer()
-                .hover(|cell| cell.bg(tokens.fill))
                 .child(mark)
                 // Pressed, not clicked: the row under it would take the click as a cursor move, and a
                 // press on the box is not one.

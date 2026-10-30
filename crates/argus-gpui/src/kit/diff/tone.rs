@@ -47,6 +47,12 @@ pub fn gutter_fill(kind: &str, picked: bool, cursor: bool, tokens: &Tokens) -> O
     layered(washed(kind, tokens.share_tone_gutter, tokens), picked, cursor, tokens)
 }
 
+/// What a line's background lifts to under the pointer: its own fill (or the pane's) with the
+/// `--fill` lift over it, so the line reads as pointed at without a ring.
+pub fn lifted(fill: Option<Hsla>, tokens: &Tokens) -> Hsla {
+    fill.unwrap_or(tokens.bg_sunken).blend(tokens.fill)
+}
+
 fn washed(kind: &str, share: f32, tokens: &Tokens) -> Option<Hsla> {
     match kind {
         "added" => Some(tokens.ok.opacity(share)),

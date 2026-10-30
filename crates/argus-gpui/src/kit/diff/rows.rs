@@ -21,6 +21,11 @@ impl DiffView {
         ("diff-row", ix).into()
     }
 
+    /// The name a row's hover group goes by: what lifts its background and shows its pick box.
+    pub(super) fn group(ix: usize) -> SharedString {
+        SharedString::from(format!("diff-row-{ix}"))
+    }
+
     /// One row, `ix` of the rows.
     pub(super) fn row(&self, ix: usize, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
         let row = &self.rows[ix];
@@ -37,7 +42,10 @@ impl DiffView {
             .flex_shrink_0()
             .h(rem(self.heights[ix]))
             .border_1()
-            .border_color(if row.cursor || row.picked { tokens.line_strong } else { gpui_kit::transparent_black() })
+            // No ring: the cursor and the pick are the background's lift (`tone::layered`), and the
+            // border stays so a row keeps its height.
+            .border_color(gpui_kit::transparent_black())
+            .group(Self::group(ix))
             .when(interactive, |row| {
                 row.cursor_text().on_click(cx.listener(move |_, event: &ClickEvent, _, cx| {
                     cx.emit(DiffEvent::Row { row: number, extend: event.modifiers().shift });
@@ -76,21 +84,7 @@ impl DiffView {
                 let number = row.row;
                 let words = if ticks.staged { "Unstage hunk" } else { "Stage hunk" };
                 band.child(div().flex_1()).child(
-                    div()
-                        .id(("diff-hunk-stage", ix))
-                        .test_support()
-                        .aria_label(SharedString::from(words))
-                        .flex_shrink_0()
-                        .px(rem(tokens.sp_8))
-                        .rounded(rem(tokens.r_sm))
-                        .border_1()
-                        .border_color(tokens.line_strong)
-                        .font_family(SharedString::from(tokens.font_ui))
-                        .text_size(rem(tokens.fs_xs))
-                        .text_color(tokens.fg)
-                        .cursor_pointer()
-                        .hover(|button| button.bg(tokens.fill))
-                        .child(words)
+                    crate::kit::tools::primary_small(("diff-hunk-stage", ix), words, tokens)
                         .on_mouse_down(MouseButton::Left, cx.listener(move |_, _: &MouseDownEvent, _, cx| {
                             cx.stop_propagation();
                             cx.emit(DiffEvent::Hunk { row: number });
@@ -133,11 +127,13 @@ impl DiffView {
         // sideways under it: the row has moved by the offset, the gutter moves back.
         let pin = Pin { shift: -self.scroll.offset().x };
         let down = cx.listener(move |this, event: &MouseDownEvent, _, _| this.press(ix, 0, event.position));
+        let lift = tone::lifted(fill, tokens);
         let columns = if self.reading { Columns::Reading } else { Columns::Both(self.shown) };
         let tick = self.tick(ix, 0, side, tokens, cx);
         h_flex()
             .items_center()
             .when_some(fill, |row, fill| row.bg(fill))
+            .when(self.interactive, |row| row.group_hover(Self::group(ix), move |style| style.bg(lift)))
             .child(half(side, &self.drawn[ix][0], (columns, numbers, tick), tokens, self.ink(ix, 0, &self.drawn[ix][0].text, cx), down, Some(pin)))
             .overflow_hidden()
     }
@@ -150,6 +146,7 @@ impl DiffView {
                 Some(side) => tone::fill(side.kind, row.picked, row.cursor, tokens),
                 None => Some(tokens.bg_chrome),
             };
+            let lift = tone::lifted(fill, tokens);
             h_flex()
                 .flex_1()
                 .min_w_0()
@@ -158,6 +155,7 @@ impl DiffView {
                 .overflow_hidden()
                 .when(second, |half| half.border_l_1().border_color(tokens.line))
                 .when_some(fill, |half, fill| half.bg(fill))
+                .when(self.interactive && side.is_some(), |half| half.group_hover(Self::group(ix), move |style| style.bg(lift)))
                 .child({
                     let wrapped = wrap::wrap(&self.drawn[ix][usize::from(second)], self.per_line);
                     let ink = self.ink(ix, usize::from(second), &wrapped.text, cx);

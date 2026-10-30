@@ -66,3 +66,17 @@ fn showing_what_is_drawn_already_redraws_nothing(cx: &mut TestAppContext) {
     assert_eq!(opened.notified.get(), before + 1);
     cx.update(|cx| assert_eq!(opened.view.read(cx).len(), 1));
 }
+
+/// Kit.dc.html, "Diff line": the pick gutter is 24px on a changed line, and the box in it is drawn
+/// whether or not the pointer is on the line, so showing it moves nothing.
+#[gpui_kit::test]
+fn a_diff_that_stages_reserves_the_24px_pick_gutter_on_a_changed_line(cx: &mut TestAppContext) {
+    use super::super::tick::{Ticks, BOX};
+    let opened = open(cx, true);
+    cx.update(|cx| opened.view.update(cx, |view, cx| view.set_ticks(Some(Ticks { staged: false, busy: false }), cx)));
+    let mut added = line(0);
+    added.left.as_mut().unwrap().kind = "added";
+    show(cx, &opened, &[added]);
+    let width = cx.update_window(opened.handle, |_, window, _| f32::from(window.find(("diff-tick", 0usize)).bounds().size.width)).unwrap();
+    assert_eq!(width, BOX);
+}

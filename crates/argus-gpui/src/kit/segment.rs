@@ -76,3 +76,23 @@ pub fn pill(id: impl Into<ElementId>, role: Role, on: bool, tokens: &Tokens) -> 
 pub fn count(text: impl Into<SharedString>, tokens: &Tokens) -> impl IntoElement {
     div().text_color(tokens.fg_faint).child(text.into())
 }
+
+/// One pill of the tool switch (`project/Kit.dc.html`, `.seg button`): 24px, no edge, the fill
+/// and the text colour while it is the choice. Put it in a [`track`] (`Unified | Split`).
+pub fn switch_option(id: impl Into<ElementId>, role: Role, on: bool, tokens: &Tokens) -> ObservedElement<Stateful<gpui_kit::Div>> {
+    let (fill, text) = (tokens.fill, tokens.fg);
+    h_flex()
+        .id(id)
+        .role(role)
+        .test_support()
+        .aria_selected(on)
+        .h(rem(tokens.control_h_sm))
+        .px(rem(9.0))
+        .items_center()
+        .rounded(rem(tokens.r_xs))
+        .text_size(rem(tokens.fs_sm))
+        .weighted(tokens.weight_medium)
+        .whitespace_nowrap()
+        .cursor_pointer()
+        .map(|pill| if on { pill.bg(fill).text_color(text) } else { pill.text_color(tokens.fg_muted).hover(move |style| style.text_color(text)) })
+}
