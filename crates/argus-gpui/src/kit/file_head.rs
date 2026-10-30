@@ -2,8 +2,9 @@
 //! (`project/Kit.dc.html`, "File head"): [status letter] name, folder, `+a −r`, one meta, a
 //! spacer, the tools.
 //!
-//! It is always one 44px line. The folder is the only part that shrinks, from its left (`path`);
-//! the name, the counts, the meta and the tools keep their width, and nothing wraps.
+//! It is always one 44px line. The folder shrinks first, from its left (`path`); the meta gives way
+//! only once the folder is down to its least, and the name, the counts and the tools keep their
+//! width. Nothing wraps.
 
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
@@ -16,6 +17,10 @@ use super::counts::counts;
 use super::path::left_cut;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
+
+/// How readily the meta shrinks beside the folder's 1: flex takes room in proportion to it, so
+/// at this the folder is all but used up before the meta loses a letter.
+const META_GIVES: f32 = 0.001;
 
 /// What a file head says; the tools are passed beside it.
 pub struct Head<'a> {
@@ -63,7 +68,7 @@ pub fn file_head(id: impl Into<ElementId>, head: &Head, tools: Vec<AnyElement>, 
         .child(div().flex_none().text_size(rem(tokens.fs_md)).weighted(tokens.weight_semibold).text_color(tokens.fg).child(SharedString::from(head.name.to_owned())))
         .when(!head.dir.is_empty(), |line| line.child(left_cut("file-head-dir", SharedString::from(head.dir.to_owned()), tokens)))
         .children(head.counts.filter(|(a, r)| a + r > 0).map(|(a, r)| counts(a, r, tokens).text_size(rem(tokens.fs_sm))))
-        .children(head.meta.clone().map(|meta| div().id("file-head-meta").test_support().aria_label(meta.clone()).flex_shrink(1.0).min_w_0().truncate().text_size(rem(tokens.fs_sm)).text_color(tokens.fg_muted).child(meta)))
+        .children(head.meta.clone().map(|meta| div().id("file-head-meta").test_support().aria_label(meta.clone()).flex_shrink(META_GIVES).min_w_0().truncate().text_size(rem(tokens.fs_sm)).text_color(tokens.fg_muted).child(meta)))
         .child(div().flex_1().min_w_0())
         .child(h_flex().flex_none().gap(rem(tokens.sp_4)).items_center().children(tools))
 }
@@ -87,7 +92,7 @@ mod tests {
 
     fn open(cx: &mut TestAppContext, width: f32, dir: &'static str) -> gpui_kit::AnyWindowHandle {
         host::open(cx, width, move |tokens| {
-            let head = Head { status: Some(("M", tokens.changed)), name: "mod.rs", dir, counts: Some((12, 4)), meta: Some("2 hunks".into()) };
+            let head = Head { status: Some(("M", tokens.changed)), name: "mod.rs", dir, counts: Some((12, 4)), meta: Some("Ln 52 \u{b7} Rust \u{b7} LF".into()) };
             file_head("fh", &head, tools_for(tokens), tokens).into_any_element()
         })
     }
@@ -117,5 +122,19 @@ mod tests {
         let (_, _, edit, _) = host::bounds(cx, wide, "t-edit");
         let (_, _, edit_narrow, _) = host::bounds(cx, narrow, "t-edit");
         assert_eq!(edit, edit_narrow, "so does the ghost");
+    }
+
+    /// The meta is cut only after the folder: at a width where the folder still overflows, the
+    /// meta is as wide as it is with all the room it wants.
+    #[gpui_kit::test]
+    fn the_meta_keeps_its_words_while_the_folder_can_still_give(cx: &mut TestAppContext) {
+        let wide = open(cx, 1400.0, LONG);
+        let tight = open(cx, 800.0, LONG);
+        let (_, _, meta, _) = host::bounds(cx, wide, "file-head-meta");
+        let (_, _, dir_wide, _) = host::bounds(cx, wide, ("file-head-dir", 0usize));
+        let (_, _, meta_tight, _) = host::bounds(cx, tight, "file-head-meta");
+        let (_, _, dir_tight, _) = host::bounds(cx, tight, ("file-head-dir", 0usize));
+        assert!(dir_tight < dir_wide && dir_tight > crate::kit::path::LEAST, "the folder is giving and has more to give: {dir_tight} of {dir_wide}");
+        assert!((meta - meta_tight).abs() < 0.5, "the meta kept its width: {meta_tight} of {meta}");
     }
 }
