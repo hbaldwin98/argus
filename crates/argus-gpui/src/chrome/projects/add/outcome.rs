@@ -4,11 +4,12 @@
 //! The words are core's (`chrome::add_outcome`); the fields are the view's own and keep what is
 //! typed over what was sent (`add`, `schedule`).
 
-use argus_desktop_core::chrome::add_outcome::{always_skipped, outcome, Outcome, NEW_FOLDER_LABEL, NEW_NOTE, NOT_A_REPOSITORY};
-use argus_desktop_core::chrome::add_project::AddProjectPage;
+use argus_desktop_core::chrome::add_outcome::{always_skipped, outcome, own_project_note, Outcome, OwnProjectNote, NEW_FOLDER_LABEL, NEW_NOTE, NOT_A_REPOSITORY};
+use argus_desktop_core::chrome::add_page::AddProjectPage;
 use gpui_kit::component::input::Input;
-use gpui_kit::component::v_flex;
-use gpui_kit::{div, prelude::*, Context, SharedString, TestSupportExt as _};
+use argus_desktop_core::connection::page::Call;
+use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::{div, prelude::*, Context, Role, SharedString, TestSupportExt as _};
 
 use super::AddView;
 use crate::kit::dialog::{field_label, label};
@@ -31,7 +32,7 @@ fn mono(words: impl Into<SharedString>, tokens: &Tokens) -> gpui_kit::Div {
 impl AddView {
     pub(super) fn outcome(&self, page: &AddProjectPage, tokens: &Tokens, _: &mut Context<Self>) -> impl IntoElement {
         let shell = v_flex().id("ap-outcome").test_support().flex_shrink_0().min_w_0().gap(rem(tokens.sp_6));
-        match outcome(page) {
+        let drawn = match outcome(page) {
             Outcome::New { target } => shell
                 .child(field_label(NEW_FOLDER_LABEL, tokens))
                 .child(div().font_family(SharedString::from(tokens.font_mono)).child(Input::new(self.folder.input()).aria_label(NEW_FOLDER_LABEL).h(rem(tokens.control_h))))
@@ -51,7 +52,37 @@ impl AddView {
                         .children(repositories.into_iter().map(|repo| mono(repo, tokens))),
                 )
                 .children(searched.map(|words| meta(words, tokens))),
-        }
+        };
+        drawn.children(own_project_note(page).map(|note| self.own_note(note, tokens)))
+    }
+
+    /// The note under a repository that is a project of its own already. Its last words are a link
+    /// to the dialog that folds that project in, which opens with it ticked. The words are laid out
+    /// one by one so the link sits in the line and wraps with it.
+    fn own_note(&self, note: OwnProjectNote, tokens: &Tokens) -> impl IntoElement {
+        let caller = self.caller.clone();
+        let (into, tick, hover) = (note.into, note.tick, tokens.accent);
+        h_flex()
+            .id("ap-own")
+            .test_support()
+            .aria_label(SharedString::from(note.words()))
+            .flex_wrap()
+            .gap_x(rem(tokens.sp_4))
+            .typed(tokens.type_small)
+            .text_color(tokens.fg_muted)
+            .children(note.before.split_whitespace().map(|word| div().child(word.to_owned())).collect::<Vec<_>>())
+            .child(
+                div()
+                    .id("ap-own-link")
+                    .role(Role::Link)
+                    .test_support()
+                    .aria_label(note.link)
+                    .cursor_pointer()
+                    .text_color(tokens.ref_)
+                    .hover(move |style| style.text_color(hover))
+                    .on_click(move |_, _, _| caller.call(Call::OpenCombineProjects { into: Some(into), tick: Some(tick) }))
+                    .child(note.link),
+            )
     }
 
     /// `Project name`, with the default name showing while it is empty.

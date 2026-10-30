@@ -25,7 +25,8 @@ use argus_desktop_core::checkouts::table::Checkouts;
 use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::code::stage::CodePage;
 use argus_desktop_core::code::start::Opened;
-use argus_desktop_core::chrome::add_project::AddProjectPage;
+use argus_desktop_core::chrome::add_page::AddProjectPage;
+use argus_desktop_core::chrome::combine_page::CombinePage;
 use argus_desktop_core::connection::page::{Connection, Event, Features, NoticeTone, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
 use argus_desktop_core::board::tracker::link_dialog::LinkPage;
 use argus_desktop_core::board::tracker::reconcile_dialog::ReconcilePage;
@@ -111,6 +112,8 @@ pub struct Heard {
     pub palette: Option<Palette>,
     /// The add-a-project dialog, while the session holds it open.
     pub add_project: Option<AddProjectPage>,
+    /// The combine-projects dialog, while the session holds it open.
+    pub combine: Option<CombinePage>,
     /// The tracker dialogs, while the session holds one open: the link dialog, and the reconcile dialog.
     pub link: Option<LinkPage>,
     pub reconcile: Option<ReconcilePage>,
@@ -234,6 +237,7 @@ impl Heard {
             commands: Vec::new(),
             palette: None,
             add_project: None,
+            combine: None,
             link: None,
             reconcile: None,
             settings: None,
@@ -332,6 +336,7 @@ impl Heard {
             }
             Event::Palette(page) => self.palette = page.open.then_some(*page),
             Event::AddProject(page) => self.add_project = page.open.then_some(*page),
+            Event::Combine(page) => self.combine = page.open.then_some(*page),
             Event::Link(page) => self.link = page.open.then_some(*page),
             Event::Reconcile(page) => self.reconcile = page.open.then_some(*page),
             Event::Settings(page) => self.settings = Some(Rc::new(*page)),

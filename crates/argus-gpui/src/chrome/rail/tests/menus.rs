@@ -174,3 +174,44 @@ fn the_switcher_offers_workspaces_only_when_listed_and_hosts_always(cx: &mut Tes
     click(cx, &opened, "rail-projects");
     assert!(has(cx, "Switch workspace\u{2026}"), "the kit's submenu row takes a plain label, so no note is glued onto it");
 }
+
+/// The repository menu's first two choices ask the session for the add dialog pointed at the project.
+#[gpui_kit::test]
+fn a_repositorys_menu_asks_for_the_add_dialog_pointed_at_its_project(cx: &mut TestAppContext) {
+    let opened = open(cx, connected_and_busy());
+    right_click(cx, &opened, "repo-row-11");
+    choose(cx, &opened, "Add a repository to src\u{2026}");
+    right_click(cx, &opened, "repo-row-11");
+    choose(cx, &opened, "New repository in src\u{2026}");
+    assert_eq!(
+        taken(&opened),
+        ["OpenAddToProject { project: 1, kind: Repository }", "OpenAddToProject { project: 1, kind: New }"]
+    );
+}
+
+/// The quiet row at the foot of the repositories does what the menu's first item does, and a held
+/// rail sends nothing.
+#[gpui_kit::test]
+fn the_row_at_the_foot_of_the_repositories_adds_a_repository_to_the_project(cx: &mut TestAppContext) {
+    let opened = open(cx, connected_and_busy());
+    click(cx, &opened, "rail-add-repository");
+    assert_eq!(taken(&opened), ["OpenAddToProject { project: 1, kind: Repository }"]);
+    hear(cx, &opened, vec![status(Connection::Stopped)]);
+    click(cx, &opened, "rail-add-repository");
+    assert_eq!(taken(&opened).len(), 1, "{:?}", taken(&opened));
+}
+
+/// A repository with one checkout is one row, so that row's menu carries the repository's add
+/// choices as well as the checkout's own.
+#[gpui_kit::test]
+fn a_lone_checkouts_menu_also_asks_for_the_add_dialog(cx: &mut TestAppContext) {
+    let mut rail = busy();
+    rail.project.as_mut().unwrap().repositories.iter_mut().find(|repo| repo.id == 10).unwrap().open = true;
+    let opened = open(cx, vec![status(Connection::Connected), Event::Rail(Box::new(rail))]);
+    open_quiet(cx, &opened);
+    right_click(cx, &opened, "checkout-100");
+    choose(cx, &opened, "Add a repository to src\u{2026}");
+    right_click(cx, &opened, "checkout-100");
+    choose(cx, &opened, "Collapse repository");
+    assert_eq!(taken(&opened), ["OpenAddToProject { project: 1, kind: Repository }", "ToggleRepository { repository: 10 }"]);
+}

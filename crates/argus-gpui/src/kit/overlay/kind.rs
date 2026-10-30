@@ -14,6 +14,8 @@ pub enum Overlay {
     Settings,
     /// Add a project.
     AddProject,
+    /// Combine projects.
+    Combine,
     /// A question to answer yes or no: removing a project.
     Question,
     /// The Checkouts stage's question before a worktree is removed or a branch forced out; apart from
@@ -30,6 +32,8 @@ pub enum Overlay {
     Reconcile,
     /// Naming a pane.
     Rename,
+    /// Naming a workspace to make.
+    NewWorkspace,
     /// Naming the branch of a new worktree.
     Worktree,
     /// Asking why a feature is held.

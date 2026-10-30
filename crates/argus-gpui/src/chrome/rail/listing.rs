@@ -67,6 +67,10 @@ impl RailView {
                             }),
                     );
                 }
+                // A folded rail has no room for the words; the repository's menu still adds one.
+                if !ctx.icons {
+                    list = list.child(self.add_repository(project, ctx, tokens, cx));
+                }
             }
         }
         list

@@ -106,6 +106,7 @@ export const state: {
     workspaces: [],
     hosts: [],
     removing: null,
+    newWorkspace: null,
     width: null,
     outlineWidth: null,
     briefHeight: null,

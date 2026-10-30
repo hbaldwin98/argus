@@ -12,6 +12,7 @@
 //! While the daemon is gone the list is dimmed and answers no press (`Heard::held`): no call, and
 //! no pick either.
 
+pub mod add_repository;
 pub mod chips;
 pub mod calls;
 pub mod checkout;
@@ -35,6 +36,7 @@ pub mod switcher;
 pub mod start;
 pub mod status;
 pub mod tail;
+pub mod workspace;
 
 use std::cell::Cell;
 use std::collections::HashSet;

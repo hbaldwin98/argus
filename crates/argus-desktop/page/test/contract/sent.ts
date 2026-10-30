@@ -5444,6 +5444,7 @@ export const sent = [
   "hosts": [],
   "loaded": true,
   "needsYou": 4,
+  "newWorkspace": null,
   "outlineWidth": null,
   "project": {
     "id": 1,
@@ -6087,6 +6088,7 @@ export const sent = [
   "hosts": [],
   "loaded": true,
   "needsYou": 4,
+  "newWorkspace": null,
   "outlineWidth": null,
   "project": {
     "id": 1,
@@ -6336,6 +6338,7 @@ export const sent = [
   "hosts": [],
   "loaded": true,
   "needsYou": 0,
+  "newWorkspace": null,
   "outlineWidth": null,
   "project": {
     "id": 1,
@@ -6875,6 +6878,7 @@ export const sent = [
   "hosts": [],
   "loaded": true,
   "needsYou": 0,
+  "newWorkspace": null,
   "outlineWidth": null,
   "project": {
     "id": 1,
@@ -7034,17 +7038,33 @@ export const sent = [
   "alwaysSkipped": [],
   "blocked": "pick a folder",
   "browsing": true,
+  "current": {
+    "id": 1,
+    "name": "src"
+  },
   "defaultName": "",
   "depth": null,
   "entries": [],
   "folder": "",
+  "into": null,
   "kind": "folder",
   "listingError": null,
   "name": "",
   "open": true,
+  "ownProject": null,
   "parent": null,
   "path": null,
   "previewing": false,
+  "projects": [
+    {
+      "id": 1,
+      "name": "src"
+    },
+    {
+      "id": 2,
+      "name": "work"
+    }
+  ],
   "refusal": null,
   "repositories": [],
   "skip": "",

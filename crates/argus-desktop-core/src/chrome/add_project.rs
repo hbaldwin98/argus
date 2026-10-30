@@ -9,92 +9,11 @@
 //! each answer is taken only if it is for the last thing asked: a slow
 //! listing must not land in a folder the person has since left.
 
-use argus_protocol::{ClientMsg, DirListing, ProjectPreview, RequestRefusal};
-use serde::{Deserialize, Serialize};
+use argus_protocol::{ClientMsg, DirListing, ProjectId, ProjectInfo, ProjectPreview, RequestRefusal};
 
+use super::add_page::{AddKind, AddProjectPage, FolderEntry, Held, ProjectRef};
 use crate::connection::page::Event;
 use crate::connection::sent::Sent;
-
-/// What was done in the add-a-project dialog.
-#[derive(Debug, Clone, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase", tag = "on")]
-pub enum AddProjectGesture {
-    Kind { kind: AddKind },
-    /// To a folder, by the daemon's own spelling of its path: one typed,
-    /// or the parent.
-    Browse { path: String },
-    /// Into a folder listed in the one browsed.
-    Into { name: String },
-    /// What the fields say now.
-    Fields { name: String, skip: String, folder: String },
-    /// Add, with what the fields say as it is pressed: calls need not
-    /// arrive in the order sent, so the last `Fields` may come after.
-    Add { name: String, skip: String, folder: String },
-    Close,
-}
-
-/// What a project is added from.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub enum AddKind {
-    /// Every repository under a folder, found by the daemon's scan.
-    #[default]
-    Folder,
-    /// The one repository a folder is.
-    Repository,
-    /// A repository `git init` makes.
-    New,
-}
-
-/// The add-a-project dialog: a folder browsed on the daemon's machine, what
-/// adding it would find, and what to call the project.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct AddProjectPage {
-    pub open: bool,
-    pub kind: AddKind,
-    /// The folder browsed, as the daemon spells it; `None` until listed.
-    pub path: Option<String>,
-    pub parent: Option<String>,
-    pub entries: Vec<FolderEntry>,
-    /// A listing has been asked for and not yet come.
-    pub browsing: bool,
-    /// Why the folder lists nothing: gone, or not readable.
-    pub listing_error: Option<String>,
-    /// What adding the folder would add, as the daemon's scan finds it:
-    /// root-relative, the folder itself named by its own name.
-    pub repositories: Vec<String>,
-    pub previewing: bool,
-    /// How deep the daemon's scan looks, and what it always skips, once a
-    /// preview has said.
-    pub depth: Option<usize>,
-    pub always_skipped: Vec<String>,
-    /// What the name, skip and new-folder fields say.
-    pub name: String,
-    pub skip: String,
-    pub folder: String,
-    /// The name the project gets while the name field is empty.
-    pub default_name: String,
-    /// For a new repository: the folder `git init` runs in.
-    pub target: Option<String>,
-    /// Why Add cannot be pressed yet; `None` when it can.
-    pub blocked: Option<String>,
-    /// The add is with the daemon.
-    pub adding: bool,
-    /// What the daemon said when it refused the last add.
-    pub refusal: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct FolderEntry {
-    pub name: String,
-    pub is_repo: bool,
-}
 
 pub struct AddProject {
     kind: AddKind,
@@ -106,8 +25,12 @@ pub struct AddProject {
     name: String,
     skip: String,
     folder: String,
-    /// The add, named, until the daemon answers it.
-    adding: Option<u64>,
+    /// The project each repository goes into; `None` makes a project.
+    into: Option<ProjectId>,
+    /// The adds asked and not yet answered.
+    waiting: Vec<u64>,
+    /// Adds the daemon made that no tree holds yet.
+    settling: usize,
     refusal: Option<String>,
 }
 
@@ -123,7 +46,9 @@ impl AddProject {
             name: String::new(),
             skip: String::new(),
             folder: String::new(),
-            adding: None,
+            into: None,
+            waiting: Vec::new(),
+            settling: 0,
             refusal: None,
         };
         dialog.browse(String::new(), request_id, out);
@@ -184,6 +109,18 @@ impl AddProject {
         self.kind = kind;
     }
 
+    /// Adds into `project`, or with `None` makes a project of its own.
+    pub fn add_to(&mut self, project: Option<ProjectId>) {
+        self.into = project;
+    }
+
+    /// Opened for a project: adding a repository to it, or a new one in it.
+    pub fn for_project(mut self, project: ProjectId, kind: AddKind) -> AddProject {
+        self.into = Some(project);
+        self.kind = kind;
+        self
+    }
+
     /// What the fields say now. New skips scan again: the preview is what
     /// the add would find, so it must skip what the add will.
     pub fn set_fields(
@@ -236,6 +173,9 @@ impl AddProject {
             AddKind::New => None,
             _ if self.previewing.is_some() || self.preview.is_none() => Some("looking for repositories".into()),
             AddKind::Repository if !self.is_repository() => Some("this folder is not a repository".into()),
+            AddKind::Folder if self.into.is_some() && self.preview.as_ref().is_some_and(|p| p.repositories.is_empty()) => {
+                Some("no repositories in this folder".into())
+            }
             _ => None,
         }
     }
@@ -244,33 +184,78 @@ impl AddProject {
         self.preview.as_ref().is_some_and(|p| p.repositories.len() == 1 && p.repositories[0].is_empty())
     }
 
-    /// The add, named `request_id`, or none, with why said in the dialog.
-    /// The dialog stays up until the daemon has made the project and a
-    /// tree holds it, so a refusal leaves what was typed.
+    /// The adds, each named by `request(into)`, or none, with why said in the dialog. `into` is the
+    /// project a repository goes into, `None` for the project to be made. The dialog stays up until
+    /// the daemon has made them and a tree holds them, so a refusal leaves what was typed.
     #[allow(clippy::result_unit_err)]
-    pub fn add(&mut self, request_id: u64) -> Result<ClientMsg, ()> {
-        if self.adding.is_some() {
+    pub fn add(&mut self, mut request: impl FnMut(Option<ProjectId>) -> u64) -> Result<Vec<ClientMsg>, ()> {
+        if self.is_adding() {
             return Err(());
         }
         let (Some(path), None) = (self.target(), self.blocked()) else {
             self.refusal = self.blocked();
             return Err(());
         };
-        let name = Some(self.name.trim().to_string()).filter(|n| !n.is_empty());
-        // Only a folder is scanned for more than itself.
-        let skip = if self.kind == AddKind::Folder { self.skips() } else { Vec::new() };
-        self.adding = Some(request_id);
         self.refusal = None;
-        Ok(ClientMsg::AddProject { path, request_id, name, skip, init: self.kind == AddKind::New })
+        let Some(project) = self.into else {
+            let request_id = request(None);
+            self.waiting.push(request_id);
+            let name = Some(self.name.trim().to_string()).filter(|n| !n.is_empty());
+            // Only a folder is scanned for more than itself.
+            let skip = if self.kind == AddKind::Folder { self.skips() } else { Vec::new() };
+            return Ok(vec![ClientMsg::AddProject { path, request_id, name, skip, init: self.kind == AddKind::New }]);
+        };
+        let paths = match self.kind {
+            AddKind::Folder => self.found().map(|rel| within(&path, rel)).collect(),
+            _ => vec![path],
+        };
+        let init = self.kind == AddKind::New;
+        let msgs = paths
+            .into_iter()
+            .map(|path| {
+                let request_id = request(Some(project));
+                self.waiting.push(request_id);
+                if init {
+                    ClientMsg::InitRepository { project, path, request_id }
+                } else {
+                    ClientMsg::AddRepository { project, path, request_id }
+                }
+            })
+            .collect();
+        Ok(msgs)
     }
 
-    /// Takes the daemon's refusal of the add waiting on it, saying why in
+    /// The repositories the preview found, root-relative; empty for the folder itself.
+    fn found(&self) -> impl Iterator<Item = &str> {
+        self.preview.iter().flat_map(|p| p.repositories.iter().map(String::as_str))
+    }
+
+    fn is_adding(&self) -> bool {
+        !self.waiting.is_empty() || self.settling > 0
+    }
+
+    /// The daemon made a repository for the add named `request_id`; a tree is yet to hold it.
+    pub fn made(&mut self, request_id: u64) {
+        if let Some(at) = self.waiting.iter().position(|id| *id == request_id) {
+            self.waiting.remove(at);
+            self.settling += 1;
+        }
+    }
+
+    /// A tree holds a repository an add made. Whether the whole add is done, and the dialog is to
+    /// go: nothing waits, nothing is yet to be held, and nothing was refused.
+    pub fn settled(&mut self) -> bool {
+        self.settling = self.settling.saturating_sub(1);
+        self.waiting.is_empty() && self.settling == 0 && self.refusal.is_none()
+    }
+
+    /// Takes the daemon's refusal of an add waiting on it, saying why in
     /// the dialog; false for any other request's.
     pub fn refused(&mut self, refusal: &RequestRefusal) -> bool {
-        if self.adding != Some(refusal.request_id) {
+        let Some(at) = self.waiting.iter().position(|id| *id == refusal.request_id) else {
             return false;
-        }
-        self.adding = None;
+        };
+        self.waiting.remove(at);
         self.refusal = Some(refusal.reason.clone());
         true
     }
@@ -279,23 +264,31 @@ impl AddProject {
     /// listed again, and an add in flight may or may not have been made,
     /// which the tree will say.
     pub fn reconnected(&mut self, request_id: u64, out: &mut Vec<ClientMsg>) {
-        self.adding = None;
+        self.waiting.clear();
+        self.settling = 0;
         self.previewing = None;
         let path = self.listing.as_ref().map(|l| l.path.clone()).unwrap_or_default();
         self.browse(path, request_id, out);
     }
 
-    pub fn page(&self) -> AddProjectPage {
+    pub fn page(&self, tree: &[ProjectInfo], current: Option<ProjectId>) -> AddProjectPage {
         let listing = self.listing.as_ref();
         let preview = self.preview.as_ref();
         let folder_name = listing.map(|l| last_segment(&l.path).to_string()).unwrap_or_default();
+        let named = |id: ProjectId| tree.iter().find(|p| p.id == id).map(|p| ProjectRef { id: p.id.0, name: p.name.clone() });
+        let held = |path: &str| self.into.and_then(|project| held_at(tree, project, path));
         AddProjectPage {
             open: true,
             kind: self.kind,
             path: listing.map(|l| l.path.clone()),
             parent: listing.and_then(|l| l.parent.clone()),
             entries: listing
-                .map(|l| l.entries.iter().map(|e| FolderEntry { name: e.name.clone(), is_repo: e.is_repo }).collect())
+                .map(|l| {
+                    l.entries
+                        .iter()
+                        .map(|e| FolderEntry { name: e.name.clone(), is_repo: e.is_repo, held: held(&join(&l.path, &e.name)).filter(|_| e.is_repo) })
+                        .collect()
+                })
                 .unwrap_or_default(),
             browsing: self.browsing.is_some(),
             listing_error: listing.and_then(|l| l.error.clone()),
@@ -313,7 +306,16 @@ impl AddProject {
             default_name: self.default_name(),
             target: self.target().filter(|_| self.kind == AddKind::New),
             blocked: self.blocked(),
-            adding: self.adding.is_some(),
+            into: self.into.and_then(named),
+            projects: tree.iter().map(|p| ProjectRef { id: p.id.0, name: p.name.clone() }).collect(),
+            current: current.and_then(named),
+            own_project: self
+                .into
+                .filter(|_| self.kind == AddKind::Repository)
+                .zip(listing)
+                .and_then(|(project, l)| own_project_at(tree, project, &l.path))
+                .map(|p| ProjectRef { id: p.id.0, name: p.name.clone() }),
+            adding: self.is_adding(),
             refusal: self.refusal.clone(),
         }
     }
@@ -345,8 +347,8 @@ impl Adding {
     }
 
     /// What the page has not heard of the dialog.
-    pub fn take(&mut self) -> Option<Event> {
-        let page = self.dialog.as_ref().map(AddProject::page);
+    pub fn take(&mut self, tree: &[ProjectInfo], current: Option<ProjectId>) -> Option<Event> {
+        let page = self.dialog.as_ref().map(|dialog| dialog.page(tree, current));
         self.sent.take(page).map(|page| Event::AddProject(Box::new(page)))
     }
 
@@ -367,161 +369,42 @@ fn join(dir: &str, name: &str) -> String {
     }
 }
 
+/// A repository found under `root` by its root-relative name; empty names the folder itself.
+fn within(root: &str, relative: &str) -> String {
+    if relative.is_empty() {
+        return root.to_owned();
+    }
+    let backslashed = root.contains('\\') && !root.contains('/');
+    join(root, &if backslashed { relative.replace('/', "\\") } else { relative.to_owned() })
+}
+
+/// Paths as the daemon spells them need not match in separator or in a trailing one; case is left
+/// alone, since a wrong match would say a folder is held that is not.
+fn same_path(a: &str, b: &str) -> bool {
+    let norm = |p: &str| p.replace('\\', "/").trim_end_matches('/').to_owned();
+    norm(a) == norm(b)
+}
+
+/// Where the tree holds the repository at `path`, from the point of view of adding to `target`.
+fn held_at(tree: &[ProjectInfo], target: ProjectId, path: &str) -> Option<Held> {
+    if tree.iter().any(|p| p.id == target && holds(p, path)) {
+        return Some(Held::InTarget);
+    }
+    own_project_at(tree, target, path).map(|_| Held::OwnProject)
+}
+
+fn holds(project: &ProjectInfo, path: &str) -> bool {
+    project.repositories.iter().any(|r| r.checkouts.iter().any(|c| same_path(&c.path, path)))
+}
+
+/// The project, other than `target`, whose only repository is the one at `path`.
+fn own_project_at<'a>(tree: &'a [ProjectInfo], target: ProjectId, path: &str) -> Option<&'a ProjectInfo> {
+    tree.iter().find(|p| p.id != target && p.repositories.len() == 1 && holds(p, path))
+}
+
 fn last_segment(path: &str) -> &str {
     path.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use argus_protocol::DirEntry;
-
-    fn listing(request_id: u64, path: &str) -> DirListing {
-        DirListing {
-            request_id,
-            path: path.into(),
-            parent: Some("/home".into()),
-            entries: vec![DirEntry { name: "web".into(), is_repo: true }],
-            error: None,
-        }
-    }
-
-    fn preview(request_id: u64, repositories: &[&str]) -> ProjectPreview {
-        ProjectPreview {
-            request_id,
-            path: "/home/work".into(),
-            repositories: repositories.iter().map(|r| r.to_string()).collect(),
-            depth: 8,
-            always_skipped: vec![".git".into()],
-            error: None,
-        }
-    }
-
-    /// A dialog open on `/home/work`, its preview answered with `found`.
-    fn browsed(found: &[&str]) -> AddProject {
-        let mut out = Vec::new();
-        let mut dialog = AddProject::new(1, &mut out);
-        assert!(dialog.listed(listing(1, "/home/work"), || 2, &mut out));
-        assert!(dialog.previewed(preview(2, found)));
-        dialog
-    }
-
-    #[test]
-    fn opening_lists_where_the_daemon_starts_and_a_listing_asks_for_its_preview() {
-        let mut out = Vec::new();
-        let mut dialog = AddProject::new(1, &mut out);
-        assert!(matches!(&out[..], [ClientMsg::ListDirectories { request_id: 1, path }] if path.is_empty()));
-        assert!(dialog.page().browsing);
-
-        out.clear();
-        dialog.listed(listing(1, "/home/work"), || 2, &mut out);
-        assert!(matches!(&out[..], [ClientMsg::PreviewProject { request_id: 2, path, .. }] if path == "/home/work"));
-        let page = dialog.page();
-        assert_eq!((page.path.as_deref(), page.browsing, page.previewing), (Some("/home/work"), false, true));
-        assert_eq!(page.blocked.as_deref(), Some("looking for repositories"));
-    }
-
-    #[test]
-    fn an_answer_for_a_folder_since_left_is_dropped() {
-        let mut out = Vec::new();
-        let mut dialog = AddProject::new(1, &mut out);
-        dialog.browse("/elsewhere".into(), 3, &mut out);
-        assert!(!dialog.listed(listing(1, "/home"), || 9, &mut out), "the first listing is stale");
-        assert!(dialog.listed(listing(3, "/elsewhere"), || 4, &mut out));
-        assert!(!dialog.previewed(preview(9, &["old"])));
-        assert!(dialog.previewed(preview(4, &["web"])));
-        assert_eq!(dialog.page().repositories, ["web"]);
-    }
-
-    #[test]
-    fn a_folder_adds_what_the_preview_found_skipping_what_was_typed() {
-        let mut dialog = browsed(&["billing-api", "infra/k8s"]);
-        let mut out = Vec::new();
-        dialog.set_fields("work".into(), "vendor, archive".into(), String::new(), || 5, &mut out);
-        assert!(
-            matches!(&out[..], [ClientMsg::PreviewProject { request_id: 5, skip, .. }] if skip == &["vendor", "archive"]),
-            "new skips scan again"
-        );
-        assert!(dialog.add(6).is_err(), "not until the new preview is in");
-        dialog.previewed(preview(5, &["billing-api"]));
-
-        let ClientMsg::AddProject { path, request_id, name, skip, init } = dialog.add(6).unwrap() else {
-            panic!("not an add");
-        };
-        assert_eq!(
-            (path.as_str(), request_id, name.as_deref(), skip, init),
-            ("/home/work", 6, Some("work"), vec!["vendor".to_string(), "archive".to_string()], false)
-        );
-        assert!(dialog.page().adding);
-        assert!(dialog.add(7).is_err(), "one add at a time");
-    }
-
-    #[test]
-    fn one_repository_is_only_a_folder_that_is_one() {
-        let mut dialog = browsed(&["web", "api"]);
-        dialog.set_kind(AddKind::Repository);
-        assert_eq!(dialog.page().blocked.as_deref(), Some("this folder is not a repository"));
-        assert!(dialog.add(2).is_err());
-        assert_eq!(dialog.page().refusal.as_deref(), Some("this folder is not a repository"), "said in the dialog");
-
-        let mut dialog = browsed(&[""]);
-        dialog.set_kind(AddKind::Repository);
-        assert_eq!(dialog.page().repositories, ["work"], "the folder itself, by its name");
-        let Ok(ClientMsg::AddProject { name: None, init: false, skip, .. }) = dialog.add(3) else {
-            panic!("a repository is added as itself");
-        };
-        assert!(skip.is_empty());
-    }
-
-    #[test]
-    fn a_new_repository_is_made_in_a_folder_named_inside_the_one_browsed() {
-        let mut dialog = browsed(&[]);
-        dialog.set_kind(AddKind::New);
-        assert_eq!(dialog.page().blocked.as_deref(), Some("name the new repository's folder"));
-        dialog.set_fields(String::new(), String::new(), "scratch".into(), || 9, &mut Vec::new());
-        let page = dialog.page();
-        assert_eq!((page.target.as_deref(), page.default_name.as_str()), (Some("/home/work/scratch"), "scratch"));
-        let Ok(ClientMsg::AddProject { path, init: true, .. }) = dialog.add(4) else {
-            panic!("a new repository is initialised");
-        };
-        assert_eq!(path, "/home/work/scratch");
-    }
-
-    #[test]
-    fn a_refused_add_keeps_what_was_typed_and_says_why() {
-        let mut dialog = browsed(&["web"]);
-        dialog.set_fields("work".into(), String::new(), String::new(), || 9, &mut Vec::new());
-        dialog.add(6).unwrap();
-        let refusal = |request_id| RequestRefusal {
-            request_id,
-            reason: "there is already a project called work".into(),
-            read: false,
-        };
-        assert!(!dialog.refused(&refusal(5)), "another request's refusal is not the add's");
-        assert!(dialog.page().adding);
-        assert!(dialog.refused(&refusal(6)));
-        let page = dialog.page();
-        assert_eq!((page.adding, page.name.as_str()), (false, "work"));
-        assert_eq!(page.refusal.as_deref(), Some("there is already a project called work"));
-        assert!(dialog.add(7).is_ok(), "and it can be tried again");
-    }
-
-    #[test]
-    fn only_a_folder_the_listing_holds_is_gone_into() {
-        let mut dialog = browsed(&["web"]);
-        let mut out = Vec::new();
-        dialog.open("elsewhere", 5, &mut out);
-        assert!(out.is_empty());
-        dialog.open("web", 5, &mut out);
-        assert!(matches!(&out[..], [ClientMsg::ListDirectories { request_id: 5, path }] if path == "/home/work/web"));
-    }
-
-    #[test]
-    fn a_path_is_joined_in_the_daemons_own_spelling() {
-        assert_eq!(join(r"C:\Users\me", "x"), r"C:\Users\me\x");
-        assert_eq!(join(r"C:\", "x"), r"C:\x");
-        assert_eq!(join("/", "x"), "/x");
-        assert_eq!(join("/home/me", "x"), "/home/me/x");
-        assert_eq!(last_segment(r"C:\Users\me\"), "me");
-    }
-}
+mod tests;

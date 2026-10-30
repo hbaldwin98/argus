@@ -191,7 +191,29 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
   or an agent (`A`). Drag a pane's row onto another checkout to move it there.
 - **The project heading** opens the switcher: projects, Add a project…, Switch workspace…, Connect
   to a host… (from `~/.ssh/config` and hosts used before; keys or ssh-agent only, argus already
-  installed there), and Remove.
+  installed there), and Remove. In the GPUI window **Switch workspace…** ends its list with **New
+  workspace…**: name it, Enter creates and opens it, and a name the daemon refuses (one already in
+  use) is said under the field, which keeps what you typed. A workspace with no projects says that
+  one added now lands in it.
+- **Adding a repository to a project** (GPUI window): a repository's right-click menu offers **Add a
+  repository to <project>…** and **New repository in <project>…**, and the foot of the project's
+  repositories has a quiet **+ Add a repository** row; each opens the add dialog already pointed at
+  that project. **Add a project…** from the switcher defaults to **A new project**. The dialog's
+  **Add to** choice picks the project the rail lists, **Another project** (a menu of the rest) or **A
+  new project**. With a project chosen, the kinds read **A repository**, **Every repository in a
+  folder** (one add per repository the scan finds) and **A new one (git init)**, the button reads
+  **Add to <project>**, and the project name field is gone. The folder list marks a repository
+  already in that project ("already in argus") or in a project of its own, and one that is already a
+  project of its own says adding it here keeps that project too, with a **Combine projects…** link.
+- **Combine projects…** (GPUI window; under **Add a project…** in the switcher, shown when the
+  daemon offers it and the workspace holds two projects): fold other projects' repositories into
+  one. **Into** picks the project that keeps its name and settings (the one the rail lists to start
+  with); tick the projects to fold in, and the summary says what the target will hold, that running
+  panes move and keep running, that feature boards come along with their numbers, and that the
+  folded projects' own worktree and setup settings are dropped and their rows leave the switcher.
+  Nothing on disk changes. **Combine N into <project>** asks the daemon; the dialog closes when it
+  answers and the window stays on the project folded into, and a refusal is said in the dialog,
+  which stays open. Esc cancels.
 - **Checkouts** (`3`) lists the repository's checkouts, and with `B` its branches: Enter opens or
   switches, `F` fetches, `P` pulls, `S`/`A` start a shell or agent, `N` makes a worktree, `D` deletes
   a branch or removes a worktree, `R` reviews, `H` opens history, `E` shows its files.

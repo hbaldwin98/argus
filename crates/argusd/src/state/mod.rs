@@ -35,6 +35,7 @@ mod board;
 mod browsers;
 mod build;
 mod clock;
+mod combine;
 mod extensions;
 mod views;
 mod git_ops;

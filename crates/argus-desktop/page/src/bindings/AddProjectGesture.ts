@@ -4,4 +4,4 @@ import type { AddKind } from "./AddKind";
 /**
  * What was done in the add-a-project dialog.
  */
-export type AddProjectGesture = { "on": "kind", kind: AddKind, } | { "on": "browse", path: string, } | { "on": "into", name: string, } | { "on": "fields", name: string, skip: string, folder: string, } | { "on": "add", name: string, skip: string, folder: string, } | { "on": "close" };
+export type AddProjectGesture = { "on": "kind", kind: AddKind, } | { "on": "browse", path: string, } | { "on": "into", name: string, } | { "on": "fields", name: string, skip: string, folder: string, } | { "on": "add", name: string, skip: string, folder: string, } | { "on": "addTo", project: number | null, } | { "on": "close" };

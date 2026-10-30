@@ -58,6 +58,40 @@ impl Store {
     pub fn remove_project(&self, name: &str, root: Option<&Path>) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        Self::take_out_project(&tx, name, root)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Folds the `from` projects into `into`: each path in `moved` is named
+    /// outright under `into`, as `add_repo` names one, and each of `from`
+    /// is taken out as `remove_project` takes one out. One transaction, so
+    /// a restart never finds a repository in both projects or in neither.
+    ///
+    /// Named rather than left to a scan because nothing scans a `from`
+    /// root any more, and `into`'s root may never reach them.
+    pub fn combine_projects(
+        &self,
+        into: &str,
+        moved: &[PathBuf],
+        from: &[(String, Option<PathBuf>)],
+    ) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        for path in moved {
+            tx.execute(
+                "INSERT OR IGNORE INTO repo_overlay (project, path) VALUES (?1, ?2)",
+                rusqlite::params![into, path_text(path)],
+            )?;
+        }
+        for (name, root) in from {
+            Self::take_out_project(&tx, name, root.as_deref())?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn take_out_project(tx: &rusqlite::Transaction<'_>, name: &str, root: Option<&Path>) -> Result<()> {
         let dropped = match root {
             Some(root) => tx.execute(
                 "DELETE FROM project_overlay WHERE root = ?1",
@@ -72,7 +106,6 @@ impl Store {
                 [name],
             )?;
         }
-        tx.commit()?;
         Ok(())
     }
 

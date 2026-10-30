@@ -12,6 +12,7 @@ fn calls(item: &MenuItem<Does>) -> Vec<String> {
     match &item.as_choice().expect("a choice").does {
         Does::Send(calls) | Does::Go(calls) => calls.iter().map(|call| format!("{call:?}")).collect(),
         Does::Rename { .. } => vec!["rename".into()],
+        Does::NewWorkspace => vec!["new workspace".into()],
     }
 }
 
@@ -81,10 +82,13 @@ fn a_workspace_opens_only_when_it_is_not_open_and_says_how_many_projects_it_hold
     ];
     let (note, rows) = fold_of(&items(&with), "Switch workspace");
     assert_eq!(note.as_deref(), Some("default"), "the open workspace is named beside the choice");
-    assert_eq!(rows.iter().map(|r| r.as_choice().unwrap().checked).collect::<Vec<_>>(), [Some(true), Some(false)]);
+    assert_eq!(rows.iter().filter_map(|r| r.as_choice()).map(|r| r.checked).take(2).collect::<Vec<_>>(), [Some(true), Some(false)]);
     assert!(calls(&rows[0]).is_empty(), "the open one asks nothing");
     assert_eq!(calls(&rows[1]), ["OpenWorkspace { workspace: 2 }"]);
     assert_eq!(rows[1].as_choice().unwrap().hint, Hint::Text("3 projects".into()));
+    assert_eq!(lines(&rows)[2..], ["---", "New workspace\u{2026}"], "the way to make another ends the list");
+    assert_eq!(calls(&rows[3]), ["new workspace"]);
+    assert_eq!(rows[3].as_choice().unwrap().lead, Some("+"));
 }
 
 /// SHELL-SWITCH-5.
@@ -106,4 +110,19 @@ fn with_no_hosts_the_list_says_where_they_come_from() {
     let (_, rows) = fold_of(&items(&rail(&[], None)), "Connect to a host");
     assert_eq!(lines(&rows), ["This machine", "# No hosts in ~/.ssh/config, or set ARGUS_DESKTOP_HOST"]);
     assert!(calls(&rows[0]).is_empty(), "this machine is the one reached, so it asks nothing");
+}
+
+/// Combine projects sits under Add a project, only when the rail says the daemon can and there are
+/// two projects; it opens the dialog on the project the rail lists.
+#[test]
+fn combine_projects_is_offered_under_add_when_the_daemon_can_and_there_are_two_projects() {
+    let mut two = rail(&[(1, "orion", 0, 0), (2, "work", 0, 0)], Some(1));
+    assert!(!lines(&items(&two)).iter().any(|line| line.starts_with("Combine projects")));
+    two.can_combine = true;
+    let items = items(&two);
+    assert_eq!(lines(&items)[4..6], ["Add a project\u{2026}", "Combine projects\u{2026}"]);
+    assert_eq!(calls(&items[5]), ["OpenCombineProjects { into: None, tick: None }"]);
+    let mut one = rail(&[(1, "orion", 0, 0)], Some(1));
+    one.can_combine = true;
+    assert!(!lines(&super::items(&one)).iter().any(|line| line.starts_with("Combine projects")));
 }

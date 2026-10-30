@@ -8,6 +8,9 @@
 
 use crate::connection::page::{Project, Rail, RunningPane};
 
+/// What the card says when the open workspace holds no project: where one added now goes.
+pub const NO_PROJECTS: &str = "No projects here yet. Projects you add now land in this workspace.";
+
 /// The one way out of a connection that has not answered. Nothing is loaded to open the switcher
 /// from, so there is always exactly one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

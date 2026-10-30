@@ -1,7 +1,7 @@
 use argus_desktop_core::connection::page::{
     Checkout, Connection, Event, Project, Rail, Repository, RunningPane, Shown, Stage, Status,
 };
-use argus_desktop_core::chrome::add_project::AddProjectPage;
+use argus_desktop_core::chrome::add_page::AddProjectPage;
 use argus_desktop_core::layout::docks::{DockPage, DockTab, DocksPage, Panel};
 use argus_desktop_core::panes::console::{ConsolePage, ConsolePlace};
 use gpui_kit::test::TestWindowExt as _;
@@ -120,6 +120,17 @@ fn a_tree_with_no_project_offers_to_add_one_by_asking_the_session_for_the_dialog
     assert!(overlays(cx).is_empty(), "the dialog comes when the session says it is open, not on the press");
     hear(cx, &opened, vec![Event::AddProject(Box::new(AddProjectPage { open: true, ..AddProjectPage::default() }))]);
     assert_eq!(overlays(cx), [Overlay::AddProject]);
+}
+
+#[gpui_kit::test]
+fn a_workspace_with_no_project_says_that_a_project_added_now_lands_in_it(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    hear(cx, &opened, vec![status(Connection::Connected, None, None), Event::Rail(Box::new(Rail { loaded: true, ..Rail::default() }))]);
+    assert_eq!(
+        label_of(cx, &opened, "no-projects").as_deref(),
+        Some("No projects here yet. Projects you add now land in this workspace."),
+    );
+    assert!(has(cx, &opened, "add-project"), "and the button to add one is there");
 }
 
 #[gpui_kit::test]

@@ -80,6 +80,14 @@ pub const NO_HOSTS: &str = "No hosts in ~/.ssh/config, or set ARGUS_DESKTOP_HOST
 /// What a press on Connect to a host... explains, as its tooltip.
 pub const HOSTS_TIP: &str = "Reach the daemon on another machine over ssh, as argus --host does";
 
+/// The end of the workspace list: the row that makes another.
+pub const NEW_WORKSPACE: &str = "New workspace\u{2026}";
+
+/// What the new-workspace dialog says: its title, the field's name and what its keys do.
+pub const NEW_WORKSPACE_TITLE: &str = "New workspace";
+pub const NEW_WORKSPACE_PLACEHOLDER: &str = "work";
+pub const NEW_WORKSPACE_HINT: &str = "Enter creates and opens it \u{b7} Esc cancels";
+
 /// One entry of the menu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Entry {
@@ -88,6 +96,8 @@ pub enum Entry {
     Project { id: u64, name: String, current: bool, tally: Tally },
     Rule,
     AddProject,
+    /// Only when the daemon can fold projects together and the workspace holds two to fold.
+    CombineProjects,
     /// Only when the daemon lists workspaces; `open` is the open one's name.
     Workspaces { open: Option<String>, rows: Vec<WorkspaceRow> },
     Hosts { connected: Option<String>, rows: Vec<HostRow> },
@@ -113,6 +123,9 @@ pub fn menu(rail: &Rail) -> Vec<Entry> {
         entries.push(Entry::Rule);
     }
     entries.push(Entry::AddProject);
+    if rail.can_combine && rail.projects.len() >= 2 {
+        entries.push(Entry::CombineProjects);
+    }
     if !rail.workspaces.is_empty() {
         entries.push(Entry::Workspaces { open: rail.workspaces.iter().find(|w| w.open).map(|w| w.name.clone()), rows: workspaces(&rail.workspaces) });
     }

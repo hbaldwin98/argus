@@ -35,7 +35,7 @@ impl RailView {
         if let Some(only) = kept.first().filter(|_| repo.open && !ctx.icons && repo.checkouts.len() == 1) {
             return self.checkout(rail, repo, Lead::Repo { chosen }, only, first, ctx, tokens, cx).into_any_element();
         }
-        let body = if ctx.icons { self.hairline(repo, first, tokens).into_any_element() } else { self.heading(repo, chosen, first, ctx, tokens, cx).into_any_element() };
+        let body = if ctx.icons { self.hairline(repo, first, tokens).into_any_element() } else { self.heading(rail, repo, first, ctx, tokens, cx).into_any_element() };
         v_flex()
             .child(body)
             // A shut repository draws none of what is under it.
@@ -44,8 +44,9 @@ impl RailView {
     }
 
     /// The repository's name row: a button that chooses it, and the clock at its end.
-    fn heading(&self, repo: &Repository, chosen: bool, first: bool, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
+    fn heading(&self, rail: &Rail, repo: &Repository, first: bool, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let (id, held) = (repo.id, ctx.held);
+        let chosen = rail.repository == Some(id);
         let dot = (!repo.open).then(|| repo.status.and_then(|word| status_colour(word, tokens))).flatten();
         let fill = tokens.fill;
         let tokens = *tokens;
@@ -64,7 +65,7 @@ impl RailView {
             repo.used.clone().filter(|_| repo.panes == 0).or_else(|| (repo.panes > 0).then(|| format!("{} {}", repo.panes, if repo.panes == 1 { "pane" } else { "panes" })))
         };
         let group = SharedString::from(format!("repo-row-{id}"));
-        let items = menus::repository(repo, chosen);
+        let items = menus::repository(repo, chosen, rail.project.as_ref());
         let (rail, heard) = (cx.weak_entity(), self.heard.clone());
         h_flex()
             .id(SharedString::from(format!("repo-row-{id}")))

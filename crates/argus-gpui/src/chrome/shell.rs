@@ -26,6 +26,7 @@ use crate::chrome::header::slots::{Slot, Slots};
 use crate::chrome::header::Header;
 use crate::chrome::notice::NoticeView;
 use crate::chrome::projects::add::AddView;
+use crate::chrome::projects::combine::CombineView;
 use crate::chrome::projects::question;
 use crate::chrome::rail::RailView;
 use crate::chrome::stage::route::frame;
@@ -64,6 +65,8 @@ pub struct Shell {
     _observing: Subscription,
     /// The add-a-project dialog, which opens itself over the window while the session holds it.
     _add: Entity<AddView>,
+    /// The combine-projects dialog, likewise.
+    _combine: Entity<CombineView>,
     /// The dictation panel, floated over the pane it speaks into while a run has something to say.
     dictation: Entity<PanelView>,
     /// The words of the pane's size changed.
@@ -110,6 +113,7 @@ impl Shell {
         let work = cx.new(|cx| WorkView::new(heard.clone(), caller.clone(), stage.into(), console.into(), cx));
         let notice = cx.new(|cx| NoticeView::new(heard.clone(), cx));
         let add = cx.new(|cx| AddView::new(heard.clone(), caller.clone(), window, cx));
+        let combine = cx.new(|cx| CombineView::new(heard.clone(), caller.clone(), window, cx));
         DictationKeys::install(heard.clone(), caller.clone(), cx);
         let dictation = cx.new(|cx| PanelView::new(heard.clone(), caller.clone(), cx));
         Surfaces {
@@ -147,7 +151,7 @@ impl Shell {
         let appearance = window.observe_window_appearance(|window, cx| {
             look::system_changed(window, cx);
         });
-        Self { heard, caller, rail, work, notice, terminal, #[cfg(test)] split, _observing: observing, _add: add, dictation, _labelled: labelled, _appearance: appearance, _running: running }
+        Self { heard, caller, rail, work, notice, terminal, #[cfg(test)] split, _observing: observing, _add: add, _combine: combine, dictation, _labelled: labelled, _appearance: appearance, _running: running }
     }
 
     #[cfg(test)]

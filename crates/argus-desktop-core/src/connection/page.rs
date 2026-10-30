@@ -15,7 +15,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::browser::{BrowserShot, BrowsersPage};
-use crate::chrome::add_project::{AddProjectGesture, AddProjectPage};
+use crate::chrome::add_page::{AddKind, AddProjectGesture, AddProjectPage};
+use crate::chrome::combine_page::{CombineGesture, CombinePage};
 use crate::board::capture_note::{CaptureGesture, CapturePage};
 use crate::checkouts::files::FilesGesture;
 use crate::checkouts::table::Checkouts;
@@ -123,8 +124,21 @@ pub enum Call {
     /// The answer to that question.
     AnswerRemoveProject { yes: bool },
     OpenAddProject,
+    /// Opens the add dialog with `project` already the one added to: from a repository's menu or the
+    /// rail's foot. `kind` is what is added into it, a repository or a new one.
+    OpenAddToProject { project: u64, kind: AddKind },
+    /// Makes a workspace of this name, which the daemon opens. Refused, the rail's `new_workspace`
+    /// says why.
+    CreateWorkspace { name: String },
+    /// The new-workspace dialog went away: whatever it was told is forgotten.
+    DismissNewWorkspace,
     /// A gesture in the add-a-project dialog.
     AddProject { gesture: AddProjectGesture },
+    /// Opens the combine-projects dialog folding into `into` (the project the rail lists when
+    /// `None`), with `tick` already ticked to be folded in.
+    OpenCombineProjects { into: Option<u64>, tick: Option<u64> },
+    /// A gesture in the combine-projects dialog.
+    CombineProjects { gesture: CombineGesture },
     ToggleRepository { repository: u64 },
     /// Folds a checkout's panes off the rail, or unfolds them.
     ToggleCheckout { checkout: u64 },
@@ -586,6 +600,8 @@ pub enum Event {
     /// The add-a-project dialog, whole, whenever it changes; `open` false
     /// once it closes.
     AddProject(Box<AddProjectPage>),
+    /// The combine-projects dialog, whole, whenever it changes; `open` false once it closes.
+    Combine(Box<CombinePage>),
     /// The console, whole, whenever it changes.
     Console(Box<ConsolePage>),
     /// Each dock's tabs, the one it shows and how big it is, whole,
@@ -747,6 +763,13 @@ pub struct Rail {
     pub hosts: Vec<HostChoice>,
     /// A project waiting on a yes to be removed.
     pub removing: Option<Removing>,
+    /// A workspace being made from the switcher: asked of the daemon, or refused by it.
+    pub new_workspace: Option<NewWorkspace>,
+    /// The daemon can fold projects together, so the switcher offers it. Only the GPUI window
+    /// draws the switcher from this; the page has no such dialog, so it never crosses to it.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub can_combine: bool,
     /// The width the person dragged the rail to, in CSS pixels; `None`
     /// leaves the page's own.
     pub width: Option<u32>,
@@ -786,6 +809,18 @@ pub struct WorkspaceChoice {
     pub projects: usize,
     /// Live panes in it, open or not.
     pub panes: usize,
+}
+
+/// A workspace asked for and not yet listed by the daemon. It is there from the ask until the
+/// daemon lists the workspace open, or refuses; the dialog that asked closes when it is gone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NewWorkspace {
+    /// The ask is with the daemon.
+    pub creating: bool,
+    /// What the daemon said when it refused the last ask.
+    pub refusal: Option<String>,
 }
 
 /// A host whose daemon the window can reach over ssh.
@@ -1921,7 +1956,7 @@ pub const WIDE: u8 = 16;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chrome::add_project::{AddKind, FolderEntry};
+    use crate::chrome::add_page::FolderEntry;
     use serde_json::json;
 
     fn as_json(event: Event) -> serde_json::Value {
@@ -2101,6 +2136,8 @@ mod tests {
             templates: vec!["claude".into()],
             workspaces: vec![WorkspaceChoice { id: 7, name: "personal".into(), open: true, projects: 1, panes: 1 }],
             removing: Some(Removing { project: 1, name: "src".into(), repositories: 1, panes: 0 }),
+            new_workspace: Some(NewWorkspace { creating: false, refusal: Some("workspace already exists: work".into()) }),
+            can_combine: false,
             width: Some(320),
             outline_width: None,
             brief_height: None,
@@ -2124,6 +2161,7 @@ mod tests {
         assert_eq!(value["workspaces"][0]["open"], true);
         assert_eq!(value["hosts"][0], json!({"name": "devbox", "current": true}));
         assert_eq!(value["removing"]["repositories"], 1);
+        assert_eq!(value["newWorkspace"], json!({"creating": false, "refusal": "workspace already exists: work"}));
     }
 
     #[test]
@@ -2131,7 +2169,7 @@ mod tests {
         let page = AddProjectPage {
             open: true,
             kind: AddKind::New,
-            entries: vec![FolderEntry { name: "web".into(), is_repo: true }],
+            entries: vec![FolderEntry { name: "web".into(), is_repo: true, held: None }],
             always_skipped: vec![".git".into()],
             default_name: "web".into(),
             ..AddProjectPage::default()

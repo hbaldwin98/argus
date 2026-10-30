@@ -8,7 +8,7 @@
 
 use argus_protocol::{ClientMsg, ProjectId, ProjectInfo, WorkspaceId, WorkspaceInfo};
 
-use crate::connection::page::{HostChoice, Removing, WorkspaceChoice};
+use crate::connection::page::{HostChoice, NewWorkspace, Removing, WorkspaceChoice};
 
 #[derive(Default)]
 pub struct Switcher {
@@ -19,6 +19,17 @@ pub struct Switcher {
     /// config for a day is not lost from the list when it is taken out.
     visited: Vec<String>,
     removing: Option<ProjectId>,
+    /// The workspace being made, from the ask until the daemon lists it or refuses.
+    making: Option<Making>,
+}
+
+/// What a workspace asked for waits on.
+struct Making {
+    name: String,
+    /// The name was listed already, so a list naming it again is not the daemon having made it.
+    listed: bool,
+    creating: bool,
+    refusal: Option<String>,
 }
 
 impl Switcher {
@@ -55,8 +66,61 @@ impl Switcher {
         names.into_iter().map(|name| HostChoice { name: name.to_owned(), current: Some(name) == current }).collect()
     }
 
+    /// The daemon's list. The workspace being made is done once it is listed open: the daemon opens
+    /// what it creates, so nothing is taken as made before this says so.
     pub fn receive_workspaces(&mut self, workspaces: Vec<WorkspaceInfo>) {
+        if let Some(making) = &self.making {
+            if making.creating && !making.listed && workspaces.iter().any(|w| w.open && w.name == making.name) {
+                self.making = None;
+            }
+        }
         self.workspaces = workspaces;
+    }
+
+    /// Asks for a workspace of this name. An empty name is not asked, and says why where the name
+    /// was typed, in the daemon's own words; any other refusal is the daemon's.
+    pub fn create_workspace(&mut self, name: &str) -> Option<ClientMsg> {
+        if self.making.as_ref().is_some_and(|m| m.creating) {
+            return None;
+        }
+        let name = name.trim().to_owned();
+        if name.is_empty() {
+            self.making = Some(Making { name, listed: false, creating: false, refusal: Some("a workspace needs a name".to_owned()) });
+            return None;
+        }
+        let listed = self.workspaces.iter().any(|w| w.name == name);
+        self.making = Some(Making { name: name.clone(), listed, creating: true, refusal: None });
+        Some(ClientMsg::CreateWorkspace { name })
+    }
+
+    /// The daemon refused a request that named none, which a workspace being made is the one to
+    /// take; whether it was.
+    pub fn refused(&mut self, reason: &str) -> bool {
+        let Some(making) = self.making.as_mut().filter(|m| m.creating) else {
+            return false;
+        };
+        making.creating = false;
+        making.refusal = Some(reason.to_owned());
+        true
+    }
+
+    /// The dialog that asked went away, or the connection did: the ask may never be answered.
+    pub fn forget_making(&mut self) {
+        self.making = None;
+    }
+
+    pub fn making(&self) -> Option<NewWorkspace> {
+        self.making.as_ref().map(|m| NewWorkspace { creating: m.creating, refusal: m.refusal.clone() })
+    }
+
+    /// The workspace the daemon says is open, once it has listed them.
+    pub fn open(&self) -> Option<&WorkspaceInfo> {
+        self.workspaces.iter().find(|w| w.open)
+    }
+
+    /// A listed workspace by name, as the daemon names it across restarts.
+    pub fn id_of(&self, name: &str) -> Option<WorkspaceId> {
+        self.workspaces.iter().find(|w| w.name == name).map(|w| w.id)
     }
 
     /// Opens a workspace the daemon listed; one already open, or gone,
@@ -149,6 +213,43 @@ mod tests {
             Some(ClientMsg::OpenWorkspace { workspace: WorkspaceId(2) })
         ));
         assert_eq!(switcher.workspaces()[0].name, "personal");
+    }
+
+    #[test]
+    fn a_workspace_is_made_when_the_daemon_lists_it_open_and_not_before() {
+        let mut switcher = Switcher::default();
+        switcher.receive_workspaces(vec![workspace(1, "default", true)]);
+        let Some(ClientMsg::CreateWorkspace { name }) = switcher.create_workspace("  side ") else { panic!("asked") };
+        assert_eq!(name, "side", "trimmed");
+        assert_eq!(switcher.making(), Some(NewWorkspace { creating: true, refusal: None }));
+        assert!(switcher.create_workspace("again").is_none(), "one at a time");
+        switcher.receive_workspaces(vec![workspace(1, "default", true), workspace(2, "other", false)]);
+        assert!(switcher.making().is_some(), "not the workspace asked for");
+        switcher.receive_workspaces(vec![workspace(1, "default", false), workspace(2, "side", true)]);
+        assert!(switcher.making().is_none(), "listed open: done");
+    }
+
+    #[test]
+    fn a_refused_workspace_keeps_the_ask_open_with_the_reason_and_can_be_tried_again() {
+        let mut switcher = Switcher::default();
+        switcher.receive_workspaces(vec![workspace(1, "default", true)]);
+        assert!(switcher.create_workspace("default").is_some(), "the daemon says no, not the window");
+        switcher.receive_workspaces(vec![workspace(1, "default", true)]);
+        assert!(switcher.making().is_some_and(|m| m.creating), "a list naming it already is not the daemon making it");
+        assert!(switcher.refused("workspace already exists: default"));
+        assert_eq!(switcher.making(), Some(NewWorkspace { creating: false, refusal: Some("workspace already exists: default".into()) }));
+        assert!(!switcher.refused("another"), "nothing waits on it now");
+        assert!(switcher.create_workspace("work").is_some());
+        assert_eq!(switcher.making().unwrap().refusal, None, "a new ask clears the old reason");
+        switcher.forget_making();
+        assert!(switcher.making().is_none());
+    }
+
+    #[test]
+    fn an_empty_name_is_not_asked() {
+        let mut switcher = Switcher::default();
+        assert!(switcher.create_workspace("  ").is_none());
+        assert_eq!(switcher.making().unwrap().refusal.as_deref(), Some("a workspace needs a name"));
     }
 
     #[test]

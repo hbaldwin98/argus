@@ -93,7 +93,7 @@ impl RailView {
         let tokens = *tokens;
         let group = SharedString::from(format!("checkout-row-{id}"));
         let items = match solo {
-            Some(repo) => menus::solo(repo, matches!(lead, Lead::Repo { chosen: true }), checkout, &rail.templates),
+            Some(repo) => menus::solo(repo, matches!(lead, Lead::Repo { chosen: true }), rail.project.as_ref(), checkout, &rail.templates),
             None => menus::checkout(checkout, &rail.templates),
         };
         let (weak, heard) = (cx.weak_entity(), self.heard.clone());

@@ -59,6 +59,14 @@ pub fn add_repository(k: &Known) -> BoxedStrategy<ClientMsg> {
         .boxed()
 }
 
+/// The fixture holds one project, so a combine is refused whatever it names:
+/// `into` named again in `from`, a stranger, or nothing to fold in.
+pub fn combine_projects(k: &Known) -> BoxedStrategy<ClientMsg> {
+    (project(k), proptest::collection::vec(project(k), 0..3), request_id())
+        .prop_map(|(into, from, request_id)| ClientMsg::CombineProjects { into, from, request_id })
+        .boxed()
+}
+
 /// Its path must be absolute, so a relative one is the daemon's refusal,
 /// never a directory made wherever the daemon's working directory is.
 pub fn init_repository(k: &Known) -> BoxedStrategy<ClientMsg> {

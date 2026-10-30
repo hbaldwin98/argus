@@ -180,6 +180,11 @@ mod tests {
                 path: r"C:\src\thing\repo".to_string(),
                 request_id: 5,
             },
+            ClientMsg::CombineProjects {
+                into: ProjectId(1),
+                from: vec![ProjectId(2), ProjectId(3)],
+                request_id: 9,
+            },
             ClientMsg::InitRepository {
                 project: ProjectId(1),
                 path: r"C:\src\thing\fresh".to_string(),

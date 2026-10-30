@@ -44,7 +44,10 @@ use argus_protocol::{
     PASTE_FILE, RENAME_PANE, MOVE_TO_CHECKOUT, REQUEST_REFUSALS, SAVED_VIEWS, CODE, CodeVersion, FILES, BROWSERS, BROWSER_POINTER,
 };
 
-use crate::chrome::add_project::{AddProject, AddProjectGesture, Adding};
+use crate::chrome::add_project::{AddProject, Adding};
+use crate::chrome::add_page::{AddKind, AddProjectGesture};
+use crate::chrome::combine::{Combine, Combining};
+use crate::chrome::combine_page::CombineGesture;
 use crate::dictation::{self, Deliver, Dictation, DictationGesture};
 use crate::chrome::cursor::{RailCursor, Then};
 use crate::browser::Browsers;
@@ -92,6 +95,9 @@ use crate::views;
 use crate::views::refs::{Found, PendingFeature, Target};
 use crate::board::tracker;
 use crate::board::tracker::dialogs::TrackerDialogs;
+use crate::chrome::place::Places;
+
+mod place;
 
 /// What to do with a thing the daemon made for this window, once the tree
 /// holds it.
@@ -111,6 +117,11 @@ enum Made {
     Resumed(page::Resumed),
     /// Put the added project on the rail, closing the dialog that added it.
     SelectProject,
+    /// A repository added into this project: the dialog closes when every one it asked for is held,
+    /// and the project is the one on the rail.
+    AddedRepository(ProjectId),
+    /// Projects folded into this one: the dialog closes and the project is the one on the rail.
+    Combined,
     /// Show the new console in the console, which shows itself for it.
     ShowConsole,
     /// Show the new console on the second side of the split asked for.
@@ -181,10 +192,23 @@ pub struct Session {
     switcher: Switcher,
     /// The add-a-project dialog.
     adding: Adding,
+    /// The combine-projects dialog.
+    combining: Combining,
     /// The command palette is open, so what it can go to is sent.
     palette: bool,
     /// The host was switched since the settings were saved.
     host_unsaved: bool,
+    /// Where the person has been in each host, workspace and project.
+    places: Places,
+    places_unsaved: bool,
+    /// The workspace the window has landed in: unset while the tree and the
+    /// daemon's list of workspaces have yet to agree on which is open.
+    placed: Option<String>,
+    /// The tree changed its projects since the list of workspaces was last
+    /// heard, so the list that comes next describes it.
+    tree_fresh: bool,
+    /// This host's last workspace was asked for, once its daemon spoke.
+    host_visited: bool,
     palette_sent: Sent<page::Palette>,
     /// The Code stage, once opened: it keeps its checkout and file while
     /// another stage is up.
@@ -220,6 +244,11 @@ impl Session {
             loaded: false,
             status: StatusBar::new(settings.chime).on_host(settings.host.clone()),
             host_unsaved: false,
+            places: settings.places,
+            places_unsaved: false,
+            placed: None,
+            tree_fresh: false,
+            host_visited: false,
             project: None,
             repository: None,
             toggled: HashSet::new(),
@@ -260,6 +289,7 @@ impl Session {
             tracker_dialogs: TrackerDialogs::default(),
             switcher: Switcher::with_visited(settings.hosts.clone()),
             adding: Adding::default(),
+            combining: Combining::default(),
             palette: false,
             palette_sent: Sent::default(),
             code: Code::default(),
@@ -300,6 +330,10 @@ impl Session {
         }
         self.status.switch_host(host);
         self.host_unsaved = true;
+        // The last daemon's workspaces say nothing of the next one's.
+        self.switcher.receive_workspaces(Vec::new());
+        self.placed = None;
+        self.host_visited = false;
         self.take_tree(Vec::new());
         self.take_consoles(Vec::new());
         self.loaded = false;
@@ -361,6 +395,10 @@ impl Session {
             if let Some(dialog) = self.recent.get_mut() {
                 dialog.reasked(asked);
             }
+        }
+        self.switcher.forget_making();
+        if let Some(dialog) = self.combining.get_mut() {
+            dialog.reconnected();
         }
         if let Some(dialog) = self.adding.get_mut() {
             dialog.reconnected(self.awaited.name(), &mut self.out);
@@ -426,10 +464,17 @@ impl Session {
                 self.tree.as_mut_slice().apply_telemetry(pane, telemetry);
             }
             ServerMsg::Created { request_id, created } => {
+                if let Some(dialog) = self.adding.get_mut().filter(|_| created.is_some()) {
+                    dialog.made(request_id);
+                }
                 self.awaited.answer(request_id, created);
                 self.settle_made();
             }
-            ServerMsg::Workspaces(workspaces) => self.switcher.receive_workspaces(workspaces),
+            ServerMsg::Workspaces(workspaces) => {
+                self.switcher.receive_workspaces(workspaces);
+                let trusting = std::mem::take(&mut self.tree_fresh);
+                self.settle_place(trusting);
+            }
             ServerMsg::Directories(listing) => {
                 if let Some(dialog) = self.adding.get_mut() {
                     dialog.listed(listing, || self.awaited.name(), &mut self.out);
@@ -532,7 +577,12 @@ impl Session {
     fn refused(&mut self, refusal: RequestRefusal) {
         let id = refusal.request_id;
         self.awaited.answer(id, None);
+        // A workspace is asked without a name for the request, so its refusal names none either.
+        if id == 0 && self.switcher.refused(&refusal.reason) {
+            return;
+        }
         let said = self.adding.get_mut().is_some_and(|d| d.refused(&refusal))
+            || self.combining.get_mut().is_some_and(|d| d.refused(&refusal))
             || self.dialogs.refused(&refusal, &mut self.passing)
             || self.sessions.failed(id, &refusal.reason);
         if said {
@@ -571,6 +621,9 @@ impl Session {
         self.dialogs.follow(&self.tree, || self.awaited.name(), &mut self.out);
         if !self.tree.iter().any(|p| Some(p.id) == self.project) {
             self.project = self.tree.first().map(|p| p.id);
+            // Not where it was noted: the next settle lands it again.
+            self.tree_fresh = true;
+            self.placed = None;
         }
         // A pane that is gone is gone from the daemon's subscriptions too.
         // A console is not in the tree, and is let go by `take_consoles`.
@@ -581,6 +634,7 @@ impl Session {
         self.sessions.forget_resumed(|pane| tree.panes().any(|p| p.id == pane));
         self.settle_made();
         self.open_browsers_beside();
+        self.settle_place(false);
     }
 
     /// Opens each browser that just opened beside its owner, when the owner
@@ -662,6 +716,16 @@ impl Session {
                     self.adding.close();
                     self.choose_project(project);
                 }
+                (Created::Project(project), Made::Combined) => {
+                    self.combining.close();
+                    self.choose_project(project);
+                }
+                (Created::Repository(_), Made::AddedRepository(project)) => {
+                    if self.adding.get_mut().is_some_and(AddProject::settled) {
+                        self.adding.close();
+                        self.choose_project(project);
+                    }
+                }
                 (Created::Pane(pane), Made::ShowConsole) => self.show_console(pane),
                 (Created::Pane(pane), Made::ShowBeside) => self.show_beside(pane),
                 _ => {}
@@ -726,8 +790,16 @@ impl Session {
             Call::OpenWorkspace { workspace } => self.open_workspace(WorkspaceId(workspace)),
             Call::RemoveProject { project } => self.remove_project(ProjectId(project)),
             Call::AnswerRemoveProject { yes } => self.answer_remove_project(yes),
+            Call::CreateWorkspace { name } => self.create_workspace(&name),
+            Call::DismissNewWorkspace => {
+                self.switcher.forget_making();
+                self.finish()
+            }
             Call::OpenAddProject => self.open_add_project(),
+            Call::OpenAddToProject { project, kind } => self.open_add_to_project(ProjectId(project), kind),
             Call::AddProject { gesture } => self.add_project(gesture),
+            Call::OpenCombineProjects { into, tick } => self.open_combine(into.map(ProjectId), tick.map(ProjectId)),
+            Call::CombineProjects { gesture } => self.combine_projects(gesture),
             Call::ToggleRepository { repository } => self.toggle_repository(RepositoryId(repository)),
             Call::ToggleCheckout { checkout } => self.toggle_checkout(CheckoutId(checkout)),
             Call::RailPick { checkout, pane } => {
@@ -1125,10 +1197,13 @@ impl Session {
         }
     }
 
-    /// Lets the Workspace's pane go, as choosing another project does. The
-    /// console's own panes are no project's, and stay.
+    /// Lets the Workspace's panes go, as choosing another project does: the
+    /// first split takes the Workspace's place as each goes, so all of them
+    /// are let go. The console's own panes are no project's, and stay.
     fn hide(&mut self) {
-        self.shown.close(Side::Workspace, &mut self.out);
+        while self.shown.on(Side::Workspace).is_some() {
+            self.shown.close(Side::Workspace, &mut self.out);
+        }
     }
 
     fn resize(&mut self, side: Side, rows: u16, cols: u16) -> Vec<ClientMsg> {
@@ -1589,8 +1664,10 @@ impl Session {
 
     fn choose_project(&mut self, project: ProjectId) {
         if self.project != Some(project) && self.tree.iter().any(|p| p.id == project) {
+            self.remember_place();
             self.project = Some(project);
             self.hide();
+            self.return_to(project);
         }
     }
 
@@ -1599,6 +1676,12 @@ impl Session {
     /// Asks the daemon to open a workspace; the rail follows its tree.
     fn open_workspace(&mut self, workspace: WorkspaceId) -> Vec<ClientMsg> {
         self.out.extend(self.switcher.open_workspace(workspace));
+        self.finish()
+    }
+
+    /// Asks the daemon for a workspace; it opens what it makes, and the rail follows its list.
+    fn create_workspace(&mut self, name: &str) -> Vec<ClientMsg> {
+        self.out.extend(self.switcher.create_workspace(name));
         self.finish()
     }
 
@@ -1615,11 +1698,25 @@ impl Session {
     }
 
     fn open_add_project(&mut self) -> Vec<ClientMsg> {
+        self.open_adding(None)
+    }
+
+    /// The dialog open on a project of the tree: a repository added to it, or made in it.
+    fn open_add_to_project(&mut self, project: ProjectId, kind: AddKind) -> Vec<ClientMsg> {
+        let into = self.tree.iter().any(|p| p.id == project).then_some((project, kind));
+        self.open_adding(into)
+    }
+
+    fn open_adding(&mut self, into: Option<(ProjectId, AddKind)>) -> Vec<ClientMsg> {
         if !self.status.daemon_can(ADD_PROJECT) {
             return self.note("argusd is too old to add a project from here: run `argus server restart`");
         }
         if self.adding.get().is_none() {
-            self.adding.open(AddProject::new(self.awaited.name(), &mut self.out));
+            let dialog = AddProject::new(self.awaited.name(), &mut self.out);
+            self.adding.open(match into {
+                Some((project, kind)) => dialog.for_project(project, kind),
+                None => dialog,
+            });
         }
         self.finish()
     }
@@ -1637,14 +1734,47 @@ impl Session {
             }
             AddProjectGesture::Add { name, skip, folder } => {
                 dialog.set_fields(name, skip, folder, || self.awaited.name(), &mut self.out);
-                let request_id = self.awaited.ask(Made::SelectProject);
-                match dialog.add(request_id) {
-                    Ok(msg) => self.out.push(msg),
-                    // The dialog says why; nothing was asked.
-                    Err(()) => self.awaited.answer(request_id, None),
+                // Asked only once the dialog allows the add, and once for each repository it makes.
+                let awaited = &mut self.awaited;
+                let ask = |into: Option<ProjectId>| awaited.ask(into.map_or(Made::SelectProject, Made::AddedRepository));
+                // The dialog says why when nothing was asked.
+                if let Ok(msgs) = dialog.add(ask) {
+                    self.out.extend(msgs);
                 }
             }
+            AddProjectGesture::AddTo { project } => dialog.add_to(project.map(ProjectId)),
             AddProjectGesture::Close => self.adding.close(),
+        }
+        self.finish()
+    }
+
+    /// The dialog that folds projects into one, open on `into` (the project the rail lists by
+    /// default) with `tick` ticked. An add dialog that linked here is put away: this is what it
+    /// pointed to.
+    fn open_combine(&mut self, into: Option<ProjectId>, tick: Option<ProjectId>) -> Vec<ClientMsg> {
+        if !self.status.daemon_can(argus_protocol::connection::hello::COMBINE_PROJECTS) {
+            return self.note("argusd is too old to combine projects: run `argus server restart`");
+        }
+        let into = into.or(self.project).filter(|into| self.tree.iter().any(|p| p.id == *into));
+        if let Some(into) = into.filter(|_| !self.combining.is_open()) {
+            self.adding.close();
+            self.combining.open(Combine::new(into, tick));
+        }
+        self.finish()
+    }
+
+    fn combine_projects(&mut self, gesture: CombineGesture) -> Vec<ClientMsg> {
+        let Some(dialog) = self.combining.get_mut() else {
+            return self.finish();
+        };
+        match gesture {
+            CombineGesture::Into { project } => dialog.set_into(ProjectId(project)),
+            CombineGesture::Tick { project } => dialog.tick(ProjectId(project)),
+            CombineGesture::Combine => {
+                let awaited = &mut self.awaited;
+                self.out.extend(dialog.combine(&self.tree, || awaited.ask(Made::Combined)));
+            }
+            CombineGesture::Close => self.combining.close(),
         }
         self.finish()
     }
@@ -3397,7 +3527,7 @@ impl Session {
 
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
-        // All eight, not short-circuited: each flag is cleared as it is read.
+        // All nine, not short-circuited: each flag is cleared as it is read.
         let layouts = self.features.take_layouts_changed();
         let agent = self.agents.take_changed();
         let chime = self.status.take_chime_changed();
@@ -3411,10 +3541,12 @@ impl Session {
             | self.extension_views.take_unsaved();
         let chosen = self.choices.take_unsaved() | self.dictation.take_unsaved();
         let host = std::mem::take(&mut self.host_unsaved);
-        (layouts || agent || chime || review || docks || rail || chosen || host).then(|| Settings {
+        let places = std::mem::take(&mut self.places_unsaved);
+        (layouts || agent || chime || review || docks || rail || chosen || host || places).then(|| Settings {
             layouts: self.features.layouts().clone(),
             host: self.status.host().map(str::to_owned),
             hosts: self.switcher.visited().to_vec(),
+            places: self.places.clone(),
             last_agent: self.agents.last().cloned(),
             chime: self.status.chimes(),
             review: self.dialogs.layout(),
@@ -3474,6 +3606,7 @@ impl Session {
 
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
+        self.remember_place();
         let present = self.present();
         // A panel's cell goes with it: the review closing empties its cell. The browsers' cell
         // is present while it is there, waiting for the next browser.
@@ -3598,7 +3731,8 @@ impl Session {
         events.extend(self.tracker_dialogs.take(self.features.board(), &self.tree, scope.as_ref(), now));
         let repository = scope.as_ref().map_or("", |scope| scope.repository_name.as_str());
         events.extend(self.capture.take(repository));
-        events.extend(self.adding.take());
+        events.extend(self.adding.take(&self.tree, self.project));
+        events.extend(self.combining.take(&self.tree));
         let listing = self.palette.then(|| palette::build(self.current_project(), self.features.board(), &self.tree));
         if let Some(listing) = self.palette_sent.take(listing) {
             events.push(Event::Palette(Box::new(listing)));
@@ -3657,6 +3791,7 @@ impl Session {
         self.recent.reload();
         self.tracker_dialogs.reload();
         self.adding.reload();
+        self.combining.reload();
         self.capture.reload();
         self.console.reload();
         self.docks.reload();
@@ -3721,6 +3856,8 @@ impl Session {
             pane.views = self.views.count(PaneId(pane.id));
         }
         rail.removing = self.switcher.removing(&self.tree);
+        rail.new_workspace = self.switcher.making();
+        rail.can_combine = self.status.daemon_can(argus_protocol::connection::hello::COMBINE_PROJECTS);
         rail.width = self.rail_width.get();
         rail.outline_width = self.outline_width.get();
         rail.brief_height = self.brief_height.get();
@@ -6411,7 +6548,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 162] = [
+    const CALLS: [&str; 167] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -6521,6 +6658,11 @@ mod tests {
         r#"{"call":"extension_command","extension":"docker","command":"up","checkout":100,"pane":null}"#,
         r#"{"call":"answer_dialog","dialog":3,"answer":{"picked":"web"}}"#,
         r#"{"call":"extension_mode","panel":"extension:docker/containers","page":true}"#,
+        r#"{"call":"open_add_to_project","project":1,"kind":"repository"}"#,
+        r#"{"call":"create_workspace","name":"side"}"#,
+        r#"{"call":"dismiss_new_workspace"}"#,
+        r#"{"call":"open_combine_projects","into":1,"tick":2}"#,
+        r#"{"call":"combine_projects","gesture":{"on":"tick","project":2}}"#,
         r#"{"call":"toggle_extensions"}"#,
         r#"{"call":"reconnect"}"#,
         r#"{"call":"set_host","host":"devbox"}"#,
@@ -6993,7 +7135,7 @@ mod tests {
 
     // ---- Projects: switch, add and remove ----------------------------------
 
-    fn add_page(s: &mut Session) -> Option<crate::chrome::add_project::AddProjectPage> {
+    fn add_page(s: &mut Session) -> Option<crate::chrome::add_page::AddProjectPage> {
         s.events(0).into_iter().find_map(|e| match e {
             Event::AddProject(page) => Some(*page),
             _ => None,
@@ -7123,6 +7265,194 @@ mod tests {
         assert!(s.call(Call::OpenAddProject).is_empty());
         assert!(s.adding.get().is_none());
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("too old"))));
+    }
+
+    #[test]
+    fn a_new_workspace_is_asked_and_is_done_when_the_daemon_lists_it_open() {
+        let mut s = session(Hello::this_build());
+        let workspace = |id, name: &str, open| argus_protocol::WorkspaceInfo { id: WorkspaceId(id), name: name.into(), projects: 0, panes: 0, open };
+        s.receive(ServerMsg::Workspaces(vec![workspace(1, "default", true)]));
+        let sent = s.call(Call::CreateWorkspace { name: " side ".into() });
+        assert!(matches!(sent.as_slice(), [ClientMsg::CreateWorkspace { name }] if name == "side"));
+        assert!(s.rail(0).new_workspace.is_some_and(|n| n.creating), "asked, not made");
+        s.receive(ServerMsg::Workspaces(vec![workspace(1, "default", false), workspace(2, "side", true)]));
+        assert!(s.rail(0).new_workspace.is_none(), "the daemon listed it open");
+    }
+
+    #[test]
+    fn a_refused_workspace_is_said_in_the_dialog_and_not_under_it() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::CreateWorkspace { name: "default".into() });
+        s.receive(refusal(0, "workspace already exists: default", false));
+        let rail = s.rail(0);
+        assert_eq!(rail.new_workspace.map(|n| (n.creating, n.refusal)), Some((false, Some("workspace already exists: default".into()))));
+        assert!(!s.events(0).iter().any(|e| matches!(e, Event::Notice { .. })));
+        let sent = s.call(Call::CreateWorkspace { name: "work".into() });
+        assert_eq!(sent.len(), 1, "and it can be tried again");
+        s.call(Call::DismissNewWorkspace);
+        assert!(s.rail(0).new_workspace.is_none());
+    }
+
+    #[test]
+    fn an_older_daemons_bare_error_is_a_new_workspaces_refusal() {
+        let mut s = session(Hello { capabilities: vec![ADD_PROJECT.into()], ..Hello::this_build() });
+        s.call(Call::CreateWorkspace { name: "default".into() });
+        s.receive(ServerMsg::Error { message: "workspace already exists: default".into() });
+        assert_eq!(s.rail(0).new_workspace.and_then(|n| n.refusal).as_deref(), Some("workspace already exists: default"));
+    }
+
+
+    fn combining(s: &mut Session) -> Option<crate::chrome::combine_page::CombinePage> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::Combine(page) => Some(*page),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn combining_is_offered_and_opened_only_for_a_daemon_that_lists_it() {
+        let mut s = session(Hello { capabilities: Vec::new(), ..Hello::this_build() });
+        assert!(!s.rail(0).can_combine);
+        let sent = s.call(Call::OpenCombineProjects { into: None, tick: None });
+        assert!(sent.is_empty());
+        assert!(combining(&mut s).is_none(), "an older daemon is told so and nothing opens");
+        assert!(s.events(0).iter().all(|e| !matches!(e, Event::Combine(_))));
+        let mut s = session(Hello { capabilities: vec![argus_protocol::connection::hello::COMBINE_PROJECTS.into()], ..Hello::this_build() });
+        assert!(s.rail(0).can_combine);
+        s.call(Call::OpenCombineProjects { into: None, tick: Some(2) });
+        let page = combining(&mut s).expect("open");
+        assert_eq!((page.into.map(|p| p.id), page.rows.iter().map(|r| r.ticked).collect::<Vec<_>>()), (Some(1), vec![true]), "into the project on the rail");
+    }
+
+    #[test]
+    fn projects_are_combined_when_the_daemon_answers_and_the_window_stays_on_the_project_folded_into() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::SelectProject { project: 2 });
+        s.call(Call::OpenCombineProjects { into: Some(1), tick: Some(2) });
+        let sent = s.call(Call::CombineProjects { gesture: CombineGesture::Combine });
+        let [ClientMsg::CombineProjects { into, from, request_id }] = sent.as_slice() else { panic!("{sent:?}") };
+        assert_eq!((*into, from.as_slice()), (ProjectId(1), [ProjectId(2)].as_slice()));
+        assert!(combining(&mut s).is_some_and(|p| p.combining), "asked, not done");
+        assert_eq!(s.rail(0).project.map(|p| p.id), Some(2), "nothing is predicted");
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Project(ProjectId(1))) });
+        s.receive(with_tree(tree()[..1].to_vec()));
+        assert!(combining(&mut s).is_some_and(|p| !p.open), "the dialog goes with the answer");
+        assert_eq!(s.rail(0).project.map(|p| p.id), Some(1));
+    }
+
+    #[test]
+    fn a_refusal_to_combine_is_said_in_the_dialog_which_stays_open() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::OpenCombineProjects { into: Some(1), tick: Some(2) });
+        let sent = s.call(Call::CombineProjects { gesture: CombineGesture::Combine });
+        let [ClientMsg::CombineProjects { request_id, .. }] = sent.as_slice() else { panic!("{sent:?}") };
+        s.receive(refusal(*request_id, "project 2 is being removed", false));
+        let events = s.events(0);
+        assert!(!events.iter().any(|e| matches!(e, Event::Notice { .. })));
+        let page = events.into_iter().find_map(|e| if let Event::Combine(page) = e { Some(*page) } else { None }).expect("sent");
+        assert_eq!((page.open, page.combining, page.refusal.as_deref()), (true, false, Some("project 2 is being removed")));
+        assert!(page.rows[0].ticked);
+    }
+
+    #[test]
+    fn closing_the_combine_dialog_asks_nothing() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::OpenCombineProjects { into: Some(1), tick: Some(2) });
+        combining(&mut s);
+        assert!(s.call(Call::CombineProjects { gesture: CombineGesture::Close }).is_empty());
+        assert!(combining(&mut s).is_some_and(|p| !p.open));
+    }
+    /// A session with the dialog open on a project, `/home/work` browsed and `found` its preview.
+    fn adding_into(project: u64, kind: AddKind, found: &[&str]) -> Session {
+        let mut s = session(Hello::this_build());
+        let sent = s.call(Call::OpenAddToProject { project, kind });
+        let Some(ClientMsg::ListDirectories { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        let sent = s.receive(ServerMsg::Directories(argus_protocol::DirListing {
+            request_id: *request_id,
+            path: "/home/work".into(),
+            parent: Some("/home".into()),
+            entries: Vec::new(),
+            error: None,
+        }));
+        let Some(ClientMsg::PreviewProject { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        s.receive(ServerMsg::ProjectPreview(argus_protocol::ProjectPreview {
+            request_id: *request_id,
+            path: "/home/work".into(),
+            repositories: found.iter().map(|r| r.to_string()).collect(),
+            depth: 8,
+            always_skipped: Vec::new(),
+            error: None,
+        }));
+        s
+    }
+
+    fn add_now(s: &mut Session) -> Vec<ClientMsg> {
+        s.call(Call::AddProject { gesture: AddProjectGesture::Add { name: String::new(), skip: String::new(), folder: String::new() } })
+    }
+
+    #[test]
+    fn a_repository_added_to_a_project_goes_into_it_and_the_dialog_waits_for_the_tree() {
+        let mut s = adding_into(2, AddKind::Repository, &[""]);
+        let page = add_page(&mut s).unwrap();
+        assert_eq!(page.into.map(|p| p.name), Some("work".into()));
+        let sent = add_now(&mut s);
+        let [ClientMsg::AddRepository { project: ProjectId(2), path, request_id }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        assert_eq!(path, "/home/work");
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Repository(RepositoryId(21))) });
+        assert!(s.adding.get().is_some(), "no tree holds it yet");
+        let mut grown = tree();
+        grown[1].repositories.push(repository(21, "work", None, vec![checkout(210, "main", true, vec![])]));
+        s.receive(with_tree(grown));
+        assert!(add_page(&mut s).is_some_and(|p| !p.open), "the dialog closes");
+        assert_eq!(s.rail(0).project.map(|p| p.id), Some(2));
+    }
+
+    #[test]
+    fn a_folder_added_to_a_project_adds_each_repository_and_closes_after_the_last() {
+        let mut s = adding_into(1, AddKind::Folder, &["web", "infra/k8s"]);
+        let sent = add_now(&mut s);
+        let paths: Vec<_> = sent.iter().map(|m| match m {
+            ClientMsg::AddRepository { project: ProjectId(1), path, .. } => path.clone(),
+            other => panic!("{other:?}"),
+        }).collect();
+        assert_eq!(paths, ["/home/work/web", "/home/work/infra/k8s"]);
+        let ids: Vec<_> = sent.iter().map(|m| if let ClientMsg::AddRepository { request_id, .. } = m { *request_id } else { 0 }).collect();
+        let mut grown = tree();
+        for (n, id) in ids.iter().enumerate() {
+            s.receive(ServerMsg::Created { request_id: *id, created: Some(Created::Repository(RepositoryId(30 + n as u64))) });
+        }
+        grown[0].repositories.push(repository(30, "web", None, vec![checkout(300, "web", true, vec![])]));
+        s.receive(with_tree(grown.clone()));
+        assert!(s.adding.get().is_some(), "one repository is not in the tree yet");
+        grown[0].repositories.push(repository(31, "k8s", None, vec![checkout(310, "k8s", true, vec![])]));
+        s.receive(with_tree(grown));
+        assert!(s.adding.get().is_none());
+    }
+
+    #[test]
+    fn a_refused_repository_keeps_the_dialog_with_the_reason() {
+        let mut s = adding_into(1, AddKind::New, &[]);
+        let sent = s.call(Call::AddProject { gesture: AddProjectGesture::Add { name: String::new(), skip: String::new(), folder: "fresh".into() } });
+        let [ClientMsg::InitRepository { project: ProjectId(1), path, request_id }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        assert_eq!(path, "/home/work/fresh");
+        s.receive(refusal(*request_id, "that path is not absolute", false));
+        let page = add_page(&mut s).unwrap();
+        assert!(page.open && !page.adding);
+        assert_eq!(page.refusal.as_deref(), Some("that path is not absolute"));
+    }
+
+    #[test]
+    fn the_dialog_opened_for_no_such_project_adds_a_project_of_its_own() {
+        let mut s = adding_into(99, AddKind::Repository, &[""]);
+        assert!(add_page(&mut s).unwrap().into.is_none());
     }
 
     #[test]
