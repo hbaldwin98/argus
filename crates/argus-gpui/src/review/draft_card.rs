@@ -90,6 +90,8 @@ impl Render for DraftCard {
         let tokens = *Tokens::global(cx);
         let id = self.draft.id;
         let head = h_flex()
+            .min_w_0()
+            .overflow_hidden()
             .gap(rem(tokens.sp_8))
             .items_center()
             .px(rem(tokens.sp_12))
@@ -98,9 +100,10 @@ impl Render for DraftCard {
             .border_color(tokens.line)
             .typed(tokens.type_small)
             .text_color(tokens.fg_faint)
-            .child(div().text_color(tokens.fg).weighted(tokens.weight_semibold).child("You"))
+            .child(div().flex_none().text_color(tokens.fg).weighted(tokens.weight_semibold).child("You"))
             .child(
                 div()
+                    .flex_none()
                     .px(rem(tokens.sp_6))
                     .rounded(rem(tokens.r_pill))
                     .bg(tokens.accent.opacity(0.14))
@@ -108,8 +111,8 @@ impl Render for DraftCard {
                     .text_size(rem(tokens.fs_xs))
                     .child("Pending"),
             )
-            .child(div().font_family(SharedString::from(tokens.font_mono)).text_size(rem(tokens.fs_xs)).child(SharedString::from(self.draft.at.clone())))
-            .child(div().flex_1())
+            // The place gives way, cut with an ellipsis, so Edit and Delete stay whole at any width.
+            .child(div().flex_1().min_w_0().truncate().font_family(SharedString::from(tokens.font_mono)).text_size(rem(tokens.fs_xs)).child(SharedString::from(self.draft.at.clone())))
             .when(self.editing.is_none(), |head| {
                 head.child(
                     button(("draft-edit", id as usize), "Edit", Look::Plain, true, &tokens)

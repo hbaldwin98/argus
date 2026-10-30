@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, prelude::*, AnyElement, App, Context, Entity, FocusHandle, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, Role,
+    div, prelude::*, relative, AnyElement, App, Context, Entity, FocusHandle, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, Role,
     Window,
 };
 
@@ -214,6 +214,8 @@ pub fn side(split: &Entity<Split>, id: &'static str, content: impl IntoElement, 
         .flex_shrink_0()
         .h_full()
         .w(rem(split.read(cx).width()))
+        // A column beside a file never takes more than two fifths of it, so a narrow window keeps the file whole.
+        .max_w(relative(0.4))
         .border_r_1()
         .border_color(tokens.line)
         .child(content)

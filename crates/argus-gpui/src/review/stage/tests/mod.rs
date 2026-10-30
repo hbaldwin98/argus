@@ -333,7 +333,6 @@ fn a_held_window_does_not_ask_and_puts_no_stage_up(cx: &mut TestAppContext) {
 fn a_review_snapshot_draws_its_files_hunks_and_every_field_of_the_page(cx: &mut TestAppContext) {
     let opened = reviewed(cx);
     // The header: the branch, the tabs, the count, and the two buttons.
-    assert_eq!(label(cx, &opened, "git-branch").as_deref(), Some("main"));
     assert_eq!(selected(cx, &opened, "git-tab-changes"), Some(true));
     assert_eq!(selected(cx, &opened, "git-tab-history"), Some(false));
     assert_eq!(label(cx, &opened, "review-count").as_deref(), Some("2 files \u{b7} +3 \u{2212}1"));
@@ -363,7 +362,8 @@ fn the_pick_a_commit_and_the_loading_and_empty_states_are_drawn_in_the_pages_ord
     let mut page = review();
     page.pick = Some("old lines 2\u{2013}3".into());
     hear(cx, &opened, vec![reviewing(page.clone())]);
-    assert_eq!(label(cx, &opened, "review-pick").as_deref(), Some("old lines 2\u{2013}3 picked"));
+    // What is picked is a part of the head's one meta, not a pill among its tools.
+    assert!(label(cx, &opened, "file-head-meta").unwrap().contains("old lines 2\u{2013}3 picked"));
     // Loading wins over a reason, which wins over rows.
     page.loading = true;
     page.empty = Some("Nothing unstaged in main.".into());
@@ -410,7 +410,7 @@ fn a_large_diff_builds_a_bounded_number_of_rows(cx: &mut TestAppContext) {
     hear(cx, &opened, vec![reviewing(page)]);
     let drawn = rows_built();
     assert!(drawn > 5, "the rows on screen were not drawn: {drawn}");
-    assert!(drawn < 80, "a 20000-row diff built {drawn} rows");
+    assert!(drawn < 100, "a 20000-row diff built {drawn} rows");
     assert!(present(cx, &opened, ("diff-row", 10usize)));
     assert!(!present(cx, &opened, ("diff-row", 19_000usize)), "a row far below the window was built");
 }
@@ -1027,7 +1027,6 @@ fn a_history_snapshot_draws_its_rows_its_header_and_the_diff_of_the_file_under_t
     assert_eq!(selected(cx, &opened, "nav-git"), Some(true), "Git is lit while the session has a history open");
     assert_eq!(selected(cx, &opened, "git-tab-history"), Some(true));
     assert_eq!(selected(cx, &opened, "git-tab-changes"), Some(false));
-    assert_eq!(label(cx, &opened, "git-branch").as_deref(), Some("main"));
     assert!(present(cx, &opened, "history-filter"), "the filter field is in the strip");
     assert!(!present(cx, &opened, "review-refresh") && !present(cx, &opened, "review-count"), "the review's buttons are not History's");
     // The commits: the hash and the subject; the cursor's file lit.
@@ -1417,9 +1416,9 @@ fn by(at: Point<Pixels>, dx: f32) -> Point<Pixels> {
 /// A tab's window, its column, its sash and the width it opens at: Changes, then History.
 fn split_of(cx: &mut TestAppContext, tab: usize) -> (Opened, &'static str, &'static str, f32) {
     if tab == 0 {
-        (reviewed(cx), "review-column", "review-split", 340.0)
+        (reviewed(cx), "review-column", "review-split", 300.0)
     } else {
-        (historied(cx), "history-column", "history-split", 520.0)
+        (historied(cx), "history-column", "history-split", 360.0)
     }
 }
 

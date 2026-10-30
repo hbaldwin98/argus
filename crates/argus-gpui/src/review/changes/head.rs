@@ -30,7 +30,7 @@ use crate::theme::Tokens;
 
 /// Below this many CSS pixels across the diff, its lesser tools are a menu: the full set, with the
 /// review button and the stage button, is about 540px and the head must stay one line.
-pub const TOOLS_FOLD: f32 = 760.0;
+pub const TOOLS_FOLD: f32 = 740.0;
 
 /// How many hunks the diff on screen holds.
 pub fn hunks(page: &ReviewPage) -> usize {
@@ -101,24 +101,6 @@ impl Changes {
             bar.push(tool("review-open", "Open in editor", Some("E"), Action::OpenEditor, cx).into_any_element());
         }
         bar.extend(self.review_button(page, tokens, cx).map(IntoElement::into_any_element));
-        // `.ktag`: what is picked, as a pill.
-        // Folded, there is no room for it beside the stage button: the head stays one line.
-        bar.extend(page.pick.clone().filter(|_| !fold).map(|pick| {
-            div()
-                .id("review-pick")
-                .test_support()
-                .aria_label(SharedString::from(format!("{pick} picked")))
-                .flex_shrink_0()
-                .px(rem(tokens.sp_8))
-                .rounded(rem(tokens.r_pill))
-                .border_1()
-                .border_color(tokens.line_strong)
-                .typed(tokens.type_small)
-                .text_color(tokens.fg_muted)
-                .whitespace_nowrap()
-                .child(SharedString::from(format!("{pick} picked")))
-                .into_any_element()
-        }));
         if let Some(((words, staged), file)) = stage_words(page).zip(file) {
             let path = file.path.clone();
             bar.push(
@@ -137,7 +119,14 @@ impl Changes {
             name,
             dir,
             counts: file.map(|f| (f.added, f.removed)),
-            meta: (n > 0).then(|| SharedString::from(format!("{n} hunk{}", if n == 1 { "" } else { "s" }))),
+            // What is picked is a part of the one meta, not a tool: a pill among the tools pushed
+            // the stage button off the line.
+            meta: match (n > 0, page.pick.as_ref()) {
+                (true, Some(pick)) => Some(SharedString::from(format!("{n} hunk{} \u{b7} {pick} picked", if n == 1 { "" } else { "s" }))),
+                (true, None) => Some(SharedString::from(format!("{n} hunk{}", if n == 1 { "" } else { "s" }))),
+                (false, Some(pick)) => Some(SharedString::from(format!("{pick} picked"))),
+                (false, None) => None,
+            },
         };
         self.with_back(back, file_head("review-diff-head", &head, bar, tokens), tokens, cx)
     }

@@ -62,7 +62,7 @@ use crate::theme::Tokens;
 const RULER: Ids = Ids { ruler: "review-ruler", band: "review-ruler-view", mark: "review-mark", label: "Where this file changed" };
 
 /// The width the list column opens at (`--side`), and how far the person may drag it.
-const FILES: f32 = 340.0;
+const FILES: f32 = 300.0;
 const FILES_MIN: f32 = 240.0;
 const FILES_MAX: f32 = 520.0;
 

@@ -38,7 +38,7 @@ use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 /// The width the commits open at, and how far the person may drag it.
-const COMMITS: f32 = 520.0;
+const COMMITS: f32 = 360.0;
 const COMMITS_MIN: f32 = 300.0;
 const COMMITS_MAX: f32 = 820.0;
 

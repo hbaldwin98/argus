@@ -56,7 +56,7 @@ fn a_working_review_lists_both_sides_and_the_commit_box_and_says_what_is_in_both
     assert_eq!(selected(cx, &opened, ("review-change", 1usize)), Some(false), "the same file in the other list is not lit");
     assert!(present(cx, &opened, ("review-change-partly", 1usize)), "partly staged");
     assert!(present(cx, &opened, "review-commit-box"));
-    assert_eq!(label(cx, &opened, "review-commit").as_deref(), Some("Commit 2 staged files"));
+    assert_eq!(label(cx, &opened, "review-commit").as_deref(), Some("Commit 2 files"));
 }
 
 #[gpui_kit::test]

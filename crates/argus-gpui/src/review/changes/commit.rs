@@ -9,9 +9,9 @@ use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_desktop_core::review::staging::StagingPage;
 use gpui_kit::component::input::{Textarea, TextareaState};
-use gpui_kit::component::v_flex;
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{prelude::*, Context, Entity, Focusable as _, SharedString, Window};
+use gpui_kit::{div, prelude::*, Context, Entity, Focusable as _, SharedString, Window};
 
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
@@ -34,14 +34,14 @@ pub fn words(page: &StagingPage, staged: usize) -> String {
     match (page.committing, staged) {
         (true, _) => "Committing\u{2026}".to_owned(),
         (false, 0) => "Stage a file to commit".to_owned(),
-        (false, 1) => "Commit 1 staged file".to_owned(),
-        (false, n) => format!("Commit {n} staged files"),
+        (false, 1) => "Commit 1 file".to_owned(),
+        (false, n) => format!("Commit {n} files"),
     }
 }
 
 impl CommitBox {
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let text = cx.new(|cx| TextareaState::new(window, cx).rows(3).placeholder("Message (Ctrl+Enter to commit)"));
+        let text = cx.new(|cx| TextareaState::new(window, cx).rows(3).placeholder("Commit message"));
         let asking = cx.weak_entity();
         let field = Fields::of(cx).register_place(window, text.focus_handle(cx), Place::Writing, move |action, _, cx| match action {
             Action::Save => asking.update(cx, |commit, cx| commit.commit(cx)).is_ok(),
@@ -75,31 +75,45 @@ impl Render for CommitBox {
             let staged = page.sections.iter().find(|s| s.side == "staged").map_or(0, |s| s.files.len());
             page.staging.clone().map(|staging| (staging, staged))
         }) else {
-            return gpui_kit::div().into_any_element();
+            return div().into_any_element();
         };
         let said = words(&staging, staged);
         let ready = staging.can_commit && !staging.committing;
-        // `.commit`: the message and the button under it, over a hairline at the column's foot.
+        // `.commit` (Git.dc.html): one bordered box holding the message and, under a hairline, the
+        // key that commits at the left and the compact button at the right.
+        let hint = if cfg!(target_os = "macos") { "Cmd Enter" } else { "Ctrl Enter" };
+        let action = if ready {
+            button("review-commit", said.clone(), Look::Primary, true, &tokens)
+                .justify_center()
+                .child(SharedString::from(said))
+                .on_click(cx.listener(|this, _, _, cx| this.commit(cx)))
+                .into_any_element()
+        } else {
+            inert("review-commit", said.clone(), Look::Plain, true, &tokens).bg(tokens.fill).text_color(tokens.fg_fainter).justify_center().child(SharedString::from(said)).into_any_element()
+        };
         v_flex()
             .id("review-commit-box")
             .test_support()
             .flex_shrink_0()
-            .gap(rem(tokens.sp_8))
-            .p(rem(10.0))
-            .border_t_1()
+            .m(rem(10.0))
+            .border_1()
             .border_color(tokens.line)
-            .child(Textarea::new(&self.text).w_full().aria_label("Commit message"))
-            .child(if ready {
-                button("review-commit", said.clone(), Look::Primary, false, &tokens)
-                    .w_full()
-                    .h(rem(tokens.control_h))
-                    .justify_center()
-                    .child(SharedString::from(said))
-                    .on_click(cx.listener(|this, _, _, cx| this.commit(cx)))
-                    .into_any_element()
-            } else {
-                inert("review-commit", said.clone(), Look::Plain, false, &tokens).w_full().h(rem(tokens.control_h)).bg(tokens.fill).text_color(tokens.fg_fainter).justify_center().child(SharedString::from(said)).into_any_element()
-            })
+            .rounded(rem(tokens.r_md))
+            .bg(tokens.bg_sunken)
+            .overflow_hidden()
+            .child(Textarea::new(&self.text).appearance(false).bordered(false).w_full().aria_label("Commit message"))
+            .child(
+                h_flex()
+                    .gap(rem(tokens.sp_8))
+                    .items_center()
+                    .py(rem(tokens.sp_6))
+                    .pl(rem(tokens.sp_12))
+                    .pr(rem(tokens.sp_6))
+                    .border_t_1()
+                    .border_color(tokens.line)
+                    .child(div().flex_1().min_w_0().font_family(SharedString::from(tokens.font_mono)).text_size(rem(tokens.fs_xs)).text_color(tokens.fg_faint).child(hint))
+                    .child(action),
+            )
             .into_any_element()
     }
 }
@@ -115,8 +129,8 @@ mod tests {
     #[test]
     fn the_button_says_what_it_commits_or_that_it_is_committing() {
         assert_eq!(words(&page(false), 0), "Stage a file to commit");
-        assert_eq!(words(&page(false), 1), "Commit 1 staged file");
-        assert_eq!(words(&page(false), 3), "Commit 3 staged files");
+        assert_eq!(words(&page(false), 1), "Commit 1 file");
+        assert_eq!(words(&page(false), 3), "Commit 3 files");
         assert_eq!(words(&page(true), 3), "Committing\u{2026}");
     }
 }

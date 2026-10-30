@@ -222,7 +222,6 @@ impl Render for GitStage {
             .bg(tokens.bg_surface)
             .text_color(tokens.fg_muted)
             .when(held,|stage| stage.opacity(0.5))
-            .child(self.strip(tab, &tokens, cx))
             .child(div().id("git-body").flex_1().min_h_0().child(body))
     }
 }

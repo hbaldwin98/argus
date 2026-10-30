@@ -83,12 +83,25 @@ impl DiffView {
             .when_some(self.ticks.filter(|_| shape::shape(row) == Shape::Hunk), |band, ticks| {
                 let number = row.row;
                 let words = if ticks.staged { "Unstage hunk" } else { "Stage hunk" };
-                band.child(div().flex_1()).child(
-                    crate::kit::tools::primary_small(("diff-hunk-stage", ix), words, tokens)
-                        .on_mouse_down(MouseButton::Left, cx.listener(move |_, _: &MouseDownEvent, _, cx| {
-                            cx.stop_propagation();
-                            cx.emit(DiffEvent::Hunk { row: number });
-                        })),
+                // The row is as wide as the widest line, so the button is held at the pane's right
+                // edge, moved back by the sideways scroll as the gutter is, on a patch of the band
+                // that covers what would run under it.
+                let shift = -self.scroll.offset().x;
+                let pane = self.pane.get();
+                let button = crate::kit::tools::primary_small(("diff-hunk-stage", ix), words, tokens).on_mouse_down(MouseButton::Left, cx.listener(move |_, _: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    cx.emit(DiffEvent::Hunk { row: number });
+                }));
+                band.relative().child(
+                    h_flex()
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .left(shift)
+                        .w(if pane > gpui_kit::px(0.0) { pane.into() } else { gpui_kit::relative(1.0) })
+                        .justify_end()
+                        .items_center()
+                        .child(div().h_full().flex().items_center().pl(rem(tokens.sp_12)).pr(rem(tokens.sp_12)).bg(tokens.bg_chrome).child(button)),
                 )
             })
             .into_any_element()

@@ -132,11 +132,12 @@ impl CommentBox {
     /// none lit because the one chosen has gone, are each a chip.
     fn recipients(&self, page: &CommentPage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let lit = page.recipients.iter().find(|r| Some(r.pane) == page.to);
-        let label = div().typed(tokens.type_small).text_color(tokens.fg_muted).child("Send to");
+        let label = div().flex_shrink_0().whitespace_nowrap().typed(tokens.type_small).text_color(tokens.fg_muted).child("Send to");
         // `.glyph`: the diamond that marks an agent, in the accent.
         let diamond = |tokens: &Tokens| div().flex_shrink_0().text_color(tokens.accent).child("\u{25c6}");
         match lit {
             Some(lit) if page.recipients.len() == 1 => h_flex()
+                .min_w_0()
                 .gap(rem(tokens.sp_8))
                 .items_center()
                 .child(label)
@@ -145,11 +146,13 @@ impl CommentBox {
                         .id("comment-recipient")
                         .test_support()
                         .aria_label(SharedString::from(lit.title.clone()))
+                        .min_w_0()
                         .gap(rem(tokens.sp_4))
                         .text_color(tokens.fg)
                         .weighted(tokens.weight_semibold)
                         .child(diamond(tokens))
-                        .child(SharedString::from(lit.title.clone())),
+                        // The target gives way, with an ellipsis, before Cancel or the send button do.
+                        .child(div().min_w_0().truncate().child(SharedString::from(lit.title.clone()))),
                 )
                 .into_any_element(),
             // A row of chips of its own, wrapping as the page's `.actions` do.
@@ -221,7 +224,7 @@ impl Render for CommentBox {
                 h_flex()
                     .gap(rem(tokens.sp_8))
                     .items_center()
-                    .child(div().flex_1().min_w_0().when(said_alone(&page), |slot| slot.child(self.recipients(&page, &tokens, cx))))
+                    .child(div().flex_1().min_w_0().overflow_hidden().when(said_alone(&page), |slot| slot.child(self.recipients(&page, &tokens, cx))))
                     .child(
                         button("comment-cancel", "Cancel", Look::Plain, false, &tokens)
                             .child("Cancel")

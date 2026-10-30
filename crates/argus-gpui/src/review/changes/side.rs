@@ -254,12 +254,6 @@ impl Files {
                 ))
                 .into_any_element();
         }
-        let files: usize = {
-            let mut paths: Vec<&str> = page.sections.iter().flat_map(|s| s.files.iter().map(|f| f.file.path.as_str())).collect();
-            paths.sort_unstable();
-            paths.dedup();
-            paths.len()
-        };
         let mode = |id: &'static str, words: &'static str, glyph: Glyph, tree: bool, on: bool, cx: &mut Context<Self>| {
             segment::switch_option(id, Role::RadioButton, on, tokens)
                 .tooltip(tip(words))
@@ -271,26 +265,11 @@ impl Files {
                 }))
         };
         let checkout = self.checkout;
-        let all = page.tree.as_ref().filter(|tree| tree.listed).map_or_else(|| "\u{2026}".to_owned(), |tree| tree.files.len().to_string());
-        let tab = |id: &'static str, words: &'static str, n: String, files: bool, cx: &mut Context<Self>| {
-            segment::switch_option(id, Role::Tab, checkout == files, tokens)
-                .gap(rem(tokens.sp_6))
-                .child(words)
-                .child(segment::count(n, tokens))
-                .on_click(cx.listener(move |this, _, window, cx| this.show_tab(files, window, cx)))
-        };
         let changed = self.changed_only;
         let find = if checkout { "Find a file in the checkout" } else { "Find a changed file" };
-        // `.side-head`: what the list shows, then the find field with the switch of how it lists.
-        head.when(page.tree.is_some(), |head| {
-            head.child(
-                row.child(
-                    segment::track("review-list-what", "What the list shows", Role::TabList, tokens)
-                        .child(tab("review-list-changes", "Changes", files.to_string(), false, cx))
-                        .child(tab("review-list-files", "Files", all, true, cx)),
-                ),
-            )
-        })
+        // `.side-head`: the find field with the switch of how it lists. Which side of the review is
+        // shown is the title bar's tab; the checkout's files are Code's.
+        head
         .child(
             h_flex()
                 .gap(rem(tokens.sp_8))
@@ -321,19 +300,6 @@ impl Files {
                 }),
         )
         .into_any_element()
-    }
-
-    /// A tab pressed: the Files tab asks for the checkout's files again each time it is shown.
-    fn show_tab(&mut self, files: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if files {
-            self.ask(Call::ReviewFiles, cx);
-        }
-        if self.checkout != files {
-            self.checkout = files;
-            let words = if files { "Find a file in the checkout" } else { "Find a changed file" };
-            self.find.update(cx, |find, cx| find.set_placeholder(words, window, cx));
-        }
-        cx.notify();
     }
 
     /// The field that jumps among the files, over them while it is open. The page's `Changed

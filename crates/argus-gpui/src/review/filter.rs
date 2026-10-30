@@ -110,6 +110,7 @@ impl Render for Filter {
                     .id("history-filter-field")
                     .small()
                     .h(rem(tokens.control_h))
+                    .prefix(crate::kit::icons::Glyph::Search.at(14.0).text_color(tokens.fg_faint))
                     .aria_label("Filter commits by subject, hash or author"),
             )
     }

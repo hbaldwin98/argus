@@ -1,102 +1,75 @@
-//! The strip above the tab: the branch, the refresh and close buttons, and the filter field while
-//! History is the tab. The tabs and the files' count are the title bar's (`tabs`).
+//! The Git stage's buttons in the title bar: Refresh while Changes is the tab, the way back beside
+//! the work, and Close. The tabs and the files' count are `tabs`; the branch is the crumb's. The
+//! stage has no band of its own: the file head sits directly under the title bar, as Code's does.
 
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{DockGesture, Panel};
-use gpui_kit::component::{h_flex, ActiveTheme as _};
-use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, Context, SharedString};
+use gpui_kit::component::h_flex;
+use gpui_kit::{prelude::*, AnyElement, App, Entity, WeakEntity, Window};
 
 use super::GitStage;
-use crate::kit::tip::tip;
+use crate::connection::heard::Heard;
 use crate::kit::icon_button::icon_button;
 use crate::kit::icons::Glyph;
+use crate::kit::tip::tip;
 use crate::review::entry::Tab;
-use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
-impl GitStage {
-    /// The strip above the tab: the branch and the buttons.
-    pub(super) fn strip(&self, tab: Tab, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let heard = self.heard.read(cx);
-        let (review, history) = (heard.review.clone(), heard.history.clone());
-        // Only what is open has a panel to go back as; beside the work already, the dock's head
-        // holds the way to the stage.
-        let heard_open = (review.is_some() || history.is_some()) && !heard.changes_beside();
-        let branch = match tab {
-            Tab::Changes => review.as_ref().map(|page| (page.branch.clone(), page.name.clone())),
-            Tab::History => history.as_ref().map(|page| (page.branch.clone(), page.name.clone())),
-        };
-        let changes_on = tab == Tab::Changes;
-        let mono = cx.theme().mono_font_family.clone();
-        let close_label = if changes_on { "Close the review" } else { "Close the history" };
-        h_flex()
-            .id("git-strip")
-            .flex_shrink_0()
-            .h(rem(tokens.sp_44))
-            .px(rem(tokens.sp_24))
-            .gap(rem(tokens.sp_12))
-            .items_center()
-            .border_b_1()
-            .border_color(tokens.line)
-            // `.chip-branch`: the branch once, as a pill, in the reference colour.
-            .when_some(branch, |strip, (branch, name)| {
-                strip.child(
-                    h_flex()
-                        .id("git-branch")
-                        .test_support()
-                        .aria_label(SharedString::from(name.clone()))
-                        .tooltip(tip(name.clone()))
-                        .flex_shrink_0()
-                        .h(rem(tokens.icon_btn))
-                        .px(rem(tokens.sp_8))
-                        .gap(rem(tokens.sp_6))
-                        .items_center()
-                        .rounded(rem(tokens.r_pill))
-                        .border_1()
-                        .border_color(tokens.line_strong)
-                        .text_color(tokens.ref_)
-                        .font_family(mono)
-                        .text_size(rem(tokens.fs_md))
-                        .child(Glyph::Branch.at(14.0))
-                        .child(SharedString::from(branch)),
-                )
-            })
-            // `.meta`: what the history lists, beside the tabs as the page's head says it.
-            .when(!changes_on && history.is_some(), |strip| {
-                strip.child(div().typed(tokens.type_small).text_color(tokens.fg_muted).child("newest 100 on HEAD"))
-            })
-            .child(div().flex_1())
-            .when(changes_on && review.is_some(), |strip| {
-                strip.child(
-                    icon_button("review-refresh", "Refresh", false, tokens)
-                        .tooltip(tip("Refresh"))
-                        .child(Glyph::Refresh.at(14.0))
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            // A button takes focus when clicked, and the review's keys
-                            // are heard only on the stage itself.
-                            window.focus(&this.focus, cx);
-                            this.ask(Call::ReviewRefresh, cx)
-                        })),
-                )
-            })
-            // Git on the stage goes back beside the work, to the dock or dialog it came from.
-            .when(heard_open, |strip| {
-                strip.child(
-                    icon_button("git-collapse", "Back to the side pane", false, tokens)
-                        .tooltip(tip("Back to the side pane"))
-                        .child(Glyph::DockRight.at(14.0))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.ask(Call::Docks { gesture: DockGesture::Collapse { panel: Panel::Changes } }, cx)
-                        })),
-                )
-            })
-            .child(
-                icon_button("git-close", close_label, false, tokens)
-                    .tooltip(tip(close_label))
-                    .child(Glyph::Close.at(14.0))
-                    .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
+/// The buttons for what is open, built each time the bar is drawn.
+pub(super) fn tools(stage: WeakEntity<GitStage>, heard: &Entity<Heard>, _: &mut Window, cx: &mut App) -> AnyElement {
+    let tokens = *Tokens::global(cx);
+    let (tab, review, history, beside) = {
+        let heard = heard.read(cx);
+        (heard.git.tab(heard.open()), heard.review.is_some(), heard.history.is_some(), heard.changes_beside())
+    };
+    // Only what is open has a panel to go back as; beside the work already, the dock's head holds
+    // the way to the stage.
+    let back = (review || history) && !beside;
+    let changes_on = tab == Tab::Changes;
+    let close_label = if changes_on { "Close the review" } else { "Close the history" };
+    let ask = |stage: WeakEntity<GitStage>, call: Call| {
+        move |_: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut App| {
+            if let Some(stage) = stage.upgrade() {
+                stage.update(cx, |this, cx| {
+                    // A button takes focus when clicked, and the stage's keys are heard only on the stage itself.
+                    window.focus(&this.focus, cx);
+                    this.ask(call.clone(), cx)
+                });
+            }
+        }
+    };
+    let close = stage.clone();
+    h_flex()
+        .id("git-tools")
+        .flex_none()
+        .gap(rem(tokens.sp_4))
+        .items_center()
+        .when(changes_on && review, |tools| {
+            tools.child(icon_button("review-refresh", "Refresh", false, &tokens).tooltip(tip("Refresh")).child(Glyph::Refresh.at(14.0)).on_click(ask(stage.clone(), Call::ReviewRefresh)))
+        })
+        // Git on the stage goes back beside the work, to the dock or dialog it came from.
+        .when(back, |tools| {
+            tools.child(
+                icon_button("git-collapse", "Back to the side pane", false, &tokens)
+                    .tooltip(tip("Back to the side pane"))
+                    .child(Glyph::DockRight.at(14.0))
+                    .on_click(ask(stage.clone(), Call::Docks { gesture: DockGesture::Collapse { panel: Panel::Changes } })),
             )
-    }
+        })
+        .child(
+            icon_button("git-close", close_label, false, &tokens)
+                .tooltip(tip(close_label))
+                .child(Glyph::Close.at(14.0))
+                .on_click(move |_, window, cx| {
+                    if let Some(stage) = close.upgrade() {
+                        stage.update(cx, |this, cx| {
+                            // The button is the title bar's, outside the stage, so a press does not give the stage the keys itself.
+                            window.focus(&this.focus, cx);
+                            this.close(cx)
+                        });
+                    }
+                }),
+        )
+        .into_any_element()
 }

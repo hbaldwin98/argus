@@ -21,9 +21,10 @@ use crate::theme::Tokens;
 
 /// Puts the Git tabs in the bar's slot for Git.
 pub(super) fn offer(stage: WeakEntity<GitStage>, heard: Entity<Heard>, cx: &mut App) {
+    let buttons = (stage.clone(), heard.clone());
     Slots::of(cx).offer(
         Slot::Git,
-        Offer::default().tabs(move |_, cx| {
+        Offer::default().tools(move |window, cx| super::strip::tools(buttons.0.clone(), &buttons.1, window, cx)).tabs(move |_, cx| {
             let tokens = *Tokens::global(cx);
             let (on, review) = {
                 let heard = heard.read(cx);
