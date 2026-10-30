@@ -113,6 +113,16 @@ impl Switcher {
         self.making.as_ref().map(|m| NewWorkspace { creating: m.creating, refusal: m.refusal.clone() })
     }
 
+    /// The workspace the daemon says is open, once it has listed them.
+    pub fn open(&self) -> Option<&WorkspaceInfo> {
+        self.workspaces.iter().find(|w| w.open)
+    }
+
+    /// A listed workspace by name, as the daemon names it across restarts.
+    pub fn id_of(&self, name: &str) -> Option<WorkspaceId> {
+        self.workspaces.iter().find(|w| w.name == name).map(|w| w.id)
+    }
+
     /// Opens a workspace the daemon listed; one already open, or gone,
     /// asks nothing.
     pub fn open_workspace(&self, workspace: WorkspaceId) -> Option<ClientMsg> {

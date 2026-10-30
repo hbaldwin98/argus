@@ -93,6 +93,9 @@ use crate::views;
 use crate::views::refs::{Found, PendingFeature, Target};
 use crate::board::tracker;
 use crate::board::tracker::dialogs::TrackerDialogs;
+use crate::chrome::place::Places;
+
+mod place;
 
 /// What to do with a thing the daemon made for this window, once the tree
 /// holds it.
@@ -189,6 +192,17 @@ pub struct Session {
     palette: bool,
     /// The host was switched since the settings were saved.
     host_unsaved: bool,
+    /// Where the person has been in each host, workspace and project.
+    places: Places,
+    places_unsaved: bool,
+    /// The workspace the window has landed in: unset while the tree and the
+    /// daemon's list of workspaces have yet to agree on which is open.
+    placed: Option<String>,
+    /// The tree changed its projects since the list of workspaces was last
+    /// heard, so the list that comes next describes it.
+    tree_fresh: bool,
+    /// This host's last workspace was asked for, once its daemon spoke.
+    host_visited: bool,
     palette_sent: Sent<page::Palette>,
     /// The Code stage, once opened: it keeps its checkout and file while
     /// another stage is up.
@@ -224,6 +238,11 @@ impl Session {
             loaded: false,
             status: StatusBar::new(settings.chime).on_host(settings.host.clone()),
             host_unsaved: false,
+            places: settings.places,
+            places_unsaved: false,
+            placed: None,
+            tree_fresh: false,
+            host_visited: false,
             project: None,
             repository: None,
             toggled: HashSet::new(),
@@ -304,6 +323,10 @@ impl Session {
         }
         self.status.switch_host(host);
         self.host_unsaved = true;
+        // The last daemon's workspaces say nothing of the next one's.
+        self.switcher.receive_workspaces(Vec::new());
+        self.placed = None;
+        self.host_visited = false;
         self.take_tree(Vec::new());
         self.take_consoles(Vec::new());
         self.loaded = false;
@@ -437,7 +460,11 @@ impl Session {
                 self.awaited.answer(request_id, created);
                 self.settle_made();
             }
-            ServerMsg::Workspaces(workspaces) => self.switcher.receive_workspaces(workspaces),
+            ServerMsg::Workspaces(workspaces) => {
+                self.switcher.receive_workspaces(workspaces);
+                let trusting = std::mem::take(&mut self.tree_fresh);
+                self.settle_place(trusting);
+            }
             ServerMsg::Directories(listing) => {
                 if let Some(dialog) = self.adding.get_mut() {
                     dialog.listed(listing, || self.awaited.name(), &mut self.out);
@@ -585,6 +612,9 @@ impl Session {
         self.dialogs.follow(&self.tree, || self.awaited.name(), &mut self.out);
         if !self.tree.iter().any(|p| Some(p.id) == self.project) {
             self.project = self.tree.first().map(|p| p.id);
+            // Not where it was noted: the next settle lands it again.
+            self.tree_fresh = true;
+            self.placed = None;
         }
         // A pane that is gone is gone from the daemon's subscriptions too.
         // A console is not in the tree, and is let go by `take_consoles`.
@@ -595,6 +625,7 @@ impl Session {
         self.sessions.forget_resumed(|pane| tree.panes().any(|p| p.id == pane));
         self.settle_made();
         self.open_browsers_beside();
+        self.settle_place(false);
     }
 
     /// Opens each browser that just opened beside its owner, when the owner
@@ -1151,10 +1182,13 @@ impl Session {
         }
     }
 
-    /// Lets the Workspace's pane go, as choosing another project does. The
-    /// console's own panes are no project's, and stay.
+    /// Lets the Workspace's panes go, as choosing another project does: the
+    /// first split takes the Workspace's place as each goes, so all of them
+    /// are let go. The console's own panes are no project's, and stay.
     fn hide(&mut self) {
-        self.shown.close(Side::Workspace, &mut self.out);
+        while self.shown.on(Side::Workspace).is_some() {
+            self.shown.close(Side::Workspace, &mut self.out);
+        }
     }
 
     fn resize(&mut self, side: Side, rows: u16, cols: u16) -> Vec<ClientMsg> {
@@ -1609,8 +1643,10 @@ impl Session {
 
     fn choose_project(&mut self, project: ProjectId) {
         if self.project != Some(project) && self.tree.iter().any(|p| p.id == project) {
+            self.remember_place();
             self.project = Some(project);
             self.hide();
+            self.return_to(project);
         }
     }
 
@@ -3441,7 +3477,7 @@ impl Session {
 
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
-        // All eight, not short-circuited: each flag is cleared as it is read.
+        // All nine, not short-circuited: each flag is cleared as it is read.
         let layouts = self.features.take_layouts_changed();
         let agent = self.agents.take_changed();
         let chime = self.status.take_chime_changed();
@@ -3455,10 +3491,12 @@ impl Session {
             | self.extension_views.take_unsaved();
         let chosen = self.choices.take_unsaved() | self.dictation.take_unsaved();
         let host = std::mem::take(&mut self.host_unsaved);
-        (layouts || agent || chime || review || docks || rail || chosen || host).then(|| Settings {
+        let places = std::mem::take(&mut self.places_unsaved);
+        (layouts || agent || chime || review || docks || rail || chosen || host || places).then(|| Settings {
             layouts: self.features.layouts().clone(),
             host: self.status.host().map(str::to_owned),
             hosts: self.switcher.visited().to_vec(),
+            places: self.places.clone(),
             last_agent: self.agents.last().cloned(),
             chime: self.status.chimes(),
             review: self.dialogs.layout(),
@@ -3518,6 +3556,7 @@ impl Session {
 
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
+        self.remember_place();
         let present = self.present();
         // A panel's cell goes with it: the review closing empties its cell. The browsers' cell
         // is present while it is there, waiting for the next browser.

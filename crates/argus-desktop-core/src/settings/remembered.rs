@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::chrome::place::Places;
 use crate::dictation::preferences::DictationPreferences;
 use crate::layout::docks::{Dock, DocksLayout, Panel};
 use crate::board::features::Layout;
@@ -35,6 +36,10 @@ pub struct Settings {
     /// beside the ssh config's.
     #[serde(default)]
     pub hosts: Vec<String>,
+    /// Where the person was in each host, workspace and project, so a switch
+    /// back, or the next run, lands there.
+    #[serde(default)]
+    pub places: Places,
     /// The agent template this window last started, by name. Remembered
     /// rather than read off the tree: the tree knows only the agents still
     /// running, and a window whose agents have all closed, or that was
@@ -337,6 +342,7 @@ impl Default for Settings {
             layouts: BTreeMap::new(),
             host: None,
             hosts: Vec::new(),
+            places: Places::default(),
             last_agent: None,
             chime: true,
             review: ReviewLayout::default(),
