@@ -85,8 +85,9 @@ debug = false
 
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
+# Thin, across the default codegen units: fat LTO into one unit is a single-threaded link, and once
+# the window took in dictation it held the Windows and Intel Mac packages past an hour each.
+lto = "thin"
 panic = "abort"
 # A panic's backtrace is the only record of a crash on someone else's machine, and without line
 # tables every frame is `<unknown>`. On Windows they live in the `.pdb` files, which a release
