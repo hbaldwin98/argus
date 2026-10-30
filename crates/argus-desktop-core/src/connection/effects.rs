@@ -105,7 +105,7 @@ fn write_osc52(events: &mut Vec<Event>, clipboard: &dyn Clipboard) {
         false
     });
     if let Some(why) = refused {
-        events.push(Event::Notice { text: format!("could not copy: {why}") });
+        events.push(Event::failed(format!("could not copy: {why}")));
     }
 }
 
@@ -115,8 +115,10 @@ pub enum Pasting {
     /// A picture or a copied file, sent whole.
     File { name: String, bytes: Vec<u8> },
     Text(String),
-    /// Why there is nothing to paste, or a file that could not be read.
+    /// Why there is nothing to paste.
     Note(String),
+    /// A file that could not be read.
+    Failed(String),
 }
 
 /// What the clipboard holds for the paste key, in the order the terminal
@@ -135,7 +137,7 @@ pub fn pastings(clipboard: &dyn Clipboard) -> Vec<Pasting> {
                 let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
                 match std::fs::read(&path) {
                     Ok(bytes) => Pasting::File { name, bytes },
-                    Err(e) => Pasting::Note(format!("could not read {name}: {e}")),
+                    Err(e) => Pasting::Failed(format!("could not read {name}: {e}")),
                 }
             })
             .collect();
@@ -152,6 +154,7 @@ pub fn paste(session: &mut Session, pasting: Pasting) -> Vec<ClientMsg> {
         Pasting::File { name, bytes } => session.paste_file(name, bytes),
         Pasting::Text(text) => session.paste(text),
         Pasting::Note(said) => session.note(said),
+        Pasting::Failed(said) => session.note_failed(said),
     }
 }
 
@@ -193,7 +196,7 @@ mod tests {
     }
 
     fn noticed(events: &[Event]) -> Vec<&str> {
-        events.iter().filter_map(|e| if let Event::Notice { text } = e { Some(text.as_str()) } else { None }).collect()
+        events.iter().filter_map(|e| if let Event::Notice { text, .. } = e { Some(text.as_str()) } else { None }).collect()
     }
 
     /// Runs one change that leaves every kind of effect, and returns the
@@ -303,7 +306,7 @@ mod tests {
 
         let files = Fake { text: Some("words".into()), files: vec!["nowhere/a.txt".into()], ..Fake::default() };
         let pasted = pastings(&files);
-        assert!(matches!(pasted.as_slice(), [Pasting::Note(said)] if said.starts_with("could not read a.txt")), "{pasted:?}");
+        assert!(matches!(pasted.as_slice(), [Pasting::Failed(said)] if said.starts_with("could not read a.txt")), "{pasted:?}");
         assert_eq!(*files.calls.borrow(), ["read_image", "read_files"]);
 
         let text = Fake { text: Some("words".into()), ..Fake::default() };
@@ -323,7 +326,7 @@ mod tests {
         assert!(msgs.is_empty());
         let heard = session.events(0);
         assert!(
-            heard.iter().any(|e| matches!(e, Event::Notice { text } if text == "nothing on the clipboard to paste")),
+            heard.iter().any(|e| matches!(e, Event::Notice { text, .. } if text == "nothing on the clipboard to paste")),
             "{heard:?}"
         );
     }
@@ -340,7 +343,7 @@ mod tests {
     fn what_a_pane_child_put_on_the_clipboard_is_written_by_the_owner_and_not_heard_again() {
         let clipboard = Fake::default();
         let mut events = vec![
-            Event::Notice { text: "kept".into() },
+            Event::done("kept"),
             Event::Clipboard { text: "from the child".into() },
             Event::Chime,
         ];
@@ -402,7 +405,7 @@ mod tests {
         let clipboard = Fake { refuses_write: true, ..Fake::default() };
         let mut events = vec![
             Event::Clipboard { text: "a".into() },
-            Event::Notice { text: "kept".into() },
+            Event::done("kept"),
             Event::Clipboard { text: "b".into() },
         ];
         write_osc52(&mut events, &clipboard);

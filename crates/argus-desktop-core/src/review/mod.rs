@@ -100,7 +100,7 @@ impl Dialogs {
                     dialog.commented(request_id);
                 }
                 let text = if delivered { format!("comment #{id} sent") } else { format!("comment #{id} saved; the agent was not there to take it") };
-                say.push(Event::Notice { text });
+                say.push(Event::done(text));
             }
             // Each history keeps only what it asked for: a list by its id, a
             // commit's files while it waits on them.
@@ -119,7 +119,7 @@ impl Dialogs {
             ServerMsg::Written { request_id } => {
                 let landed = self.reviews().fold(None, |landed, dialog| landed.or(dialog.written(request_id)));
                 if landed == Some(Landed::Committed) {
-                    say.push(Event::Notice { text: "committed".into() });
+                    say.push(Event::done("committed"));
                 }
             }
             ServerMsg::Drafts { request_id, checkout, drafts } => {
@@ -130,13 +130,13 @@ impl Dialogs {
             ServerMsg::ReviewSubmitted { comments, delivered, .. } => {
                 let said = if comments == 1 { "1 comment".to_owned() } else { format!("{comments} comments") };
                 let text = if delivered { format!("review sent: {said}") } else { format!("review saved: {said}; the agent was not there to take it") };
-                say.push(Event::Notice { text });
+                say.push(Event::done(text));
             }
             ServerMsg::CommitFilesFailed { checkout, commit, message } => {
                 for history in self.histories() {
                     history.files_failed(checkout, &commit);
                 }
-                say.push(Event::Notice { text: message });
+                say.push(Event::failed(message));
             }
             // The Files tab's list and file, which the Code stage passed on as not its own.
             code @ (ServerMsg::CodeTree(_) | ServerMsg::Code(_)) => {
@@ -168,7 +168,7 @@ impl Dialogs {
             return true;
         }
         if review.context_failed(id) || review.change_refused(id) {
-            say.push(Event::Notice { text: reason.clone() });
+            say.push(Event::refused(reason.clone()));
             return true;
         }
         review.failed(id, reason.clone()) != Answered::Stale
@@ -261,7 +261,7 @@ impl Dialogs {
             _ => None,
         };
         if let Some(text) = refused {
-            say.push(Event::Notice { text });
+            say.push(Event::refused(text));
         }
         let mut editor = None;
         match action {
@@ -276,7 +276,7 @@ impl Dialogs {
             Action::Filter => dialog.open_jump(),
             Action::OpenEditor => match dialog.editor_target() {
                 Some(target) => editor = Some(target),
-                None => say.push(Event::Notice { text: "no file to open".into() }),
+                None => say.push(Event::refused("no file to open")),
             },
             _ => {}
         }
@@ -298,7 +298,7 @@ impl Dialogs {
             ReviewClick::Row { row, extend } => dialog.select_row(row, extend),
             ReviewClick::Side { staged } => {
                 if let Err(text) = dialog.show_side(staged) {
-                    say.push(Event::Notice { text });
+                    say.push(Event::refused(text));
                 }
             }
             ReviewClick::Recipient { pane } => dialog.choose_recipient(PaneId(pane)),
@@ -381,7 +381,7 @@ impl Dialogs {
             }
             Some(body) => match dialog.comment(tree.checkout(dialog.checkout()), &body, id()) {
                 Ok(msg) => out.push(msg),
-                Err(text) => say.push(Event::Notice { text: text.into() }),
+                Err(text) => say.push(Event::refused(text)),
             },
         }
     }
@@ -389,7 +389,7 @@ impl Dialogs {
     /// A file of a Changes list opened on its side.
     pub fn open_change(&mut self, staged: bool, path: &str, say: &mut Vec<Event>) {
         if let Some(Err(text)) = self.review.as_mut().map(|d| d.open_change(staged, path)) {
-            say.push(Event::Notice { text });
+            say.push(Event::refused(text));
         }
         self.remember_layout();
     }
@@ -409,7 +409,7 @@ impl Dialogs {
         if let Some(sent) = self.review.as_mut().map(|d| d.stage(gesture, id())) {
             match sent {
                 Ok(msg) => out.push(msg),
-                Err(text) => say.push(Event::Notice { text }),
+                Err(text) => say.push(Event::refused(text)),
             }
         }
     }
@@ -418,7 +418,7 @@ impl Dialogs {
         if let Some(sent) = self.review.as_mut().map(|d| d.commit(message, id())) {
             match sent {
                 Ok(msg) => out.push(msg),
-                Err(text) => say.push(Event::Notice { text }),
+                Err(text) => say.push(Event::refused(text)),
             }
         }
     }
@@ -428,7 +428,7 @@ impl Dialogs {
         if let Some(sent) = self.review.as_mut().map(|d| d.draft_comment(body, id())) {
             match sent {
                 Ok(msg) => out.push(msg),
-                Err(text) => say.push(Event::Notice { text: text.into() }),
+                Err(text) => say.push(Event::refused(text)),
             }
         }
     }
@@ -439,7 +439,7 @@ impl Dialogs {
         };
         match dialog.draft_gesture(gesture, tree.checkout(dialog.checkout()), id()) {
             Ok(msg) => out.push(msg),
-            Err(text) => say.push(Event::Notice { text }),
+            Err(text) => say.push(Event::refused(text)),
         }
     }
 
@@ -664,7 +664,7 @@ mod tests {
         let mut say = Vec::new();
         assert_eq!(dialogs.review_action(Action::OpenEditor, &tree(), &mut say), None);
         assert!(dialogs.review().is_some(), "the review stays");
-        assert!(matches!(say.as_slice(), [Event::Notice { text }] if text == "no file to open"));
+        assert!(matches!(say.as_slice(), [Event::Notice { text, .. }] if text == "no file to open"));
     }
 
     #[test]
@@ -790,7 +790,7 @@ mod tests {
         assert!(dialogs.unpark());
         dialogs.review_comment(Some("parked".into()), &tree, || 53, &mut out, &mut say);
         assert_eq!(out.len(), 3);
-        assert!(matches!(say.as_slice(), [Event::Notice { text }] if text == "the last comment is still being saved"), "{say:?}");
+        assert!(matches!(say.as_slice(), [Event::Notice { text, .. }] if text == "the last comment is still being saved"), "{say:?}");
         assert!(dialogs.comment_refused(&refused(50)));
         dialogs.review_comment(Some("parked".into()), &tree, || 54, &mut out, &mut say);
         assert_eq!(out.len(), 4, "the parked review, back, sends again");

@@ -447,12 +447,10 @@ impl Session {
                 self.passing.push(Event::Clipboard { text });
             }
             // A refusal of a request that named none.
-            ServerMsg::Error { message } => self.passing.push(Event::Notice { text: message }),
+            ServerMsg::Error { message } => self.passing.push(Event::failed(message)),
             ServerMsg::Refused(refusal) => self.refused(refusal),
             ServerMsg::Hello(hello) => self.status.greeted(hello),
-            ServerMsg::Restarting => self.passing.push(Event::Notice {
-                text: "argusd is restarting".into(),
-            }),
+            ServerMsg::Restarting => self.passing.push(Event::refused("argusd is restarting")),
             ServerMsg::Decisions(board) => {
                 let scope = self.scope();
                 self.features.receive_board(*board, scope.as_ref(), &self.tree, &mut self.out);
@@ -482,12 +480,12 @@ impl Session {
             // told why and nothing waits on it.
             ServerMsg::SavedViewFailed { id, reason } => {
                 let text = self.saved.failed(&id, &reason);
-                self.passing.push(Event::Notice { text });
+                self.passing.push(Event::failed(text));
             }
             ServerMsg::ExtensionViews(views) => self.extension_views.receive(views),
             ServerMsg::ExtensionCommands(commands) => self.extension_keys.receive(commands),
             ServerMsg::ExtensionNotice { extension, text } => {
-                self.passing.push(Event::Notice { text: format!("{extension}: {text}") });
+                self.passing.push(Event::refused(format!("{extension}: {text}")));
             }
             ServerMsg::ExtensionDialog { extension, id, dialog, prompted } => {
                 self.extension_dialogs.asked(extension, id, dialog, prompted);
@@ -499,7 +497,7 @@ impl Session {
             // and the person is told why.
             ServerMsg::ViewPressFailed { pane, view, action, reason } => {
                 let text = self.views.press_failed(pane, &view, &action, &reason);
-                self.passing.push(Event::Notice { text });
+                self.passing.push(Event::failed(text));
             }
             ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
             // A browser that opens beside the agent the person is looking
@@ -547,7 +545,7 @@ impl Session {
             | self.code.comment_refused(&refusal)
             | self.dialogs.comment_refused(&refusal);
         if waited || !refusal.read {
-            self.passing.push(Event::Notice { text: refusal.reason });
+            self.passing.push(Event::refused(refusal.reason));
         }
     }
 
@@ -1047,13 +1045,13 @@ impl Session {
 
     fn open_link(&mut self, map: bool) {
         if let Err(text) = self.tracker_dialogs.open_link(self.features.opened(), self.features.board(), map) {
-            self.passing.push(Event::Notice { text: text.into() });
+            self.passing.push(Event::refused(text));
         }
     }
 
     fn open_reconcile(&mut self) {
         if let Err(text) = self.tracker_dialogs.open_reconcile(self.features.opened(), self.features.board()) {
-            self.passing.push(Event::Notice { text: text.into() });
+            self.passing.push(Event::refused(text));
         }
     }
 
@@ -1083,7 +1081,7 @@ impl Session {
                 let sent = self.go_to_pane(pane);
                 self.out.extend(sent);
             }
-            tracker::dialogs::Then::Say(text) => self.passing.push(Event::Notice { text }),
+            tracker::dialogs::Then::Say(text) => self.passing.push(Event::refused(text)),
         }
     }
 
@@ -1303,7 +1301,7 @@ impl Session {
             Action::Views => self.toggle_views(),
             Action::ExtensionPage | Action::ExtensionDock => match self.extension_views.last().cloned() {
                 Some(panel) => self.extension_mode(&panel, action == Action::ExtensionPage),
-                None => self.passing.push(Event::Notice { text: "no extension view has been opened".into() }),
+                None => self.passing.push(Event::refused("no extension view has been opened")),
             },
             Action::ConsoleFullscreen => self.toggle_console_fullscreen(),
             Action::NewConsole => self.spawn_console(Made::ShowConsole),
@@ -1326,7 +1324,7 @@ impl Session {
             Action::CloseSplit => {
                 let keys = self.shown.keys();
                 if !self.shown.close_split(keys, &mut self.out) {
-                    self.passing.push(Event::Notice { text: "the pane with the keys is not split beside another".into() });
+                    self.passing.push(Event::refused("the pane with the keys is not split beside another"));
                 }
             }
             Action::OpenReview => {
@@ -1419,17 +1417,17 @@ impl Session {
         let Some(pane) = self.typed_to() else {
             return self.finish();
         };
-        let note = if !self.status.daemon_can(PASTE_FILE) {
-            "argusd is too old to paste files: run `argus server restart`".to_string()
-        } else if bytes.len() > paste::PASTE_FILE_MAX {
-            format!("{name} is too large to paste ({} MB)", bytes.len() >> 20)
-        } else {
-            self.live();
-            let said = format!("pasted {name}");
-            self.out.push(ClientMsg::PasteFile { pane, name, bytes });
-            said
-        };
-        self.note(note)
+        if !self.status.daemon_can(PASTE_FILE) {
+            return self.note("argusd is too old to paste files: run `argus server restart`");
+        }
+        if bytes.len() > paste::PASTE_FILE_MAX {
+            return self.note(format!("{name} is too large to paste ({} MB)", bytes.len() >> 20));
+        }
+        self.live();
+        // There is no undo to offer: the daemon keeps the file and pastes its path in one go.
+        self.passing.push(Event::arrived(format!("pasted {name}")));
+        self.out.push(ClientMsg::PasteFile { pane, name, bytes });
+        self.finish()
     }
 
     fn live(&mut self) {
@@ -1447,7 +1445,7 @@ impl Session {
     fn take(&mut self, effect: Effect) {
         self.out.extend(effect.send);
         if let Some(note) = effect.note {
-            self.passing.push(Event::Notice { text: note.into() });
+            self.passing.push(Event::refused(note));
         }
     }
 
@@ -1459,7 +1457,13 @@ impl Session {
     /// Something this window says on the bar a while, as it does the
     /// daemon's refusals.
     pub fn note(&mut self, text: impl Into<String>) -> Vec<ClientMsg> {
-        self.passing.push(Event::Notice { text: text.into() });
+        self.passing.push(Event::refused(text));
+        self.finish()
+    }
+
+    /// Like [`Session::note`], for what the machine would not do.
+    pub fn note_failed(&mut self, text: impl Into<String>) -> Vec<ClientMsg> {
+        self.passing.push(Event::failed(text));
         self.finish()
     }
 
@@ -1780,7 +1784,7 @@ impl Session {
     /// so, since there is nothing to open.
     fn open_saved(&mut self, id: String, from: Option<SavedColumn>) -> Vec<ClientMsg> {
         if self.saved.get(&id).is_none() {
-            self.passing.push(Event::Notice { text: format!("no saved view {id}") });
+            self.passing.push(Event::refused(format!("no saved view {id}")));
             return self.finish();
         }
         let columns = self.choices.get().saved_links == SavedLinks::Column;
@@ -1846,7 +1850,7 @@ impl Session {
         match self.opening_feature.settle(there, self.features.board()) {
             Some(Found::Slug(slug)) => self.features.reveal(&slug, scope.as_ref(), &self.tree, &mut self.out),
             Some(Found::Missing(number)) => {
-                self.passing.push(Event::Notice { text: format!("no feature #{number} in this repository") })
+                self.passing.push(Event::refused(format!("no feature #{number} in this repository")))
             }
             None => {}
         }
@@ -1865,7 +1869,7 @@ impl Session {
         let here = self.here();
         let panel = Panel::extension(extension, view);
         let Some(found) = self.extension_views.get(&panel, &here) else {
-            self.passing.push(Event::Notice { text: format!("{extension} shows no {view} here") });
+            self.passing.push(Event::refused(format!("{extension} shows no {view} here")));
             return self.finish();
         };
         let (place, title) = (found.place, found.title.clone());
@@ -1906,7 +1910,7 @@ impl Session {
     /// remembers it there.
     fn extension_mode(&mut self, panel: &Panel, page: bool) {
         let Some(title) = self.extension_views.get(panel, &self.here()).map(|v| v.title.clone()) else {
-            self.passing.push(Event::Notice { text: "that extension's view is not shown here".into() });
+            self.passing.push(Event::refused("that extension's view is not shown here"));
             return;
         };
         self.extension_views.touch(panel);
@@ -1945,7 +1949,7 @@ impl Session {
             Page::Extension(panel) => extension_views.get(panel, &here).map(|v| v.title.clone()),
         });
         if let Some(text) = gone {
-            self.passing.push(Event::Notice { text });
+            self.passing.push(Event::refused(text));
         }
     }
 
@@ -1954,7 +1958,7 @@ impl Session {
         let here = self.here();
         match self.extension_views.gesture(panel, &here, gesture) {
             Ok(msg) => self.out.extend(msg),
-            Err(text) => self.passing.push(Event::Notice { text }),
+            Err(text) => self.passing.push(Event::refused(text)),
         }
         self.finish()
     }
@@ -1964,7 +1968,7 @@ impl Session {
     /// the pane on screen. The daemon reads it against its own tree.
     fn extension_command(&mut self, extension: &str, command: &str, checkout: Option<CheckoutId>, pane: Option<PaneId>) {
         if !self.extension_keys.holds(extension, command) {
-            self.passing.push(Event::Notice { text: format!("{extension} has no command {command}") });
+            self.passing.push(Event::refused(format!("{extension} has no command {command}")));
             return;
         }
         let staged = (self.stages.now() == Stage::Checkouts)
@@ -2376,9 +2380,7 @@ impl Session {
     /// says it exists.
     fn spawn_console(&mut self, then: Made) {
         if !self.status.daemon_can(CONSOLES) {
-            self.passing.push(Event::Notice {
-                text: "argusd is too old to start a console: run `argus server restart`".into(),
-            });
+            self.passing.push(Event::refused("argusd is too old to start a console: run `argus server restart`"));
             return;
         }
         let request_id = self.awaited.ask(then);
@@ -2465,7 +2467,7 @@ impl Session {
     }
 
     fn say(&mut self, text: &str) {
-        self.passing.push(Event::Notice { text: text.to_owned() });
+        self.passing.push(Event::refused(text.to_owned()));
     }
 
     /// Shows the Code stage, or puts it away for the Workspace.
@@ -2662,7 +2664,7 @@ impl Session {
                     return self.note("no repository to write the feature in");
                 };
                 if let Err(why) = capture.create(note, &scope, self.features.board(), request_id, &mut self.out) {
-                    self.passing.push(Event::Notice { text: why });
+                    self.passing.push(Event::refused(why));
                 }
             }
             CaptureGesture::Discard => self.capture.close(),
@@ -2672,7 +2674,7 @@ impl Session {
 
     fn open_capture(&mut self) {
         if self.scope().is_none() {
-            self.passing.push(Event::Notice { text: "choose a repository to write a feature in".into() });
+            self.passing.push(Event::refused("choose a repository to write a feature in"));
             return;
         }
         self.go(Stage::Feature);
@@ -2698,7 +2700,7 @@ impl Session {
     fn edit_feature(&mut self, edit: FeatureEdit) -> Vec<ClientMsg> {
         let scope = self.scope();
         if let Err(why) = self.features.edit(edit, scope.as_ref(), &mut self.out) {
-            self.passing.push(Event::Notice { text: why });
+            self.passing.push(Event::refused(why));
         }
         self.finish()
     }
@@ -2773,7 +2775,7 @@ impl Session {
         let request_id = self.awaited.ask(Made::SelectRow);
         match self.checkouts.act(&repo, Verb::NewWorktree { name: name.as_deref(), request_id }) {
             Ok(msg) => self.out.push(msg),
-            Err(text) => self.passing.push(Event::Notice { text }),
+            Err(text) => self.passing.push(Event::refused(text)),
         }
         self.finish()
     }
@@ -2805,35 +2807,35 @@ impl Session {
                     self.show(pane);
                 }
                 Some(Opened::Send(msg)) => self.out.push(*msg),
-                Some(Opened::Say(text)) => self.passing.push(Event::Notice { text }),
+                Some(Opened::Say(text)) => self.passing.push(Event::refused(text)),
                 None => {}
             },
             Action::Files => {
                 let daemon = self.files_daemon();
                 match self.checkouts.toggle_files(&repo, daemon, || self.awaited.name()) {
                     Ok(asks) => self.out.extend(asks),
-                    Err(text) => self.passing.push(Event::Notice { text }),
+                    Err(text) => self.passing.push(Event::refused(text)),
                 }
             }
             Action::Fetch | Action::Pull => {
                 let verb = if action == Action::Fetch { Verb::Fetch } else { Verb::Pull };
                 match self.checkouts.act(&repo, verb) {
                     Ok(msg) => self.out.push(msg),
-                    Err(text) => self.passing.push(Event::Notice { text }),
+                    Err(text) => self.passing.push(Event::refused(text)),
                 }
             }
             Action::OpenReview => match self.checkouts.checkout(&repo) {
                 Some(checkout) => return self.open_review(checkout),
-                None => self.passing.push(Event::Notice { text: "a branch has no changes of its own to review".into() }),
+                None => self.passing.push(Event::refused("a branch has no changes of its own to review")),
             },
             Action::OpenHistory => match self.checkouts.checkout(&repo) {
                 Some(checkout) => return self.open_history(checkout),
-                None => self.passing.push(Event::Notice { text: "a branch's history opens from a checkout of it".into() }),
+                None => self.passing.push(Event::refused("a branch's history opens from a checkout of it")),
             },
             Action::Delete => match self.checkouts.delete(&repo) {
                 Ok(Some(msg)) => self.out.push(msg),
                 Ok(None) => {}
-                Err(text) => self.passing.push(Event::Notice { text }),
+                Err(text) => self.passing.push(Event::refused(text)),
             },
             Action::StartShell | Action::StartAgent => {
                 let Some(checkout) = self.checkouts.checkout(&repo) else {
@@ -3088,7 +3090,7 @@ impl Session {
         };
         match then {
             SessionsThen::Nothing => {}
-            SessionsThen::Say(text) => self.passing.push(Event::Notice { text }),
+            SessionsThen::Say(text) => self.passing.push(Event::refused(text)),
             SessionsThen::Copy(text) => self.copied = Some(text),
             // Only a pane the tree still holds: the listing may be older
             // than the pane's end.
@@ -3097,7 +3099,7 @@ impl Session {
                 self.leave_stages();
                 self.show(pane);
             }
-            SessionsThen::GoTo(_) => self.passing.push(Event::Notice { text: "that session's pane has ended".into() }),
+            SessionsThen::GoTo(_) => self.passing.push(Event::refused("that session's pane has ended")),
             // The dialog stays up until the pane is made and the tree
             // holds it, so a refused resume leaves it where it was.
             SessionsThen::Resume { checkout, harness, session_id, from } => {
@@ -3160,7 +3162,7 @@ impl Session {
     /// so, rather than leaving the person to wonder whether it ran.
     fn command(&mut self, action: Action) -> Vec<ClientMsg> {
         if !self.run_command(action) {
-            self.passing.push(Event::Notice { text: format!("the palette has no command {action:?}") });
+            self.passing.push(Event::refused(format!("the palette has no command {action:?}")));
         }
         self.finish()
     }
@@ -3223,7 +3225,7 @@ impl Session {
                     }
                 }
                 Deliver::Copy(text) => self.copied = Some(text),
-                Deliver::Notice(text) => self.passing.push(Event::Notice { text }),
+                Deliver::Notice(text) => self.passing.push(Event::refused(text)),
             }
         }
     }
@@ -3238,7 +3240,7 @@ impl Session {
     /// the window.
     fn set(&mut self, change: SettingChange) -> Vec<ClientMsg> {
         if let Err(reason) = self.choices.change(change) {
-            self.passing.push(Event::Notice { text: reason });
+            self.passing.push(Event::refused(reason));
         }
         self.features.set_opens_as(self.choices.get().feature_layout);
         let scope = self.scope();
@@ -3318,7 +3320,7 @@ impl Session {
             | Action::CloseSplit
             | Action::Dictate => self.run(action),
             Action::Fill | Action::Close if self.on_screen().is_none() => {
-                self.passing.push(Event::Notice { text: "no pane is on screen".into() });
+                self.passing.push(Event::refused("no pane is on screen"));
             }
             Action::Fill | Action::Close => self.run(action),
             Action::Layout => {
@@ -3359,7 +3361,7 @@ impl Session {
                     let sent = self.open_sessions(repository);
                     self.out.extend(sent);
                 }
-                None => self.passing.push(Event::Notice { text: "no repository to list the sessions of".into() }),
+                None => self.passing.push(Event::refused("no repository to list the sessions of")),
             },
             _ => return false,
         }
@@ -3899,7 +3901,7 @@ mod tests {
         assert!(!s.events(0).iter().any(|e| matches!(e, Event::Notice { .. })), "no notice for a rename that was not sent");
         let sent = s.rename(PaneId(2), "build".into());
         assert!(sent.is_empty(), "a daemon that cannot rename is not asked");
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old to rename"))));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("too old to rename"))));
     }
 
     #[test]
@@ -4000,7 +4002,7 @@ mod tests {
         let mut s = session(Hello::this_build());
         let sent = s.call(Call::StartOn { checkout: 100, template: Some("nope".into()) });
         assert!(sent.is_empty());
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("no agent template called nope"))));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("no agent template called nope"))));
     }
 
     #[test]
@@ -4021,7 +4023,7 @@ mod tests {
         assert!(s.move_to_checkout(PaneId(30), CheckoutId(99)).is_empty());
         let events = s.events(0);
         assert!(
-            events.iter().any(|event| matches!(event, Event::Notice { text } if text.contains("browser stays"))),
+            events.iter().any(|event| matches!(event, Event::Notice { text, .. } if text.contains("browser stays"))),
             "{events:?}"
         );
     }
@@ -4211,7 +4213,7 @@ mod tests {
     }
 
     fn says(events: &[Event], said: &str) -> bool {
-        events.iter().any(|e| matches!(e, Event::Notice { text } if text == said))
+        events.iter().any(|e| matches!(e, Event::Notice { text, .. } if text == said))
     }
 
     #[test]
@@ -4258,7 +4260,7 @@ mod tests {
         assert_ne!(code_box_shut(&events), Some(true), "the box stays open");
         let said: Vec<&Event> = events.iter().filter(|e| matches!(e, Event::Notice { .. })).collect();
         assert!(
-            matches!(said.as_slice(), [Event::Notice { text }] if text == "recipient must be a live agent pane"),
+            matches!(said.as_slice(), [Event::Notice { text, .. }] if text == "recipient must be a live agent pane"),
             "said once: {said:?}"
         );
         assert_eq!(comment_again(&mut s).len(), 1);
@@ -5406,7 +5408,7 @@ mod tests {
         s.open_in_editor(CheckoutId(100), "src/lib.rs".into(), None);
         let sent = std::mem::take(&mut s.out);
         assert!(!sent.iter().any(|m| matches!(m, ClientMsg::OpenInEditor { .. })), "{sent:?}");
-        let said = s.events(0).into_iter().any(|e| matches!(e, Event::Notice { text } if text.contains("devbox")));
+        let said = s.events(0).into_iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("devbox")));
         assert!(said, "the person is told why");
 
         s.switch_host(None);
@@ -5497,7 +5499,7 @@ mod tests {
         let events = s.events(0);
         assert!(matches!(
             events.as_slice(),
-            [Event::Notice { text }, Event::Clipboard { text: copied }] if text == "no" && copied == "copied"
+            [Event::Notice { text, .. }, Event::Clipboard { text: copied }] if text == "no" && copied == "copied"
         ), "{events:?}");
     }
 
@@ -6024,7 +6026,7 @@ mod tests {
         s.wheel(PaneId(2), -1, (0, 0));
         s.receive(history(0, 0, None));
         assert!(s.shown.view().unwrap().parked().is_none());
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "nothing further back")));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text == "nothing further back")));
     }
 
     #[test]
@@ -6040,7 +6042,7 @@ mod tests {
         old.select(PaneId(2));
         old.events(0);
         assert!(old.paste_file("shot.png".into(), vec![1]).is_empty());
-        assert!(old.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old"))));
+        assert!(old.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("too old"))));
     }
 
     #[test]
@@ -6096,7 +6098,7 @@ mod tests {
 
         s.events(0);
         assert!(s.spawn_agent(CheckoutId(100), "nobody".into()).is_empty());
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("nobody"))));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("nobody"))));
     }
 
     #[test]
@@ -6203,7 +6205,7 @@ mod tests {
         assert!(answered.is_empty(), "nothing to subscribe to: {:?}", names(&answered));
         assert_eq!(s.shown.pane(), None);
         let events = s.events(0);
-        assert!(events.iter().any(|e| matches!(e, Event::Notice { text } if text == refusal)));
+        assert!(events.iter().any(|e| matches!(e, Event::Notice { text, .. } if text == refusal)));
         s.receive(with_tree(tree()));
         assert_eq!(s.rail(0).templates, ["claude", "codex"], "a refused agent is not the last one started");
         assert!(s.take_settings().is_none());
@@ -6371,7 +6373,7 @@ mod tests {
 
         s.remove_checkout(CheckoutId(100));
         let said = s.events(0).into_iter().find_map(|e| match e {
-            Event::Notice { text } => Some(text),
+            Event::Notice { text, .. } => Some(text),
             _ => None,
         });
         assert_eq!(said.as_deref(), Some("main is the primary checkout and stays"));
@@ -6647,7 +6649,7 @@ mod tests {
             s.events(0);
             let sent = s.command(Action::Close);
             assert!(!sent.iter().any(|m| matches!(m, ClientMsg::Kill { .. })), "{stage}: {sent:?}");
-            assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "no pane is on screen")));
+            assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text == "no pane is on screen")));
         }
         let mut s = session(without_focus());
         s.select(PaneId(1));
@@ -6661,7 +6663,7 @@ mod tests {
         s.select(PaneId(1));
         s.events(0);
         assert!(s.command(Action::Delete).is_empty());
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("no command"))));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("no command"))));
     }
 
     #[test]
@@ -6680,7 +6682,7 @@ mod tests {
         let mut s = session(without_focus());
         s.events(0);
         assert!(s.command(Action::Pull).is_empty());
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("show a pane"))));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("show a pane"))));
     }
 
     #[test]
@@ -7120,7 +7122,7 @@ mod tests {
         let mut s = session(without_focus());
         assert!(s.call(Call::OpenAddProject).is_empty());
         assert!(s.adding.get().is_none());
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old"))));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("too old"))));
     }
 
     #[test]
@@ -7549,7 +7551,7 @@ mod tests {
         s.select(PaneId(1));
         s.events(0);
         s.command(Action::StartAgent);
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == rail::NO_AGENT)));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text == rail::NO_AGENT)));
     }
 
     #[test]
@@ -7786,7 +7788,7 @@ mod tests {
     fn an_older_daemon_is_not_asked_for_a_console() {
         let mut s = session(without_focus());
         assert!(console(&mut s, ConsoleGesture::Spawn).is_empty());
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old"))));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text.contains("too old"))));
         assert!(!console_page(&mut s).can_spawn);
     }
 
@@ -7964,7 +7966,7 @@ mod tests {
     fn an_extensions_notice_is_said_with_its_name() {
         let mut s = session(Hello::this_build());
         s.receive(ServerMsg::ExtensionNotice { extension: "docker".into(), text: "web restarted".into() });
-        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "docker: web restarted")));
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text, .. } if text == "docker: web restarted")));
     }
 
     /// One view per scope: everywhere, in repository 10 (argus), and in
@@ -8155,7 +8157,7 @@ mod tests {
         s.events(0)
             .into_iter()
             .filter_map(|e| match e {
-                Event::Notice { text } => Some(text),
+                Event::Notice { text, .. } => Some(text),
                 _ => None,
             })
             .collect()

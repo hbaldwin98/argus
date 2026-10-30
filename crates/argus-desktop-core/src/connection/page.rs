@@ -515,6 +515,45 @@ pub enum ReviewJumpGesture {
     Close,
 }
 
+/// How a notice looks and what a person is to make of it. It is said where the notice is raised:
+/// a window that guessed it from the words would read them differently from the next.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum NoticeTone {
+    /// Something finished: a commit, a kept file.
+    Done,
+    /// Something came in: a paste, a file dropped.
+    Arrived,
+    /// An action had nothing to act on, or was not allowed. What most notices are.
+    #[default]
+    Refused,
+    /// The machine said no: a copy, a read, a request that failed.
+    Failed,
+}
+
+impl Event {
+    pub fn notice(text: impl Into<String>, tone: NoticeTone) -> Event {
+        Event::Notice { text: text.into(), tone }
+    }
+
+    pub fn done(text: impl Into<String>) -> Event {
+        Event::notice(text, NoticeTone::Done)
+    }
+
+    pub fn arrived(text: impl Into<String>) -> Event {
+        Event::notice(text, NoticeTone::Arrived)
+    }
+
+    pub fn refused(text: impl Into<String>) -> Event {
+        Event::notice(text, NoticeTone::Refused)
+    }
+
+    pub fn failed(text: impl Into<String>) -> Event {
+        Event::notice(text, NoticeTone::Failed)
+    }
+}
+
 /// One message down the page's channel.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
@@ -555,8 +594,12 @@ pub enum Event {
     /// Text a pane's child put on the clipboard (OSC 52).
     Clipboard { text: String },
     /// Something the daemon said that passes: a refused request's reason.
-    /// The page shows it a while and lets it go.
-    Notice { text: String },
+    /// The page shows it a while and lets it go; `tone` is how it looks.
+    Notice {
+        text: String,
+        #[serde(default)]
+        tone: NoticeTone,
+    },
     /// The views agents showed, whole, whenever one comes, goes or is
     /// opened.
     Views(Box<ViewsPage>),
@@ -2152,8 +2195,11 @@ mod tests {
     fn a_clipboard_and_a_notice_carry_their_text() {
         let event = Event::Clipboard { text: "copied".into() };
         assert_eq!(as_json(event), json!({"type": "clipboard", "text": "copied"}));
-        let event = Event::Notice { text: "no such pane".into() };
-        assert_eq!(as_json(event), json!({"type": "notice", "text": "no such pane"}));
+        let event = Event::refused("no such pane");
+        assert_eq!(as_json(event), json!({"type": "notice", "text": "no such pane", "tone": "refused"}));
+        assert_eq!(as_json(Event::done("committed")), json!({"type": "notice", "text": "committed", "tone": "done"}));
+        assert_eq!(as_json(Event::arrived("pasted a.png"))["tone"], "arrived");
+        assert_eq!(as_json(Event::failed("could not copy"))["tone"], "failed");
     }
 
     #[test]
