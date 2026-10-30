@@ -40,7 +40,7 @@ pub struct GitStage {
     caller: Caller,
     changes: Entity<Changes>,
     history: Entity<History>,
-    /// The history's filter field, which sits in the strip while History is the tab.
+    /// The history's filter field, which sits over the commits while History is the tab.
     filter: Entity<Filter>,
     focus: FocusHandle,
     /// Whether the stage was up at the last update, to take the keys once as it appears.
@@ -57,9 +57,9 @@ pub struct GitStage {
 impl GitStage {
     pub fn new(heard: Entity<Heard>, caller: Caller, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let changes = cx.new(|cx| Changes::new(heard.clone(), caller.clone(), window, cx));
-        let history = cx.new(|cx| History::new(heard.clone(), caller.clone(), cx));
         let focus = cx.focus_handle();
         let filter = cx.new(|cx| Filter::new(heard.clone(), caller.clone(), focus.clone(), window, cx));
+        let history = cx.new(|cx| History::new(heard.clone(), caller.clone(), filter.clone(), cx));
         let following = cx.observe_in(&heard, window, |this, _, window, cx| this.follow(window, cx));
         // The two tabs are two layers of the key walk, up while the stage has the keys.
         let layers = Layers::of(cx);

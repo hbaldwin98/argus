@@ -1765,6 +1765,8 @@ pub struct HistoryRowView {
     /// A commit's subject, or a file's path.
     pub text: String,
     pub ago: String,
+    /// A commit's author; empty on a file row.
+    pub author: String,
     /// How many files a commit touched, once asked.
     pub files: Option<usize>,
     pub loading: bool,

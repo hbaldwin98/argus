@@ -949,6 +949,7 @@ fn commit_row(row: usize, short: &str, text: &str, expanded: bool, files: Option
         short: short.into(),
         text: text.into(),
         ago: "15m".into(),
+        author: "Hunter Baldwin".into(),
         files,
         loading: false,
         expanded,
@@ -965,6 +966,7 @@ fn file_row(row: usize, path: &str, on: bool) -> HistoryRowView {
         short: String::new(),
         text: path.into(),
         ago: String::new(),
+        author: String::new(),
         files: None,
         loading: false,
         expanded: false,
@@ -1036,7 +1038,6 @@ fn a_history_snapshot_draws_its_rows_its_header_and_the_diff_of_the_file_under_t
     assert_eq!(selected(cx, &opened, ("history-row", 2usize)), Some(false));
     assert_eq!(selected(cx, &opened, ("history-row", 0usize)), Some(false));
     // The diff: the file's header and rows, with no cursor.
-    assert_eq!(label(cx, &opened, "history-commit").as_deref(), Some("046eb4f"));
     assert_eq!(label(cx, &opened, "history-diff-head").as_deref(), Some("src/lib.rs"));
     assert!(present(cx, &opened, "history-as-review") && present(cx, &opened, "history-fold-all"));
     for at in 0..4usize {
@@ -1335,7 +1336,8 @@ fn the_lit_commit_row_is_brought_into_view_in_a_long_history(cx: &mut TestAppCon
 
 #[gpui_kit::test]
 fn a_commit_rows_meta_says_loading_or_how_many_files_it_unfolded_to(cx: &mut TestAppContext) {
-    // HISTORY-2: an unfolded commit counts its files, one waiting on them says so, a folded one says nothing.
+    // HISTORY-2: an unfolded commit counts its files and one waiting on them says so, after the
+    // author and age every commit's second line gives; a folded one gives only those.
     let opened = historied(cx);
     let mut page = history();
     page.rows = vec![
@@ -1346,10 +1348,10 @@ fn a_commit_rows_meta_says_loading_or_how_many_files_it_unfolded_to(cx: &mut Tes
     ];
     page.rows[0].loading = true;
     hear(cx, &opened, vec![historic(page)]);
-    assert_eq!(label(cx, &opened, ("history-meta", 0usize)).as_deref(), Some("loading\u{2026}"));
-    assert_eq!(label(cx, &opened, ("history-meta", 1usize)).as_deref(), Some("1 file"));
-    assert_eq!(label(cx, &opened, ("history-meta", 2usize)).as_deref(), Some("2 files"));
-    assert!(!present(cx, &opened, ("history-meta", 3usize)), "a folded commit shows no count");
+    assert_eq!(label(cx, &opened, ("history-meta", 0usize)).as_deref(), Some("Hunter Baldwin \u{b7} 15m \u{b7} loading\u{2026}"));
+    assert_eq!(label(cx, &opened, ("history-meta", 1usize)).as_deref(), Some("Hunter Baldwin \u{b7} 15m \u{b7} 1 file"));
+    assert_eq!(label(cx, &opened, ("history-meta", 2usize)).as_deref(), Some("Hunter Baldwin \u{b7} 15m \u{b7} 2 files"));
+    assert_eq!(label(cx, &opened, ("history-meta", 3usize)).as_deref(), Some("Hunter Baldwin \u{b7} 15m"), "a folded commit shows no count");
 }
 
 #[gpui_kit::test]

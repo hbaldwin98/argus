@@ -16,8 +16,8 @@
 //! (HISTORY-9). What a body shows is chosen in the page's order: the list's
 //! loading bars, then why it is empty, then rows; the diff's reason before its
 //! loading bars (SHARED-3). The split between the commits and the diff is the
-//! window's own, never sent anywhere. The filter field is in the stage's strip
-//! (`review/filter`); its keys and the history's are heard by the stage.
+//! window's own, never sent anywhere. The filter field is the stage's (`review/filter`), drawn
+//! over the commits; its keys and the history's are heard by the stage.
 
 pub mod commits;
 pub mod diff;
@@ -32,6 +32,7 @@ use crate::connection::heard::Heard;
 use crate::kit::diff::{DiffEvent, DiffView};
 use crate::kit::hints;
 use crate::kit::split::{self, Split};
+use crate::review::filter::Filter;
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
@@ -55,6 +56,8 @@ pub struct History {
     heard: Entity<Heard>,
     caller: Caller,
     diff: Entity<DiffView>,
+    /// The filter field, which the stage owns and this draws over the commits.
+    filter: Entity<Filter>,
     split: Entity<Split>,
     scroll: ScrollHandle,
     /// The row lit when the list last scrolled to it, and where in the list it stood.
@@ -76,7 +79,7 @@ impl History {
         &self.diff
     }
 
-    pub fn new(heard: Entity<Heard>, caller: Caller, cx: &mut Context<Self>) -> Self {
+    pub fn new(heard: Entity<Heard>, caller: Caller, filter: Entity<Filter>, cx: &mut Context<Self>) -> Self {
         let diff = cx.new(|cx| DiffView::new("history-diff", false, false, cx));
         let split = cx.new(|cx| Split::new("history-split", "Resize the commits", COMMITS, COMMITS_MIN, COMMITS_MAX, cx));
         let resized = cx.observe(&split, |_, _, cx| cx.notify());
@@ -85,7 +88,7 @@ impl History {
                 this.copy(cx);
             }
         });
-        Self { heard, caller, diff, split, scroll: ScrollHandle::new(), lit: None, _subscriptions: [resized, copying] }
+        Self { heard, caller, diff, filter, split, scroll: ScrollHandle::new(), lit: None, _subscriptions: [resized, copying] }
     }
 
     /// Follows the session: the diff's rows, and the lit row brought into view
@@ -137,7 +140,7 @@ impl Render for History {
             .id("history-commits")
             .size_full()
             .min_w_0()
-            .child(self.head(&tokens, cx))
+            .child(self.head(&page, &tokens, cx))
             .child(div().flex_1().min_h_0().child(self.list(&page, &tokens, cx)));
         let diff = v_flex()
             .id("history-diff-pane")
