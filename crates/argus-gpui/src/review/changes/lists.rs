@@ -10,22 +10,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use argus_desktop_core::connection::page::{Call, ReviewPage};
-use argus_desktop_core::review::staging::{ReviewSection, SectionFile, StageGesture};
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _};
+use argus_desktop_core::review::staging::{ReviewSection, StageGesture};
+use gpui_kit::component::v_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{canvas, div, prelude::*, Bounds, Context, MouseButton, MouseDownEvent, Pixels, Point, SharedString, Window};
+use gpui_kit::{canvas, div, prelude::*, Bounds, Context, Pixels, Point, SharedString, Window};
 
 use crate::kit::button::{button, Look};
 use crate::kit::icon_button::Node;
-use crate::kit::counts::counts;
-use crate::kit::icons::Glyph;
 use crate::kit::drag::{Dragger, Step};
-use crate::kit::tip::tip;
 use crate::kit::long_list::long_list;
-use crate::kit::reveal;
-use crate::review::changes::lines::{change_id, height, lines, shown, Line, EMPTY_BOX, HEAD};
-use crate::review::changes::flat::FILE_ROW;
-use crate::review::changes::side::{folder, Files};
+use crate::kit::section;
+use crate::review::changes::lines::{change_id, height, lines, shown, Line, EMPTY_BOX};
+use crate::review::changes::side::Files;
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
@@ -52,7 +48,7 @@ pub fn dropped(carried: &Carried, onto: Option<bool>) -> Option<StageGesture> {
     (onto != carried.staged).then(|| StageGesture::Files { staged: onto, paths: vec![carried.path.clone()] })
 }
 
-fn title(side: &str) -> &'static str {
+pub(super) fn title(side: &str) -> &'static str {
     match side {
         "staged" => "Staged",
         "untracked" => "Untracked",
@@ -71,44 +67,9 @@ pub fn status(kind: &str, tokens: &Tokens) -> (&'static str, gpui_kit::Hsla, &'s
     }
 }
 
-/// `.st`: the status letter on a square of its own colour.
-pub fn badge(id: impl Into<gpui_kit::ElementId>, letter: &'static str, colour: gpui_kit::Hsla, said: &'static str, tokens: &Tokens, cx: &gpui_kit::App) -> impl IntoElement {
-    div()
-        .id(id)
-        .flex_shrink_0()
-        .size(rem(18.0))
-        .rounded(rem(tokens.r_xs))
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(colour.opacity(0.14))
-        .text_color(colour)
-        .font_family(cx.theme().mono_font_family.clone())
-        .text_size(rem(10.5))
-        .weighted(tokens.weight_semibold)
-        .child(letter)
-        .tooltip(tip(said))
-}
-
 /// `.ghost`: a quiet button, muted until the pointer is on it.
 pub fn ghost(id: impl Into<gpui_kit::ElementId>, words: impl Into<SharedString>, tokens: &Tokens) -> Node {
     button(id, words, Look::Quiet, true, tokens)
-}
-
-/// `.dirhead`: a folder's name over its files, when the list is by folder.
-fn dirhead(dir: &str, tokens: &Tokens, cx: &gpui_kit::App) -> impl IntoElement {
-    h_flex()
-        .flex_shrink_0()
-        .h(rem(tokens.sp_24))
-        .pl(rem(14.0))
-        .pr(rem(tokens.sp_12))
-        .gap(rem(tokens.sp_6))
-        .items_center()
-        .text_color(tokens.fg_faint)
-        .font_family(cx.theme().mono_font_family.clone())
-        .text_size(rem(11.0))
-        .child(Glyph::Folder.at(14.0))
-        .child(div().min_w_0().truncate().child(SharedString::from(dir.to_owned())))
 }
 
 /// The lists with only the files whose path holds `query`, already lowercased; every file while it
@@ -156,7 +117,7 @@ impl Files {
                     .child("No changed file matches."),
             );
         }
-        let lines = lines(&found, &shown, self.tree);
+        let lines = lines(&found, &shown, self.tree, &self.closed);
         let heights: Vec<f32> = lines.iter().map(|line| height(line, tokens)).collect();
         let talked = drafted(page);
         list.child(
@@ -168,10 +129,8 @@ impl Files {
                 let drawn = match line {
                     Line::Head(k) => this.head(*k, section, &tokens, cx).into_any_element(),
                     Line::Empty(_) => this.empty(section, &tokens).into_any_element(),
-                    Line::Folder(_, dir) => dirhead(dir, &tokens, cx).into_any_element(),
-                    Line::File { list, at, folders } => {
-                        this.change(change_id(*list, *at), &section.files[*at], section.side == "staged", *folders, &talked, &tokens, cx).into_any_element()
-                    }
+                    Line::Folder { .. } => this.folder_row(at, line, &tokens, cx),
+                    Line::File { list, at: file, depth } => this.change(change_id(*list, *file), at, &section.files[*file], section.side == "staged", *depth, &talked, &tokens, cx),
                 };
                 this.framed(at, line, section, last, drawn, &tokens).into_any_element()
             })
@@ -185,7 +144,7 @@ impl Files {
     pub(super) fn sections_lit_row(&self, page: &ReviewPage) -> Option<usize> {
         let found = found(&page.sections, &self.query);
         let shown = shown(&found, !self.query.is_empty());
-        lines(&found, &shown, self.tree).iter().position(|line| matches!(line, Line::File { list, at, .. } if found[*list].files[*at].on))
+        lines(&found, &shown, self.tree, &self.closed).iter().position(|line| matches!(line, Line::File { list, at, .. } if found[*list].files[*at].on))
     }
 
     /// Whether a file carried from the other list is over `staged`'s, which lights it as a target.
@@ -222,32 +181,26 @@ impl Files {
             .child(drawn)
     }
 
-    /// `.section`: the list's type in capitals, its count fainter, the move of all at its end.
+    /// The list's section head (`kit::section`): its type in capitals, its count, the move of all
+    /// at its end.
     fn head(&self, k: usize, section: &ReviewSection, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let staged = section.side == "staged";
-        let target = self.targeted(staged);
         let all = if staged { "Unstage all" } else { "Stage all" };
         let paths: Vec<String> = section.files.iter().map(|f| f.file.path.clone()).collect();
-        h_flex()
-            .gap(rem(tokens.sp_8))
-            .items_center()
-            .h(rem(HEAD))
-            .pl(rem(tokens.sp_12))
-            .pr(rem(6.0))
-            .typed(tokens.type_label)
-            .text_color(if target { tokens.accent } else { tokens.fg_faint })
-            .child(SharedString::from(title(section.side).to_uppercase()))
-            .child(div().text_color(tokens.fg_fainter).child(SharedString::from(section.files.len().to_string())))
-            .child(div().flex_1())
-            .when(!paths.is_empty(), |head| {
-                head.child(
-                    ghost(("review-section-all", k), all, tokens)
-                        .child(all)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.ask(Call::Stage { gesture: StageGesture::Files { staged: !staged, paths: paths.clone() } }, cx);
-                        })),
-                )
-            })
+        let words = match section.side {
+            "staged" => "Staged",
+            "untracked" => "Untracked",
+            _ => "Changed",
+        };
+        let action = (!paths.is_empty()).then(|| {
+            section::action(("review-section-all", k), all, tokens)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.ask(Call::Stage { gesture: StageGesture::Files { staged: !staged, paths: paths.clone() } }, cx);
+                }))
+                .into_any_element()
+        });
+        let head = section::head(("review-section-head", k), words, Some(section.files.len()), action, tokens);
+        if self.targeted(staged) { head.text_color(tokens.accent) } else { head }
     }
 
     /// The box an empty list shows, saying how a file comes to it.
@@ -266,131 +219,11 @@ impl Files {
                 .typed(tokens.type_small)
                 .text_color(if target { tokens.accent } else { tokens.fg_fainter })
                 .text_center()
-                .child("Drag a file here, or double-click it, to stage it"),
+                .child("Drop a file here, or double-click it"),
         )
     }
 
-    /// `.row`: one file of a list — its status, name, folder and counts — and, hovered or lit, the
-    /// move across where the counts were. `folders` is whether the row says its folder, which a
-    /// tree's folder head says for it.
-    #[allow(clippy::too_many_arguments)]
-    fn change(&self, id: usize, file: &SectionFile, staged: bool, folders: bool, talked: &[(String, usize)], tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let (letter, colour, said) = status(file.file.kind, tokens);
-        let path = file.file.path.clone();
-        let carried = Carried { path: path.clone(), staged };
-        let moving = self.carried().is_some_and(|c| *c == carried) && self.drag.is_dragging();
-        let group = SharedString::from(format!("review-change-{id}"));
-        let across = if staged { "Unstage" } else { "Stage" };
-        let move_path = path.clone();
-        let waiting = talked.iter().find(|(p, _)| *p == path).map(|(_, n)| *n);
-        let hint = if staged { "Double-click or drag to Changes to unstage" } else { "Double-click or drag to Staged to stage" };
-        h_flex()
-            .id(("review-change", id))
-            .test_support()
-            .group(group.clone())
-            .aria_selected(file.on)
-            .aria_label(SharedString::from(format!("{} {}", title(if staged { "staged" } else { file.file.kind }), path)))
-            .flex_shrink_0()
-            .h(rem(FILE_ROW))
-            .mx(rem(tokens.sp_2))
-            .pl(rem(tokens.sp_8))
-            .pr(rem(tokens.sp_6))
-            .gap(rem(tokens.sp_8))
-            .items_center()
-            .rounded(rem(tokens.r_sm))
-            .border_1()
-            .border_color(if file.on { tokens.line_strong } else { gpui_kit::transparent_black() })
-            .typed(tokens.type_body)
-            .text_color(if file.on { tokens.fg } else { tokens.fg_muted })
-            .cursor_pointer()
-            .when(moving, |row| row.opacity(0.45))
-            .when(file.on, |row| row.bg(tokens.bg_selected))
-            .when(!file.on, |row| row.hover(|style| style.bg(tokens.fill.opacity(0.6)).text_color(tokens.fg)))
-            .tooltip(tip(SharedString::from(format!("{path}\n{hint}"))))
-            // A second press of a double-click moves the file; a first is held, to be a click or a drag.
-            .on_mouse_down(MouseButton::Left, cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                if event.click_count >= 2 {
-                    this.drag.cancel();
-                    this.ask(Call::Stage { gesture: StageGesture::File { staged, path: path.clone() } }, cx);
-                } else {
-                    this.drag.press(event.position, carried.clone());
-                }
-            }))
-            .child(badge(("review-change-status", id), letter, colour, said, tokens, cx))
-            // The name gives way only once the folder beside it has gone, and is then cut short too.
-            .child(
-                div()
-                    .flex_shrink(1.0)
-                    .min_w(rem(48.0))
-                    .truncate()
-                    .text_color(tokens.fg)
-                    .weighted(tokens.weight_medium)
-                    .child(SharedString::from(file.file.name.clone())),
-            )
-            .when(file.partly, |row| {
-                row.child(
-                    div()
-                        .id(("review-change-partly", id))
-                        .test_support()
-                        .aria_label("Partly staged")
-                        .flex_shrink_0()
-                        .size(rem(6.0))
-                        .rounded_full()
-                        .bg(tokens.yellow)
-                        .tooltip(tip("Partly staged")),
-                )
-            })
-            .when_some(waiting, |row, n| {
-                let words = SharedString::from(format!("{n} comment{} waiting in your review", if n == 1 { "" } else { "s" }));
-                row.child(
-                    h_flex()
-                        .id(("review-change-talk", id))
-                        .test_support()
-                        .aria_label(words.clone())
-                        .flex_shrink_0()
-                        .gap(rem(3.0))
-                        .items_center()
-                        .text_color(tokens.accent)
-                        .font_family(SharedString::from(tokens.font_mono))
-                        .text_size(rem(11.0))
-                        .tooltip(tip(words))
-                        .child(Glyph::Talk.at(12.0))
-                        .child(SharedString::from(n.to_string())),
-                )
-            })
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .typed(tokens.type_small)
-                    .text_color(tokens.fg_faint)
-                    .when(folders, |dir| dir.child(SharedString::from(folder(&file.file.dir).to_owned()))),
-            )
-            // `.nums` and `.stage` share the row's end: the counts until the row is hovered or lit,
-            // then the move across.
-            .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .items_center()
-                    .when(!file.on, |end| {
-                        end.child(reveal::off_hover(group.clone(), div().text_size(rem(11.0)).child(counts(file.file.added, file.file.removed, tokens))))
-                    })
-                    .child(reveal::on_hover(
-                        group,
-                        file.on,
-                        ghost(("review-change-move", id), SharedString::from(format!("{across} {move_path}")), tokens)
-                            .tooltip(tip(SharedString::from(format!("{across} file"))))
-                            .child(if staged { Glyph::Minus.at(14.0) } else { Glyph::Plus.at(14.0) })
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.ask(Call::Stage { gesture: StageGesture::File { staged, path: move_path.clone() } }, cx);
-                            })),
-                    )),
-            )
-    }
-
-    fn carried(&self) -> Option<&Carried> {
+    pub(super) fn carried(&self) -> Option<&Carried> {
         self.drag.payload()
     }
 
@@ -436,6 +269,7 @@ impl Dragger for Files {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use argus_desktop_core::review::staging::SectionFile;
     use gpui_kit::{point, px, size};
 
     fn carried(staged: bool) -> Carried {

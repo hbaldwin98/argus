@@ -27,7 +27,8 @@ use gpui_kit::{div, prelude::*, Context, Entity, Role, ScrollStrategy, SharedStr
 use crate::kit::drag::{self, Drag};
 use crate::kit::icons::Glyph;
 use crate::kit::tip::tip;
-use crate::review::changes::lists::ghost;
+use crate::kit::tools;
+use crate::review::changes::lines::Closed;
 use crate::review::changes::commit::CommitBox;
 use crate::review::changes::lists::{Areas, Carried};
 use crate::connection::caller::Caller;
@@ -52,8 +53,10 @@ pub struct Files {
     pub(super) keys: gpui_kit::FocusHandle,
     /// Where each list was laid out, for a drop.
     pub(super) areas: Areas,
-    /// The lists are by folder rather than flat: the window's own, never sent.
+    /// The lists are by folder, a real tree, rather than flat (the default): the window's own, never sent.
     pub(super) tree: bool,
+    /// The folders closed in the tree: the window's own.
+    pub(super) closed: Closed,
     /// The Files tab is shown rather than the changes, its folders open, and whether it shows only
     /// what holds a change: the window's own.
     pub(super) checkout: bool,
@@ -145,7 +148,8 @@ impl Files {
             drag: Drag::new(),
             keys: cx.focus_handle(),
             areas: Areas::default(),
-            tree: false,
+            tree: true,
+            closed: Closed::new(),
             checkout: false,
             folders: HashSet::new(),
             changed_only: false,
@@ -211,10 +215,10 @@ impl Files {
         let head = v_flex()
             .id("review-files-head")
             .flex_shrink_0()
-            .p(rem(10.0))
-            .gap(rem(tokens.sp_8))
-            .border_b_1()
-            .border_color(tokens.line);
+            .px(rem(10.0))
+            .pt(rem(10.0))
+            .pb(rem(tokens.sp_4))
+            .gap(rem(tokens.sp_8));
         if page.base == "commit" {
             let words = SharedString::from(page.commit.clone().unwrap_or_default());
             return head
@@ -257,10 +261,9 @@ impl Files {
             paths.len()
         };
         let mode = |id: &'static str, words: &'static str, glyph: Glyph, tree: bool, on: bool, cx: &mut Context<Self>| {
-            ghost(id, words, tokens)
-                .aria_selected(on)
-                .when(on, |button| button.bg(tokens.fill).text_color(tokens.fg).border_color(tokens.line_strong))
+            segment::switch_option(id, Role::RadioButton, on, tokens)
                 .tooltip(tip(words))
+                .aria_label(words)
                 .child(glyph.at(14.0))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.tree = tree;
@@ -270,39 +273,52 @@ impl Files {
         let checkout = self.checkout;
         let all = page.tree.as_ref().filter(|tree| tree.listed).map_or_else(|| "\u{2026}".to_owned(), |tree| tree.files.len().to_string());
         let tab = |id: &'static str, words: &'static str, n: String, files: bool, cx: &mut Context<Self>| {
-            segment::pill(id, Role::Tab, checkout == files, tokens).child(words).child(segment::count(n, tokens)).on_click(cx.listener(move |this, _, window, cx| this.show_tab(files, window, cx)))
+            segment::switch_option(id, Role::Tab, checkout == files, tokens)
+                .gap(rem(tokens.sp_6))
+                .child(words)
+                .child(segment::count(n, tokens))
+                .on_click(cx.listener(move |this, _, window, cx| this.show_tab(files, window, cx)))
         };
         let changed = self.changed_only;
         let find = if checkout { "Find a file in the checkout" } else { "Find a changed file" };
-        head.child(
-            row.child(
-                segment::track("review-list-what", "What the list shows", Role::TabList, tokens)
-                    .child(tab("review-list-changes", "Changes", files.to_string(), false, cx))
-                    .when(page.tree.is_some(), |tabs| tabs.child(tab("review-list-files", "Files", all, true, cx))),
-            )
-            .child(div().flex_1())
-            .when(!checkout, |row| {
-                row.child(mode("review-list-flat", "As a list", Glyph::List, false, !self.tree, cx)).child(mode("review-list-tree", "By folder", Glyph::Tree, true, self.tree, cx))
-            })
-            .when(checkout, |row| {
+        // `.side-head`: what the list shows, then the find field with the switch of how it lists.
+        head.when(page.tree.is_some(), |head| {
+            head.child(
                 row.child(
-                    ghost("review-list-changed", "Changed", tokens)
-                        .aria_selected(changed)
-                        .when(changed, |button| button.bg(tokens.fill).text_color(tokens.fg).border_color(tokens.line_strong))
-                        .tooltip(tip("Only folders and files with changes"))
-                        .child("Changed")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.changed_only = !this.changed_only;
-                            cx.notify();
-                        })),
-                )
-            }),
-        )
+                    segment::track("review-list-what", "What the list shows", Role::TabList, tokens)
+                        .child(tab("review-list-changes", "Changes", files.to_string(), false, cx))
+                        .child(tab("review-list-files", "Files", all, true, cx)),
+                ),
+            )
+        })
         .child(
-            div()
-                .id("review-find-field")
-                .min_w_0()
-                .child(Input::new(&self.find).id("review-find").small().h(rem(tokens.control_h_sm)).prefix(Glyph::Search.at(14.0)).aria_label(find)),
+            h_flex()
+                .gap(rem(tokens.sp_8))
+                .items_center()
+                .child(
+                    div()
+                        .id("review-find-field")
+                        .flex_1()
+                        .min_w_0()
+                        .child(Input::new(&self.find).id("review-find").small().h(rem(tokens.control_h_sm + tokens.sp_4)).prefix(Glyph::Search.at(14.0)).aria_label(find)),
+                )
+                .when(!checkout, |row| {
+                    row.child(
+                        segment::track("review-list-as", "List as", Role::RadioGroup, tokens)
+                            .child(mode("review-list-flat", "Flat", Glyph::List, false, !self.tree, cx))
+                            .child(mode("review-list-tree", "By folder", Glyph::Tree, true, self.tree, cx)),
+                    )
+                })
+                .when(checkout, |row| {
+                    row.child(
+                        tools::ghost("review-list-changed", "Changed", None, changed, tokens)
+                            .tooltip(tip("Only folders and files with changes"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.changed_only = !this.changed_only;
+                                cx.notify();
+                            })),
+                    )
+                }),
         )
         .into_any_element()
     }

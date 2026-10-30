@@ -437,7 +437,7 @@ fn each_button_and_click_sends_the_call_the_page_sends_and_changes_nothing_itsel
     click(cx, &opened, "review-view-unified");
     assert!(asked(&opened).is_empty(), "the layout already on sends nothing (REVIEW-3)");
     click(cx, &opened, "review-open");
-    assert_eq!(asked(&opened), ["ReviewAction { action: OpenCode }"], "Open reads the file in Code, not an editor of its own");
+    assert_eq!(asked(&opened), ["ReviewAction { action: OpenEditor }"], "the head's Open in editor is the E key's call (Git.dc.html); Open in Code stays in the folded menu");
     click(cx, &opened, ("review-file", 1usize));
     assert_eq!(asked(&opened), ["ReviewClick { target: File { file: 1 } }"]);
     click(cx, &opened, "review-refresh");
