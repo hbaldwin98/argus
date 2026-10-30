@@ -123,6 +123,17 @@ fn a_tree_with_no_project_offers_to_add_one_by_asking_the_session_for_the_dialog
 }
 
 #[gpui_kit::test]
+fn a_workspace_with_no_project_says_that_a_project_added_now_lands_in_it(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    hear(cx, &opened, vec![status(Connection::Connected, None, None), Event::Rail(Box::new(Rail { loaded: true, ..Rail::default() }))]);
+    assert_eq!(
+        label_of(cx, &opened, "no-projects").as_deref(),
+        Some("No projects here yet. Projects you add now land in this workspace."),
+    );
+    assert!(has(cx, &opened, "add-project"), "and the button to add one is there");
+}
+
+#[gpui_kit::test]
 fn a_project_with_no_pane_offers_an_agent_a_shell_and_the_panes_to_go_back_to(cx: &mut TestAppContext) {
     let opened = open(cx);
     hear(cx, &opened, vec![status(Connection::Connected, None, None), Event::Rail(Box::new(project_rail()))]);

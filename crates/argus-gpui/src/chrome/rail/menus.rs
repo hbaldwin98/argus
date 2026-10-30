@@ -20,6 +20,8 @@ pub enum Does {
     Go(Vec<Call>),
     /// Opens the rename dialog over the pane, once the menu has let go of the keys.
     Rename { pane: u64, title: String },
+    /// Opens the dialog that names a workspace to make.
+    NewWorkspace,
 }
 
 /// A repository's menu: its name, Features, the recent sessions, a rule, and Collapse or Expand.
@@ -127,6 +129,7 @@ mod tests {
         match &item.as_choice().expect("a choice").does {
             Does::Send(calls) | Does::Go(calls) => calls.iter().map(|call| format!("{call:?}")).collect(),
             Does::Rename { pane, .. } => vec![format!("rename {pane}")],
+            Does::NewWorkspace => vec!["new workspace".into()],
         }
     }
 

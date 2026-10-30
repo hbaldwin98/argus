@@ -123,6 +123,11 @@ pub enum Call {
     /// The answer to that question.
     AnswerRemoveProject { yes: bool },
     OpenAddProject,
+    /// Makes a workspace of this name, which the daemon opens. Refused, the rail's `new_workspace`
+    /// says why.
+    CreateWorkspace { name: String },
+    /// The new-workspace dialog went away: whatever it was told is forgotten.
+    DismissNewWorkspace,
     /// A gesture in the add-a-project dialog.
     AddProject { gesture: AddProjectGesture },
     ToggleRepository { repository: u64 },
@@ -704,6 +709,8 @@ pub struct Rail {
     pub hosts: Vec<HostChoice>,
     /// A project waiting on a yes to be removed.
     pub removing: Option<Removing>,
+    /// A workspace being made from the switcher: asked of the daemon, or refused by it.
+    pub new_workspace: Option<NewWorkspace>,
     /// The width the person dragged the rail to, in CSS pixels; `None`
     /// leaves the page's own.
     pub width: Option<u32>,
@@ -743,6 +750,18 @@ pub struct WorkspaceChoice {
     pub projects: usize,
     /// Live panes in it, open or not.
     pub panes: usize,
+}
+
+/// A workspace asked for and not yet listed by the daemon. It is there from the ask until the
+/// daemon lists the workspace open, or refuses; the dialog that asked closes when it is gone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NewWorkspace {
+    /// The ask is with the daemon.
+    pub creating: bool,
+    /// What the daemon said when it refused the last ask.
+    pub refusal: Option<String>,
 }
 
 /// A host whose daemon the window can reach over ssh.
@@ -2056,6 +2075,7 @@ mod tests {
             templates: vec!["claude".into()],
             workspaces: vec![WorkspaceChoice { id: 7, name: "personal".into(), open: true, projects: 1, panes: 1 }],
             removing: Some(Removing { project: 1, name: "src".into(), repositories: 1, panes: 0 }),
+            new_workspace: Some(NewWorkspace { creating: false, refusal: Some("workspace already exists: work".into()) }),
             width: Some(320),
             outline_width: None,
             brief_height: None,
@@ -2079,6 +2099,7 @@ mod tests {
         assert_eq!(value["workspaces"][0]["open"], true);
         assert_eq!(value["hosts"][0], json!({"name": "devbox", "current": true}));
         assert_eq!(value["removing"]["repositories"], 1);
+        assert_eq!(value["newWorkspace"], json!({"creating": false, "refusal": "workspace already exists: work"}));
     }
 
     #[test]

@@ -63,6 +63,7 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         workspaces: Vec::new(),
         hosts: Vec::new(),
         removing: None,
+        new_workspace: None,
         width: None,
         outline_width: None,
         brief_height: None,

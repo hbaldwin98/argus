@@ -28,6 +28,7 @@ pub mod switcher;
 pub mod start;
 pub mod status;
 pub mod tail;
+pub mod workspace;
 
 use std::cell::Cell;
 use std::collections::HashSet;

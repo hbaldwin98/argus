@@ -7,7 +7,7 @@
 //! `Add a project...` asks the session for the dialog (`Call::OpenAddProject`), which `chrome/projects/add`
 //! draws once the session says it is open.
 
-use argus_desktop_core::chrome::empty::{Empty, NoPane, ShellHere, WayOut};
+use argus_desktop_core::chrome::empty::{Empty, NoPane, ShellHere, WayOut, NO_PROJECTS};
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::keys::keymap::Action;
 use gpui_kit::component::{h_flex, v_flex};
@@ -95,7 +95,7 @@ fn no_projects(ways: &Ways, tokens: &Tokens) -> Vec<AnyElement> {
     vec![
         tile(Glyph::Folder, tokens).into_any_element(),
         title("No projects", tokens).into_any_element(),
-        div().text_color(tokens.fg_muted).child("Add a folder of repositories, or run argus init in one.").into_any_element(),
+        div().id("no-projects").test_support().aria_label(NO_PROJECTS).text_color(tokens.fg_muted).child(NO_PROJECTS).into_any_element(),
         button("add-project", "Add a project\u{2026}", Look::Primary, false, tokens)
             .gap(rem(tokens.sp_6))
             .child(Glyph::Plus.at(tokens.icon_sm))

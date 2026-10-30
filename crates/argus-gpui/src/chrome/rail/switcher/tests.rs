@@ -12,6 +12,7 @@ fn calls(item: &MenuItem<Does>) -> Vec<String> {
     match &item.as_choice().expect("a choice").does {
         Does::Send(calls) | Does::Go(calls) => calls.iter().map(|call| format!("{call:?}")).collect(),
         Does::Rename { .. } => vec!["rename".into()],
+        Does::NewWorkspace => vec!["new workspace".into()],
     }
 }
 
@@ -81,10 +82,13 @@ fn a_workspace_opens_only_when_it_is_not_open_and_says_how_many_projects_it_hold
     ];
     let (note, rows) = fold_of(&items(&with), "Switch workspace");
     assert_eq!(note.as_deref(), Some("default"), "the open workspace is named beside the choice");
-    assert_eq!(rows.iter().map(|r| r.as_choice().unwrap().checked).collect::<Vec<_>>(), [Some(true), Some(false)]);
+    assert_eq!(rows.iter().filter_map(|r| r.as_choice()).map(|r| r.checked).take(2).collect::<Vec<_>>(), [Some(true), Some(false)]);
     assert!(calls(&rows[0]).is_empty(), "the open one asks nothing");
     assert_eq!(calls(&rows[1]), ["OpenWorkspace { workspace: 2 }"]);
     assert_eq!(rows[1].as_choice().unwrap().hint, Hint::Text("3 projects".into()));
+    assert_eq!(lines(&rows)[2..], ["---", "New workspace\u{2026}"], "the way to make another ends the list");
+    assert_eq!(calls(&rows[3]), ["new workspace"]);
+    assert_eq!(rows[3].as_choice().unwrap().lead, Some("+"));
 }
 
 /// SHELL-SWITCH-5.

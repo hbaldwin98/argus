@@ -8,6 +8,7 @@ use argus_desktop_core::connection::page::Call;
 use gpui_kit::{Context, Window};
 
 use super::menus::Does;
+use super::workspace;
 use super::RailView;
 use crate::panes::console::rename;
 
@@ -61,6 +62,11 @@ impl RailView {
                 }
             }
             Does::Rename { pane, title } => rename::open(*pane, title.clone(), self.caller.clone(), self.heard.clone(), window, cx),
+            Does::NewWorkspace => {
+                if !held {
+                    workspace::open(self.caller.clone(), self.heard.clone(), window, cx);
+                }
+            }
         }
     }
 }

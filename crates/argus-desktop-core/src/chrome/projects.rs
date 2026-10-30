@@ -80,6 +80,14 @@ pub const NO_HOSTS: &str = "No hosts in ~/.ssh/config, or set ARGUS_DESKTOP_HOST
 /// What a press on Connect to a host... explains, as its tooltip.
 pub const HOSTS_TIP: &str = "Reach the daemon on another machine over ssh, as argus --host does";
 
+/// The end of the workspace list: the row that makes another.
+pub const NEW_WORKSPACE: &str = "New workspace\u{2026}";
+
+/// What the new-workspace dialog says: its title, the field's name and what its keys do.
+pub const NEW_WORKSPACE_TITLE: &str = "New workspace";
+pub const NEW_WORKSPACE_PLACEHOLDER: &str = "work";
+pub const NEW_WORKSPACE_HINT: &str = "Enter creates and opens it \u{b7} Esc cancels";
+
 /// One entry of the menu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Entry {

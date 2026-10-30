@@ -30,6 +30,8 @@ pub enum Overlay {
     Reconcile,
     /// Naming a pane.
     Rename,
+    /// Naming a workspace to make.
+    NewWorkspace,
     /// Naming the branch of a new worktree.
     Worktree,
     /// Asking why a feature is held.

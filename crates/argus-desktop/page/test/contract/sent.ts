@@ -5444,6 +5444,7 @@ export const sent = [
   "hosts": [],
   "loaded": true,
   "needsYou": 4,
+  "newWorkspace": null,
   "outlineWidth": null,
   "project": {
     "id": 1,
@@ -6087,6 +6088,7 @@ export const sent = [
   "hosts": [],
   "loaded": true,
   "needsYou": 4,
+  "newWorkspace": null,
   "outlineWidth": null,
   "project": {
     "id": 1,
@@ -6336,6 +6338,7 @@ export const sent = [
   "hosts": [],
   "loaded": true,
   "needsYou": 0,
+  "newWorkspace": null,
   "outlineWidth": null,
   "project": {
     "id": 1,
@@ -6875,6 +6878,7 @@ export const sent = [
   "hosts": [],
   "loaded": true,
   "needsYou": 0,
+  "newWorkspace": null,
   "outlineWidth": null,
   "project": {
     "id": 1,

@@ -362,6 +362,7 @@ impl Session {
                 dialog.reasked(asked);
             }
         }
+        self.switcher.forget_making();
         if let Some(dialog) = self.adding.get_mut() {
             dialog.reconnected(self.awaited.name(), &mut self.out);
         }
@@ -534,6 +535,10 @@ impl Session {
     fn refused(&mut self, refusal: RequestRefusal) {
         let id = refusal.request_id;
         self.awaited.answer(id, None);
+        // A workspace is asked without a name for the request, so its refusal names none either.
+        if id == 0 && self.switcher.refused(&refusal.reason) {
+            return;
+        }
         let said = self.adding.get_mut().is_some_and(|d| d.refused(&refusal))
             || self.dialogs.refused(&refusal, &mut self.passing)
             || self.sessions.failed(id, &refusal.reason);
@@ -728,6 +733,11 @@ impl Session {
             Call::OpenWorkspace { workspace } => self.open_workspace(WorkspaceId(workspace)),
             Call::RemoveProject { project } => self.remove_project(ProjectId(project)),
             Call::AnswerRemoveProject { yes } => self.answer_remove_project(yes),
+            Call::CreateWorkspace { name } => self.create_workspace(&name),
+            Call::DismissNewWorkspace => {
+                self.switcher.forget_making();
+                self.finish()
+            }
             Call::OpenAddProject => self.open_add_project(),
             Call::AddProject { gesture } => self.add_project(gesture),
             Call::ToggleRepository { repository } => self.toggle_repository(RepositoryId(repository)),
@@ -1595,6 +1605,12 @@ impl Session {
     /// Asks the daemon to open a workspace; the rail follows its tree.
     fn open_workspace(&mut self, workspace: WorkspaceId) -> Vec<ClientMsg> {
         self.out.extend(self.switcher.open_workspace(workspace));
+        self.finish()
+    }
+
+    /// Asks the daemon for a workspace; it opens what it makes, and the rail follows its list.
+    fn create_workspace(&mut self, name: &str) -> Vec<ClientMsg> {
+        self.out.extend(self.switcher.create_workspace(name));
         self.finish()
     }
 
@@ -3719,6 +3735,7 @@ impl Session {
             pane.views = self.views.count(PaneId(pane.id));
         }
         rail.removing = self.switcher.removing(&self.tree);
+        rail.new_workspace = self.switcher.making();
         rail.width = self.rail_width.get();
         rail.outline_width = self.outline_width.get();
         rail.brief_height = self.brief_height.get();
@@ -6409,7 +6426,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 162] = [
+    const CALLS: [&str; 164] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"open_beside","pane":2}"#,
@@ -6519,6 +6536,8 @@ mod tests {
         r#"{"call":"extension_command","extension":"docker","command":"up","checkout":100,"pane":null}"#,
         r#"{"call":"answer_dialog","dialog":3,"answer":{"picked":"web"}}"#,
         r#"{"call":"extension_mode","panel":"extension:docker/containers","page":true}"#,
+        r#"{"call":"create_workspace","name":"side"}"#,
+        r#"{"call":"dismiss_new_workspace"}"#,
         r#"{"call":"toggle_extensions"}"#,
         r#"{"call":"reconnect"}"#,
         r#"{"call":"set_host","host":"devbox"}"#,
@@ -7121,6 +7140,40 @@ mod tests {
         assert!(s.call(Call::OpenAddProject).is_empty());
         assert!(s.adding.get().is_none());
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old"))));
+    }
+
+    #[test]
+    fn a_new_workspace_is_asked_and_is_done_when_the_daemon_lists_it_open() {
+        let mut s = session(Hello::this_build());
+        let workspace = |id, name: &str, open| argus_protocol::WorkspaceInfo { id: WorkspaceId(id), name: name.into(), projects: 0, panes: 0, open };
+        s.receive(ServerMsg::Workspaces(vec![workspace(1, "default", true)]));
+        let sent = s.call(Call::CreateWorkspace { name: " side ".into() });
+        assert!(matches!(sent.as_slice(), [ClientMsg::CreateWorkspace { name }] if name == "side"));
+        assert!(s.rail(0).new_workspace.is_some_and(|n| n.creating), "asked, not made");
+        s.receive(ServerMsg::Workspaces(vec![workspace(1, "default", false), workspace(2, "side", true)]));
+        assert!(s.rail(0).new_workspace.is_none(), "the daemon listed it open");
+    }
+
+    #[test]
+    fn a_refused_workspace_is_said_in_the_dialog_and_not_under_it() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::CreateWorkspace { name: "default".into() });
+        s.receive(refusal(0, "workspace already exists: default", false));
+        let rail = s.rail(0);
+        assert_eq!(rail.new_workspace.map(|n| (n.creating, n.refusal)), Some((false, Some("workspace already exists: default".into()))));
+        assert!(!s.events(0).iter().any(|e| matches!(e, Event::Notice { .. })));
+        let sent = s.call(Call::CreateWorkspace { name: "work".into() });
+        assert_eq!(sent.len(), 1, "and it can be tried again");
+        s.call(Call::DismissNewWorkspace);
+        assert!(s.rail(0).new_workspace.is_none());
+    }
+
+    #[test]
+    fn an_older_daemons_bare_error_is_a_new_workspaces_refusal() {
+        let mut s = session(Hello { capabilities: vec![ADD_PROJECT.into()], ..Hello::this_build() });
+        s.call(Call::CreateWorkspace { name: "default".into() });
+        s.receive(ServerMsg::Error { message: "workspace already exists: default".into() });
+        assert_eq!(s.rail(0).new_workspace.and_then(|n| n.refusal).as_deref(), Some("workspace already exists: default"));
     }
 
     #[test]

@@ -191,7 +191,10 @@ commands, panes, checkouts and features (`>` for commands only, `#` for features
   or an agent (`A`). Drag a pane's row onto another checkout to move it there.
 - **The project heading** opens the switcher: projects, Add a project…, Switch workspace…, Connect
   to a host… (from `~/.ssh/config` and hosts used before; keys or ssh-agent only, argus already
-  installed there), and Remove.
+  installed there), and Remove. In the GPUI window **Switch workspace…** ends its list with **New
+  workspace…**: name it, Enter creates and opens it, and a name the daemon refuses (one already in
+  use) is said under the field, which keeps what you typed. A workspace with no projects says that
+  one added now lands in it.
 - **Checkouts** (`3`) lists the repository's checkouts, and with `B` its branches: Enter opens or
   switches, `F` fetches, `P` pulls, `S`/`A` start a shell or agent, `N` makes a worktree, `D` deletes
   a branch or removes a worktree, `R` reviews, `H` opens history, `E` shows its files.
