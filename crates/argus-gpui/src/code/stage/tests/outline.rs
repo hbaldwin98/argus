@@ -38,7 +38,7 @@ fn a_row_goes_to_the_line_it_stands_for(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn the_changes_in_the_file_are_listed_when_there_are_some(cx: &mut TestAppContext) {
     let opened = with(cx, outlined());
-    assert_eq!(label(cx, &opened, ("code-change", 0usize)).as_deref(), Some("StatusBar {"));
+    assert_eq!(label(cx, &opened, ("code-change", 0usize)).as_deref(), Some("Line 26"));
     assert_eq!(is_selected(cx, &opened, ("code-change", 0usize)), Some(true), "the cursor is within the run");
     says(cx, &opened, CodePage { changes_here: Vec::new(), ..outlined() });
     assert!(!present(cx, &opened, ("code-change", 0usize)));

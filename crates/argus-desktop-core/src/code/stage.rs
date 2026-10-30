@@ -186,6 +186,8 @@ pub struct CodeOutlineRow {
     pub on: bool,
     /// Something in it changed.
     pub changed: bool,
+    /// The grammar called it a method: it is defined inside a type, not beside it.
+    pub method: bool,
 }
 
 /// A run of changed lines, or a place lines were removed, by its first
@@ -197,6 +199,10 @@ pub struct CodeChangeRow {
     pub line: u32,
     pub text: String,
     pub on: bool,
+    /// How many lines the run is: lines added, or lines removed here.
+    pub lines: u32,
+    /// Lines went away here; otherwise the run was added or changed.
+    pub removed: bool,
 }
 
 /// The go-to-file field.
@@ -1241,23 +1247,23 @@ impl CodeStage {
                     let changed = shown.is_some_and(|f| {
                         f.lines.iter().enumerate().any(|(n, l)| l.added && (s.line..end).contains(&(n as u32 + 1)))
                     });
-                    CodeOutlineRow { name: s.name.clone(), kind: short_kind(&s.kind), line: s.line, on: Some(i) == inside, changed }
+                    CodeOutlineRow { name: s.name.clone(), kind: short_kind(&s.kind), line: s.line, on: Some(i) == inside, changed, method: s.kind == "method" }
                 })
                 .collect(),
             changes_here: runs
                 .iter()
                 .map(|run| {
-                    let (start, text) = match *run {
-                        Run::Added { start, .. } => {
+                    let (start, text, lines, removed) = match *run {
+                        Run::Added { start, len } => {
                             let text = shown.and_then(|f| f.lines.get(start)).map_or("", |l| l.text.trim());
-                            (start, text.chars().take(48).collect())
+                            (start, text.chars().take(48).collect(), len as u32, false)
                         }
                         Run::Removed { before, count } => {
-                            (before, format!("− {count} {} removed", if count == 1 { "line" } else { "lines" }))
+                            (before, format!("− {count} {} removed", if count == 1 { "line" } else { "lines" }), count, true)
                         }
                     };
                     let on = run.covers(self.cursor);
-                    CodeChangeRow { line: start as u32 + 1, text, on }
+                    CodeChangeRow { line: start as u32 + 1, text, on, lines, removed }
                 })
                 .collect(),
             note: shown.and_then(|f| f.note.clone()),

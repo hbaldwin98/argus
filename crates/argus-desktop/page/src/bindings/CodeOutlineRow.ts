@@ -12,4 +12,8 @@ on: boolean,
 /**
  * Something in it changed.
  */
-changed: boolean, };
+changed: boolean, 
+/**
+ * The grammar called it a method: it is defined inside a type, not beside it.
+ */
+method: boolean, };

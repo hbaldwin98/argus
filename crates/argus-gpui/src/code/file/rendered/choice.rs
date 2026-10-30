@@ -19,7 +19,7 @@ pub type Choose = Rc<dyn Fn(Mode, &mut Window, &mut App)>;
 pub fn choice(mode: Mode, choose: &Choose, tokens: &Tokens) -> AnyElement {
     let pill = |id: &'static str, label: &'static str, this: Mode| {
         let choose = choose.clone();
-        segment::pill(id, Role::RadioButton, mode == this, tokens).child(label).on_click(move |_, window, cx| choose(this, window, cx))
+        segment::switch_option(id, Role::RadioButton, mode == this, tokens).child(label).on_click(move |_, window, cx| choose(this, window, cx))
     };
     segment::track("code-read-as", "Read as", Role::RadioGroup, tokens)
         .child(pill("code-view-rendered", "Rendered", Mode::Rendered))

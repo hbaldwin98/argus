@@ -1,5 +1,5 @@
 //! The file's header: its name and folder, the version when it is not the working tree, what is
-//! known of the file, and the buttons (`header`, `code/stage.ts`).
+//! known of the file, and the buttons (`header`, `code/stage.ts`), drawn on the kit's file head.
 //!
 //! Drawn while a file is open or the stage says where `B` goes back to, so also over the start
 //! panel when the stage was opened from a review or the history. What it says is core's
@@ -9,18 +9,14 @@ use argus_desktop_core::code::file::{facts, has_header, path_parts};
 use argus_desktop_core::code::stage::{CodeClick, CodeGesture, CodePage};
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::keys::keymap::Action;
-use gpui_kit::component::h_flex;
-use gpui_kit::{div, prelude::*, AnyElement, Entity, SharedString, TestSupportExt as _};
+use gpui_kit::{prelude::*, AnyElement, Entity, SharedString};
 
 use super::rendered::choice::{choice, Choose};
 use super::rendered::mode::Mode;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
-use crate::kit::button::{button, Look};
-use crate::kit::keycap::keycap;
-use crate::kit::path::path_label;
-use crate::style::Typed as _;
-use crate::theme::scale::rem;
+use crate::kit::file_head::{file_head, Head};
+use crate::kit::tools;
 use crate::theme::Tokens;
 
 /// What a button of the header does, sent as the gesture its key sends unless the daemon is gone.
@@ -33,108 +29,53 @@ fn press(heard: &Entity<Heard>, caller: &Caller, gesture: CodeGesture) -> impl F
     }
 }
 
-/// `.fhdr`: the chrome colour over a hairline, 12px about its parts. Nothing without a file or a way
-/// back.
+/// The kit's file head over the lines: the name, the folder cut from its left, `+a −r` and the
+/// facts, then the tools. Nothing without a file or a way back.
 /// `reading` is how a markdown file is being read and what to call when the other way is chosen; it
-/// is none for any other file, which has only its text.
-pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tokens, reading: Option<(Mode, Choose)>) -> Option<AnyElement> {
+/// is none for any other file, which has only its text. `room` is the width the line has, in the
+/// page's pixels: the folder gives way first, then the keys after the tools and the facts, so the
+/// line stays one line and no tool is cut (a markdown file has the most tools to hold).
+pub fn bar(page: &CodePage, heard: &Entity<Heard>, caller: &Caller, tokens: &Tokens, reading: Option<(Mode, Choose)>, room: f32) -> Option<AnyElement> {
     if !has_header(page) {
         return None;
     }
-    let mono = SharedString::from(tokens.font_mono);
     // This window has no editor, so the lines stand for the file and Rust's cursor is the one shown.
     let said = facts(page, false);
-    let key = |text: &'static str| keycap(text, mono.clone(), tokens);
-    let path = page.path.as_deref().map(|path| {
-        let (name, dir) = path_parts(path);
-        // The name first and whole; only the folder after it gives way, from its left.
-        path_label("code-path", name, dir, tokens)
-    });
-    let version = page.version.as_ref().map(|version| {
-        div()
-            .id("code-version")
-            .test_support()
-            .aria_label(SharedString::from(version.clone()))
-            .flex_shrink_0()
-            .px(rem(tokens.sp_8))
-            .py(rem(tokens.hairline))
-            .rounded(rem(tokens.r_pill))
-            .bg(tokens.fill)
-            .font_family(mono.clone())
-            .text_size(rem(tokens.fs_xs))
-            .weighted(tokens.weight_semibold)
-            .text_color(tokens.fg)
-            .child(SharedString::from(version.clone()))
-    });
-    let counts = (said.added > 0 || said.removed > 0).then(|| {
-        h_flex()
-            .gap(rem(tokens.sp_4))
-            .when(said.added > 0, |row| row.child(div().text_color(tokens.ok).child(SharedString::from(format!("+{}", said.added)))))
-            .when(said.removed > 0, |row| row.child(div().text_color(tokens.danger).child(SharedString::from(format!("\u{2212}{}", said.removed)))))
-    });
-    let meta = h_flex()
-        .id("code-facts")
-        .test_support()
-        .aria_label(SharedString::from(format!("{}{}", said.lead, counts_text(&said))))
-        .flex_shrink_0()
-        .whitespace_nowrap()
-        .typed(tokens.type_small)
-        .text_color(tokens.fg_muted)
-        .child(SharedString::from(said.lead.clone()))
-        .children(counts);
-    Some(
-        h_flex()
-            .id("code-head")
-            .test_support()
-            .flex_shrink_0()
-            .w_full()
-            .min_w_0()
-            .px(rem(tokens.sp_12))
-            .py(rem(tokens.sp_8))
-            .gap(rem(tokens.sp_12))
-            .items_center()
-            .bg(tokens.bg_chrome)
-            .border_b_1()
-            .border_color(tokens.line)
-            .typed(tokens.type_body)
-            .children(path)
-            .children(version)
-            .child(div().flex_1())
-            .child(meta)
-            .children(reading.map(|(mode, choose)| choice(mode, &choose, tokens)))
-            .children(page.back.as_ref().map(|back| {
-                button("code-back", format!("Back to {back}"), Look::Plain, true, tokens)
-                    .child(SharedString::from(format!("Back to {back}")))
-                    .child(key("B"))
-                    .on_click(press(heard, caller, CodeGesture::Click { target: CodeClick::Back }))
-            }))
-            .children(page.path.as_ref().map(|_| {
-                button("code-edit", "Open in editor", Look::Plain, true, tokens)
-                    .child("Open in editor")
-                    .child(key("E"))
-                    .on_click(press(heard, caller, CodeGesture::Action { action: Action::OpenEditor }))
-            }))
-            .children((!page.outline).then(|| {
-                button("code-outline-show", "Outline", Look::Plain, true, tokens)
-                    .child("Outline")
-                    .child(key("O"))
-                    .on_click(press(heard, caller, CodeGesture::Click { target: CodeClick::Outline }))
-            }))
+    let markdown = reading.is_some();
+    let (keys, facts_fit) = if markdown { (room >= 620.0, room >= 560.0) } else { (room >= 500.0, room >= 400.0) };
+    let key = |key: &'static str| keys.then_some(key);
+    let mut tools: Vec<AnyElement> = Vec::new();
+    tools.extend(reading.map(|(mode, choose)| choice(mode, &choose, tokens)));
+    tools.extend(page.back.as_ref().map(|back| {
+        tools::ghost("code-back", format!("Back to {back}"), key("B"), false, tokens)
+            .on_click(press(heard, caller, CodeGesture::Click { target: CodeClick::Back }))
+            .into_any_element()
+    }));
+    // The toggle is the outline's own state: pressed while the column is up, as the page says.
+    tools.push(
+        tools::ghost("code-outline-show", "Outline", key("O"), page.outline, tokens)
+            .on_click(press(heard, caller, CodeGesture::Click { target: CodeClick::Outline }))
             .into_any_element(),
-    )
-}
-
-/// The counts as the page's text reads them, for the facts' label.
-fn counts_text(said: &argus_desktop_core::code::file::Facts) -> String {
-    let mut text = String::new();
-    if said.added > 0 {
-        text.push_str(&format!("+{}", said.added));
-    }
-    if said.added > 0 && said.removed > 0 {
-        text.push(' ');
-    }
-    if said.removed > 0 {
-        text.push_str(&format!("\u{2212}{}", said.removed));
-    }
-    text
+    );
+    tools.extend(page.path.as_ref().map(|_| {
+        tools::ghost("code-edit", "Open in editor", key("E"), false, tokens)
+            .on_click(press(heard, caller, CodeGesture::Action { action: Action::OpenEditor }))
+            .into_any_element()
+    }));
+    let Some(path) = page.path.as_deref() else {
+        // Only the way back, over the start panel: the head's line with the tools alone.
+        let head = Head { status: None, name: "", dir: "", counts: None, meta: None };
+        return Some(file_head("code-head", &head, tools, tokens).into_any_element());
+    };
+    let (name, dir) = path_parts(path);
+    let lead = said.lead.trim_end_matches(" \u{b7} ").to_owned();
+    // The version names what is read when it is not the working tree, ahead of the rest.
+    let meta = match (&page.version, lead.is_empty() || !facts_fit) {
+        (Some(version), true) => Some(version.clone()),
+        (Some(version), false) => Some(format!("{version} \u{b7} {lead}")),
+        (None, true) => None,
+        (None, false) => Some(lead),
+    };
+    let head = Head { status: None, name, dir, counts: Some((said.added as usize, said.removed as usize)), meta: meta.map(SharedString::from) };
+    Some(file_head("code-head", &head, tools, tokens).into_any_element())
 }

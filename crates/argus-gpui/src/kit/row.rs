@@ -20,6 +20,9 @@ pub struct Slots {
     pub chevron: Option<bool>,
     pub icon: Option<AnyElement>,
     pub label: SharedString,
+    /// What follows the label in the faint colour and gives way first, as a chain of folders'
+    /// `/src/chrome` does. It is not part of the row's name for a reader beyond the label's own.
+    pub tail: Option<SharedString>,
     pub end: Option<AnyElement>,
     /// The row being read, or the one the keys are at.
     pub on: bool,
@@ -29,7 +32,7 @@ pub struct Slots {
 
 impl Slots {
     pub fn new(label: impl Into<SharedString>) -> Self {
-        Self { chevron: None, icon: None, label: label.into(), end: None, on: false, dim: false }
+        Self { chevron: None, icon: None, label: label.into(), tail: None, end: None, on: false, dim: false }
     }
 }
 
@@ -69,7 +72,16 @@ pub fn row(id: impl Into<ElementId>, slots: Slots, tokens: &Tokens) -> Node {
                 .children(slots.chevron.map(|open| if open { Glyph::Down } else { Glyph::Right }.at(tokens.icon_xs))),
         )
         .child(div().flex_none().w(rem(tokens.sp_16)).flex().justify_center().text_color(tokens.fg_muted).children(slots.icon))
-        .child(div().flex_1().min_w_0().truncate().child(slots.label))
+        .child(match slots.tail {
+            None => div().flex_1().min_w_0().truncate().child(slots.label).into_any_element(),
+            Some(tail) => h_flex()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .child(div().flex_none().child(slots.label))
+                .child(div().min_w_0().truncate().text_color(tokens.fg_faint).child(tail))
+                .into_any_element(),
+        })
         .children(slots.end.map(|end| div().flex_none().pl(rem(tokens.sp_8)).child(end)))
 }
 

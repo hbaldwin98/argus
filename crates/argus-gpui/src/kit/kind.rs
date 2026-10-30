@@ -40,10 +40,12 @@ impl Kind {
     }
 
     /// The tint, from the theme's palette roles so every theme carries it.
+    /// A function takes the accent: `lilac` is the selected surface, which is a dark wash in a dark theme and
+    /// left the letter unreadable.
     pub fn tint(self, tokens: &Tokens) -> Hsla {
         match self {
             Kind::Type => tokens.blue,
-            Kind::Function => tokens.lilac,
+            Kind::Function => tokens.accent,
             Kind::Implementation => tokens.ok,
             Kind::Constant => tokens.peach,
             Kind::Module => tokens.teal,
