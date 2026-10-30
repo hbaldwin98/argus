@@ -1,77 +1,33 @@
 //! The diff pane beside the commits: the file under the cursor and its commit with the way to open
 //! it as a review, and the diff or the reason there is none.
 
+use argus_desktop_core::code::file::path_parts;
 use argus_desktop_core::connection::page::{Call, HistoryPage};
 use argus_desktop_core::keys::keymap::Action;
-use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{div, prelude::*, Context, SharedString};
 
 use super::History;
-use crate::kit::tip::tip;
-use crate::kit::button::{button, Look};
+use crate::kit::file_head::{file_head, Head};
 use crate::kit::ghosts::ghosts;
-use crate::kit::keycap::keycap;
-use crate::style::Typed as _;
-use crate::theme::scale::rem;
+use crate::kit::tools;
 use crate::theme::Tokens;
 
 /// The widths of the loading bars of a diff, as the page draws them.
 const DIFF_BARS: [f32; 5] = [0.4, 0.9, 0.8, 0.85, 0.6];
 
 impl History {
-    /// The file under the cursor and its commit, with the way to open it as a
-    /// review. `.fhdr`: the chrome colour over a hairline.
+    /// The kit file head over the diff: the file under the cursor with its counts and `in <sha>`,
+    /// and the way to open it as a review.
     pub(super) fn diff_head(&self, page: &HistoryPage, path: &str, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let cut = path.rfind('/');
-        let name = SharedString::from(path[cut.map_or(0, |at| at + 1)..].to_owned());
-        let dir = cut.map(|at| SharedString::from(path[..at].to_owned()));
-        let full = SharedString::from(path.to_owned());
-        let commit = SharedString::from(page.commit.clone().unwrap_or_default());
-        let mono = cx.theme().mono_font_family.clone();
-        h_flex()
-            .id("history-diff-head")
-            .test_support()
-            .aria_label(full)
-            .flex_shrink_0()
-            .h(rem(tokens.sp_44))
-            .px(rem(tokens.sp_12))
-            .gap(rem(tokens.sp_12))
-            .items_center()
-            .bg(tokens.bg_chrome)
-            .border_b_1()
-            .border_color(tokens.line)
-            .child(
-                div()
-                    .id("history-commit")
-                    .test_support()
-                    .aria_label(commit.clone())
-                    .flex_shrink_0()
-                    .font_family(mono.clone())
-                    .text_color(tokens.fg_faint)
-                    .tooltip(tip("Diffed against its first parent"))
-                    .child(commit),
-            )
-            // The name leads and the folder after it is what gives way: a path
-            // cut at its end loses the name.
-            .child(
-                h_flex()
-                    .min_w_0()
-                    .gap(rem(tokens.sp_8))
-                    .overflow_hidden()
-                    .font_family(mono)
-                    .child(div().flex_shrink_0().weighted(tokens.weight_semibold).text_color(tokens.fg).child(name))
-                    .when_some(dir, |head, dir| head.child(div().min_w_0().truncate().text_color(tokens.fg_faint).child(dir))),
-            )
-            .child(div().flex_1())
-            .child(
-                button("history-as-review", "Open as a review", Look::Plain, true, tokens)
-                    .child("Open as a review")
-                    .child(keycap("O", SharedString::from(tokens.font_mono), tokens))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.ask(Call::HistoryAction { action: Action::AsReview, row: None }, cx)
-                    })),
-            )
+        let (name, dir) = path_parts(path);
+        let counts = page.rows.iter().find(|row| row.on && row.kind == "file").map(|row| (row.added, row.removed));
+        let meta = page.commit.as_ref().map(|sha| SharedString::from(format!("in {sha}")));
+        let head = Head { status: None, name, dir, counts, meta };
+        let review = tools::ghost("history-as-review", "Open as a review", Some("O"), false, tokens)
+            .on_click(cx.listener(|this, _, _, cx| this.ask(Call::HistoryAction { action: Action::AsReview, row: None }, cx)))
+            .into_any_element();
+        file_head("history-diff-head", &head, vec![review], tokens)
     }
 
     /// Which file, then the diff's reason before its loading bars, then its rows.
