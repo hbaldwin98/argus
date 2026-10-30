@@ -105,7 +105,7 @@ kinds! {
     GetDecisions, Feature, TrackerMap, Reconcile, Task, Decide, ChangeDecision, SequenceDiagram,
     ListBranches, ListFiles, SwitchBranch, CreateBranch, DeleteBranch, Fetch, Pull, OpenInEditor,
     RemoveProject, RemoveRepository, AddProject, PreviewProject, ListDirectories, AddRepository,
-    InitRepository, Restart, Stop, View, WatchFocus, WatchViews, CloseView, RefreshView, PressView,
+    InitRepository, CombineProjects, Restart, Stop, View, WatchFocus, WatchViews, CloseView, RefreshView, PressView,
     WatchSavedViews, RefreshSavedView, MarkSavedViewStale, DeleteSavedView, PressSavedView,
     ExtensionAction, ExtensionCommand, ExtensionDialogAnswer, DescribeExtensions, WatchBrowsers,
     BrowserInput, CloseBrowser, Hello,
@@ -174,6 +174,7 @@ pub fn kind(msg: &ClientMsg) -> Kind {
         M::ListDirectories { .. } => Kind::ListDirectories,
         M::AddRepository { .. } => Kind::AddRepository,
         M::InitRepository { .. } => Kind::InitRepository,
+        M::CombineProjects { .. } => Kind::CombineProjects,
         M::Restart => Kind::Restart,
         M::Stop => Kind::Stop,
         M::View(_) => Kind::View,
@@ -262,6 +263,7 @@ pub fn generate(kind: Kind, k: &Known) -> BoxedStrategy<ClientMsg> {
         K::ListDirectories => panel::list_directories(),
         K::AddRepository => panel::add_repository(k),
         K::InitRepository => panel::init_repository(k),
+        K::CombineProjects => panel::combine_projects(k),
         K::View => views::view(k),
         K::WatchFocus => Just(ClientMsg::WatchFocus).boxed(),
         K::WatchViews => Just(ClientMsg::WatchViews).boxed(),
@@ -328,7 +330,8 @@ pub fn request_id_mut(msg: &mut ClientMsg) -> Option<&mut u64> {
         | M::PreviewProject { request_id, .. }
         | M::ListDirectories { request_id, .. }
         | M::AddRepository { request_id, .. }
-        | M::InitRepository { request_id, .. } => Some(request_id),
+        | M::InitRepository { request_id, .. }
+        | M::CombineProjects { request_id, .. } => Some(request_id),
         M::Subscribe { .. }
         | M::Unsubscribe { .. }
         | M::Input { .. }

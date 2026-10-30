@@ -49,6 +49,7 @@ pub const CAPABILITIES: &[&str] = &[
     INDEX_WRITES,
     REVIEW_DRAFTS,
     LAZY_REVIEWS,
+    COMBINE_PROJECTS,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
@@ -174,6 +175,9 @@ pub const LAZY_REVIEWS: &str = "lazy-reviews";
 /// `ServerMsg::ReviewSubmitted`: review comments held as drafts and sent
 /// as one review.
 pub const REVIEW_DRAFTS: &str = "review-drafts";
+
+/// `ClientMsg::CombineProjects`: several projects folded into one.
+pub const COMBINE_PROJECTS: &str = "combine-projects";
 
 /// `ServerMsg::Refused`: a refusal of a request that named itself, by its
 /// id, in place of `Created` with nothing and an `Error`, or the request's

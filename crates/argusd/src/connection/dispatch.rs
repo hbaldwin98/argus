@@ -298,6 +298,12 @@ pub(super) fn dispatch(
         // Removal only rewrites config and the tree — no subprocess, no
         // directory walk — so it stays on the message loop like AddProject.
         ClientMsg::RemoveProject { project } => daemon.remove_project(project),
+        // Moves rows and writes the store, nothing more, so it stays on the
+        // loop too.
+        ClientMsg::CombineProjects { into, from, .. } => {
+            reply.made(daemon.combine_projects(into, &from).map(Created::Project));
+            Ok(())
+        }
         ClientMsg::RemoveRepository { repository } => daemon.remove_repository(repository),
         ClientMsg::OpenWorkspace { workspace } => daemon.open_workspace(workspace),
         ClientMsg::CreateWorkspace { name } => daemon.create_workspace(&name),

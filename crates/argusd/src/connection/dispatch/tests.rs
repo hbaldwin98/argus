@@ -32,6 +32,24 @@ fn a_named_request_is_answered_with_what_it_made() {
 }
 
 #[test]
+fn a_combine_is_answered_with_the_project_it_combined_into() {
+    let dir = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let into = h.daemon.snapshot()[0].id;
+    let from = h.daemon.add_project(&other.path().to_string_lossy(), None, &[]).unwrap();
+    h.send(ClientMsg::CombineProjects { into, from: vec![from], request_id: 4 });
+
+    let made = h.replies().into_iter().find_map(|reply| match reply {
+        ServerMsg::Created { request_id: 4, created } => Some(created),
+        _ => None,
+    });
+    assert!(matches!(made, Some(Some(argus_protocol::Created::Project(id))) if id == into), "{made:?}");
+    let ids: Vec<_> = h.daemon.snapshot().iter().map(|p| p.id).collect();
+    assert_eq!(ids, vec![into]);
+}
+
+#[test]
 fn an_unnamed_request_is_not_answered() {
     // What a client from before named requests sends: it could not
     // read the answer, so it is never sent one.

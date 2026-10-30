@@ -558,6 +558,21 @@ pub enum ClientMsg {
         #[serde(default)]
         request_id: u64,
     },
+    /// Fold every repository of the `from` projects into `into`, and take
+    /// the emptied projects out of the panel. The repositories keep their
+    /// ids, checkouts and panes, so whatever runs in them carries on; a
+    /// path `into` already holds is not listed twice. `into` keeps its own
+    /// name, workspace and settings. Only to a daemon that listed
+    /// [`crate::connection::hello::COMBINE_PROJECTS`]; answered with
+    /// [`Created::Project`] naming `into`.
+    CombineProjects {
+        into: ProjectId,
+        from: Vec<ProjectId>,
+        /// Names the request, so the daemon can answer with what it made
+        /// ([`ServerMsg::Created`]). Zero asks for no answer.
+        #[serde(default)]
+        request_id: u64,
+    },
     /// Make a repository that does not exist yet: create `path` if it is
     /// not there, `git init` it, and add it to `project` the way
     /// [`ClientMsg::AddRepository`] would. The one gesture in Argus that

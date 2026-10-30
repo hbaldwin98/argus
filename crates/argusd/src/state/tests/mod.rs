@@ -2,6 +2,7 @@
 //! over the fixtures they all build a daemon from.
 
 mod board_rules;
+mod combine;
 mod branches;
 mod index_writes;
 mod browsers;

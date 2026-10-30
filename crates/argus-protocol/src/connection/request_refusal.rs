@@ -73,6 +73,7 @@ impl Asked {
             | M::AddProject { request_id, .. }
             | M::AddRepository { request_id, .. }
             | M::InitRepository { request_id, .. }
+            | M::CombineProjects { request_id, .. }
             | M::ResumeSession { request_id, .. } => (*request_id, false, Older::Made),
             M::Feature { request_id, .. }
             | M::ReviewComment { request_id, .. }
@@ -194,6 +195,10 @@ mod tests {
         ClientMsg::AddProject { path: "/src".into(), request_id, name: None, skip: Vec::new(), init: false }
     }
 
+    fn combine_projects(request_id: u64) -> ClientMsg {
+        ClientMsg::CombineProjects { into: ProjectId(1), from: vec![ProjectId(2)], request_id }
+    }
+
     fn feature(request_id: u64) -> ClientMsg {
         ClientMsg::Feature {
             project: ProjectId(1),
@@ -252,7 +257,7 @@ mod tests {
 
     #[test]
     fn a_client_that_listed_refusals_is_refused_by_the_id_it_gave() {
-        for (msg, id, read) in [(spawn_shell(8), 8, false), (read_code(4), 4, true), (feature(5), 5, false), (review_comment(6), 6, false)] {
+        for (msg, id, read) in [(spawn_shell(8), 8, false), (read_code(4), 4, true), (feature(5), 5, false), (review_comment(6), 6, false), (combine_projects(7), 7, false)] {
             let told = Asked::of(&msg).refusal("no".into(), true);
             assert_eq!(shown(&told), shown(&[refused(id, "no", read)]), "{msg:?}");
         }
@@ -281,6 +286,10 @@ mod tests {
             (
                 add_project(6),
                 vec![ServerMsg::Created { request_id: 6, created: None }, ServerMsg::Error { message: message.clone() }],
+            ),
+            (
+                combine_projects(12),
+                vec![ServerMsg::Created { request_id: 12, created: None }, ServerMsg::Error { message: message.clone() }],
             ),
             (review(1), vec![ServerMsg::ReviewFailed { request_id: 1, checkout: CO, message: message.clone() }]),
             (
