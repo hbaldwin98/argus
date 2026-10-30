@@ -11,6 +11,7 @@ use gpui_kit::{div, prelude::*, AnyElement, Div, ElementId, Role, SharedString, 
 
 use super::icon_button::Node;
 use super::icons::Glyph;
+use super::path::left_cut;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
@@ -20,6 +21,9 @@ pub struct Slots {
     pub chevron: Option<bool>,
     pub icon: Option<AnyElement>,
     pub label: SharedString,
+    /// A folder after the label, faint and cut from its left, for a row that names a file by its
+    /// path: the name stays whole and the folder is what gives way.
+    pub folder: Option<SharedString>,
     pub end: Option<AnyElement>,
     /// The row being read, or the one the keys are at.
     pub on: bool,
@@ -29,7 +33,7 @@ pub struct Slots {
 
 impl Slots {
     pub fn new(label: impl Into<SharedString>) -> Self {
-        Self { chevron: None, icon: None, label: label.into(), end: None, on: false, dim: false }
+        Self { chevron: None, icon: None, label: label.into(), folder: None, end: None, on: false, dim: false }
     }
 }
 
@@ -69,7 +73,13 @@ pub fn row(id: impl Into<ElementId>, slots: Slots, tokens: &Tokens) -> Node {
                 .children(slots.chevron.map(|open| if open { Glyph::Down } else { Glyph::Right }.at(tokens.icon_xs))),
         )
         .child(div().flex_none().w(rem(tokens.sp_16)).flex().justify_center().text_color(tokens.fg_muted).children(slots.icon))
-        .child(div().flex_1().min_w_0().truncate().child(slots.label))
+        .map(|row| match slots.folder.filter(|folder| !folder.is_empty()) {
+            // The label keeps its width and the folder takes what is left, so the line cannot grow.
+            Some(folder) => row
+                .child(div().flex_none().max_w_full().truncate().child(slots.label))
+                .child(div().flex_1().min_w_0().flex().justify_start().child(left_cut("row-dir", folder, tokens))),
+            None => row.child(div().flex_1().min_w_0().truncate().child(slots.label)),
+        })
         .children(slots.end.map(|end| div().flex_none().pl(rem(tokens.sp_8)).child(end)))
 }
 
@@ -124,5 +134,21 @@ mod tests {
         let (other_left, ..) = host::bounds(cx, handle, "other");
         assert!(kid_left > parent_left + 12.0, "a child is indented");
         assert_eq!(kid_left, other_left);
+    }
+
+    /// Kit.dc.html: a row that names a file by its path keeps the name whole and cuts the folder.
+    #[gpui_kit::test]
+    fn a_folder_after_the_label_gives_way_and_the_row_stays_26px(cx: &mut TestAppContext) {
+        let handle = host::open(cx, 200.0, |tokens| {
+            let slots = Slots { folder: Some("crates/argus-desktop-core/src/dictation/hold".into()), ..Slots::new("hold.rs") };
+            div().w(rem(200.0)).child(row("r", slots, tokens)).into_any_element()
+        });
+        let (_, _, w, h) = host::bounds(cx, handle, "r");
+        assert_eq!(h, 26.0);
+        assert!(w <= 200.0);
+        let (box_left, _, box_width, _) = host::bounds(cx, handle, ("row-dir", 0usize));
+        let (text_left, _, text_width, _) = host::bounds(cx, handle, ("row-dir", 1usize));
+        assert!(text_width > box_width, "the folder is cut");
+        assert!((text_left + text_width - (box_left + box_width)).abs() < 1.0, "from its left");
     }
 }
