@@ -6,7 +6,6 @@ use std::rc::Rc;
 
 use argus_desktop_core::chrome::cursor::{Pick, StartFrom, StartMenu};
 use argus_desktop_core::connection::page::{Call, Checkout, Connection, Event, Pane, Project, ProjectChoice, Rail, Repository, Shown, Stage, Status};
-use argus_desktop_core::panes::console::ConsolePlace;
 use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{point, prelude::*, px, size, AnyWindowHandle, Bounds, Entity, MouseButton, TestAppContext, WindowBounds, WindowOptions};
 
@@ -20,7 +19,7 @@ use crate::keys::sheet::SheetView;
 use crate::settings::preferences::PreferencesView;
 
 mod calls;
-mod foot;
+mod server;
 mod nav;
 mod keys;
 mod menus;
@@ -298,4 +297,9 @@ pub(super) fn hover(cx: &mut TestAppContext, opened: &Opened, id: &str) {
     cx.update_window(opened.handle, |_, window, cx| window.pointer_move(at, None, cx)).unwrap();
     cx.run_until_parked();
     cx.update_window(opened.handle, |_, window, cx| window.render_frame(cx)).unwrap();
+}
+
+/// Opens the quiet-repositories row, where the busy rail's `dotfiles` is.
+pub(super) fn open_quiet(cx: &mut TestAppContext, opened: &Opened) {
+    click(cx, opened, "rail-quiet");
 }

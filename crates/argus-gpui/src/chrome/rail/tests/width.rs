@@ -108,7 +108,7 @@ fn a_narrow_rail_draws_icons_for_the_stages_and_tiles_of_initials_for_the_panes(
     assert!(!present(cx, &opened, "repo-11-count"), "a repository is a hairline");
     assert!(present(cx, &opened, "repo-11"));
     assert!(!present(cx, &opened, "foot-need-you"));
-    assert!(present(cx, &opened, "foot-console") && present(cx, &opened, "foot-chime") && present(cx, &opened, "foot-settings"));
+    assert!(present(cx, &opened, "foot-status") && present(cx, &opened, "foot-settings"), "the gear and the dot stay in the strip");
     let tile = cx.update_window(opened.handle, |_, window, _| window.find("pane-1").bounds().size).unwrap();
     assert_eq!((tile.width.as_f32(), tile.height.as_f32()), (40.0, 40.0));
 }

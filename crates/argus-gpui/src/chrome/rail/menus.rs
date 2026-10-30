@@ -72,6 +72,19 @@ pub fn checkout(checkout: &Checkout, templates: &[String]) -> Vec<MenuItem<Does>
     items
 }
 
+/// The menu of a repository's only checkout, which is both rows: the checkout's own, then the
+/// repository's Features and recent sessions, and the fold of the repository itself.
+pub fn solo(repo: &Repository, chosen: bool, only: &Checkout, templates: &[String]) -> Vec<MenuItem<Does>> {
+    let mut items = checkout(only, templates);
+    items.push(MenuItem::Rule);
+    items.extend(repository(repo, chosen).into_iter().skip(1).take(2));
+    items.push(MenuItem::choice(
+        if repo.open { "Collapse repository" } else { "Expand repository" },
+        Does::Send(vec![Call::ToggleRepository { repository: repo.id }]),
+    ));
+    items
+}
+
 /// A pane's menu: its title, Show (which picks it, as a click does), Open beside, Rename, a rule,
 /// and Close in danger.
 pub fn pane(checkout: u64, pane: &Pane) -> Vec<MenuItem<Does>> {

@@ -22,11 +22,13 @@ fn a_call_the_daemon_refuses_leaves_the_rail_as_it_was(cx: &mut TestAppContext) 
     // CROSS-27: a request's result is never drawn before Rust says it; a
     // refusal reaches the views as a notice and no rail.
     let opened = open(cx, connected_and_busy());
+    open_quiet(cx, &opened);
     let before = drawn(cx, &opened);
     let refused = |cx: &mut TestAppContext, what: &str| {
         hear(cx, &opened, vec![Event::Notice { text: format!("{what} refused") }]);
         assert_eq!(drawn(cx, &opened), before, "{what} changed the rail before a Rail was heard");
     };
+    hover(cx, &opened, "checkout-110");
     click(cx, &opened, "checkout-110-fold");
     refused(cx, "ToggleCheckout");
     click(cx, &opened, "repo-10");
@@ -75,6 +77,7 @@ fn a_closed_pane_stays_on_the_rail_until_the_tree_drops_it(cx: &mut TestAppConte
 #[gpui_kit::test]
 fn what_a_call_asks_is_drawn_once_a_rail_says_it(cx: &mut TestAppContext) {
     let opened = open(cx, connected_and_busy());
+    open_quiet(cx, &opened);
     click(cx, &opened, "repo-10");
     assert_eq!(selected(cx, &opened, "repo-10"), Some(false));
     let mut chosen = busy();
@@ -82,6 +85,7 @@ fn what_a_call_asks_is_drawn_once_a_rail_says_it(cx: &mut TestAppContext) {
     hear(cx, &opened, vec![Event::Rail(Box::new(chosen))]);
     assert_eq!(selected(cx, &opened, "repo-10"), Some(true));
     assert_eq!(selected(cx, &opened, "repo-11"), Some(false));
+    hover(cx, &opened, "checkout-110");
     click(cx, &opened, "checkout-110-fold");
     assert!(present(cx, &opened, "pane-2"));
     let mut folded = busy();
@@ -114,6 +118,7 @@ fn the_rows_above_the_panes_send_the_pages_calls(cx: &mut TestAppContext) {
 fn a_chevron_folds_without_picking_and_a_checkout_row_asks_to_be_picked(cx: &mut TestAppContext) {
     let opened = open(cx, connected_and_busy());
     assert_eq!(label(cx, &opened, "checkout-110-fold").as_deref(), Some("Fold argus main"));
+    hover(cx, &opened, "checkout-110");
     click(cx, &opened, "checkout-110-fold");
     assert_eq!(taken(&opened), ["ToggleCheckout { checkout: 110 }"]);
     assert_eq!(picked(cx, &opened), None);
@@ -130,8 +135,11 @@ fn a_chevron_folds_without_picking_and_a_checkout_row_asks_to_be_picked(cx: &mut
 }
 
 #[gpui_kit::test]
-fn a_press_on_a_repositorys_chevron_chooses_it_with_the_row(cx: &mut TestAppContext) {
+fn a_press_on_a_shut_repositorys_row_or_its_chevron_chooses_it(cx: &mut TestAppContext) {
     let opened = open(cx, connected_and_busy());
-    click(cx, &opened, "repo-11-chevron");
-    assert_eq!(taken(&opened), ["ChooseRepository { repository: 11 }"]);
+    open_quiet(cx, &opened);
+    click(cx, &opened, "repo-10-chevron");
+    assert_eq!(taken(&opened), ["ChooseRepository { repository: 10 }"]);
+    click(cx, &opened, "repo-11");
+    assert_eq!(taken(&opened).last().map(String::as_str), Some("ChooseRepository { repository: 11 }"));
 }

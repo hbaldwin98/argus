@@ -14,7 +14,7 @@ fn right_click(cx: &mut TestAppContext, opened: &Opened, id: &str) {
 
 /// Chooses the item of the open menu named `label`: the kit's menu is the one in the window with that
 /// name under its own root, since a row of the rail may be named the same.
-fn choose(cx: &mut TestAppContext, opened: &Opened, label: &str) {
+pub(super) fn choose(cx: &mut TestAppContext, opened: &Opened, label: &str) {
     let at = cx
         .update_window(opened.handle, |_, window, _| {
             let item = window.elements().into_iter().find(|element| {
@@ -39,6 +39,7 @@ fn with_agents() -> Event {
 fn a_repositorys_menu_chooses_the_repository_before_showing_its_features(cx: &mut TestAppContext) {
     // SHELL-RAIL-6.
     let opened = open(cx, connected_and_busy());
+    open_quiet(cx, &opened);
     right_click(cx, &opened, "repo-row-10");
     choose(cx, &opened, "Features");
     assert_eq!(taken(&opened), ["ChooseRepository { repository: 10 }", "ShowFeatures { open: true }"]);
@@ -47,6 +48,7 @@ fn a_repositorys_menu_chooses_the_repository_before_showing_its_features(cx: &mu
 #[gpui_kit::test]
 fn a_repositorys_menu_folds_it_and_opens_its_recent_sessions(cx: &mut TestAppContext) {
     let opened = open(cx, connected_and_busy());
+    open_quiet(cx, &opened);
     right_click(cx, &opened, "repo-row-10");
     choose(cx, &opened, "Expand");
     right_click(cx, &opened, "repo-row-11");

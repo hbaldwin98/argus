@@ -1,8 +1,8 @@
-//! The window's frame around the stage: the sidebar and its foot, and the
+//! The window's frame around the stage: the sidebar (icon strip and panel), and the
 //! parts of the page's look that the docks and the console share with it.
 
 pub mod ended;
-pub mod foot;
+pub mod server;
 pub mod header;
 pub mod notice;
 pub mod projects;

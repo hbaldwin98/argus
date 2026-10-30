@@ -2,7 +2,7 @@
 //! with none, and that a picture heard reaches the place that draws it.
 
 use argus_desktop_core::browser::{BrowserShot, BrowsersPage, PageBrowser};
-use argus_desktop_core::connection::page::{Connection, Event, Rail, Shown, Stage, Status};
+use argus_desktop_core::connection::page::{Connection, Event, Rail, Stage, Status};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::prelude::*;
@@ -126,48 +126,20 @@ fn a_picture_heard_is_held_for_every_place_and_goes_with_the_tab(cx: &mut TestAp
     assert_eq!(decoded(cx), None, "a browser with no tab shows nothing, not that tab's last page");
 }
 
-fn top(cx: &mut TestAppContext, opened: &Opened, id: &str) -> f32 {
-    cx.update_window(opened.handle, |_, window, _| f32::from(window.find(id.to_owned()).bounds().origin.y)).unwrap()
-}
 
-/// SHELL-BROWSER-14: one sub-row under the Browsers item for each browser, in the stage's order.
+/// The sub-rows under the Browsers item are gone (the browsers are pane rows in the tree, wearing
+/// the globe); the item says how many are open as a badge, and none as no badge.
 #[gpui_kit::test]
-fn each_browser_is_a_sub_row_of_the_nav_in_the_stages_order_and_a_press_shows_its_pane(cx: &mut TestAppContext) {
-    let opened = open(cx);
-    let mut events = on_stage(Connection::Connected);
-    events.push(two());
-    hear(cx, &opened, events);
-    assert!(has(cx, &opened, "nav-browsers-fold"));
-    let (item, first, second) = (top(cx, &opened, "nav-browsers"), top(cx, &opened, "nav-browser-105"), top(cx, &opened, "nav-browser-106"));
-    assert!(item < first && first < second, "{item} {first} {second}");
-    let said = cx.update_window(opened.handle, |_, window, _| window.find("nav-browser-106".to_owned()).label().map(str::to_owned)).unwrap();
-    assert_eq!(said.as_deref(), Some("screens \u{b7} https://screens.test/"));
-    click(cx, &opened, "nav-browser-106");
-    assert_eq!(asked(&opened), ["ShowBrowsers { pane: Some(106) }"]);
-}
-
-/// SHELL-STAGE-17: the chevron folds the list and does not press the item under it.
-#[gpui_kit::test]
-fn the_chevron_folds_the_open_browsers_and_presses_nothing(cx: &mut TestAppContext) {
-    let opened = open(cx);
-    let mut events = on_stage(Connection::Connected);
-    events.push(two());
-    hear(cx, &opened, events);
-    click(cx, &opened, "nav-browsers-fold");
-    hear(cx, &opened, Vec::new());
-    assert!(!has(cx, &opened, "nav-browser-105"), "folded");
-    assert!(asked(&opened).is_empty(), "the item was not pressed: {:?}", asked(&opened));
-    click(cx, &opened, "nav-browsers-fold");
-    hear(cx, &opened, Vec::new());
-    assert!(has(cx, &opened, "nav-browser-105"), "unfolded again");
-}
-
-#[gpui_kit::test]
-fn with_no_browser_the_nav_item_has_no_fold_and_no_rows(cx: &mut TestAppContext) {
+fn the_browsers_item_counts_the_open_browsers_and_a_press_goes_to_their_stage(cx: &mut TestAppContext) {
     let opened = open(cx);
     hear(cx, &opened, on_stage(Connection::Connected));
-    assert!(!has(cx, &opened, "nav-browsers-fold"));
-    assert!(!has(cx, &opened, "nav-browsers-list"));
+    assert!(!has(cx, &opened, "nav-browsers-badge"), "no browser, no badge");
+    hear(cx, &opened, vec![two()]);
+    assert!(has(cx, &opened, "nav-browsers-badge"));
+    let said = cx.update_window(opened.handle, |_, window, _| window.find("nav-browsers".to_owned()).label().map(str::to_owned)).unwrap();
+    assert_eq!(said.as_deref(), Some("Browsers, 2 open"));
+    click(cx, &opened, "nav-browsers");
+    assert_eq!(asked(&opened), ["ShowBrowsers { pane: None }"]);
 }
 
 /// SHELL-BROWSER-9: a tile says who has the browser, and nothing when nobody does.
@@ -181,67 +153,6 @@ fn a_tile_says_who_has_the_browser_and_says_nothing_when_nobody_does(cx: &mut Te
     hear(cx, &opened, events);
     assert!(!has(cx, &opened, "browser-tile-105-status"));
     assert!(has(cx, &opened, "browser-tile-106-status"));
-}
-
-fn shown_browser(pane: u64) -> Shown {
-    Shown {
-        pane,
-        repository: "argus".into(),
-        checkout: "main".into(),
-        branch: "dev".into(),
-        agent: true,
-        browser: true,
-        title: "screens".into(),
-        status: "idle",
-        resumed: None,
-    }
-}
-
-fn lit(cx: &mut TestAppContext, opened: &Opened, id: &str) -> bool {
-    cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).selected()).unwrap().unwrap_or(false)
-}
-
-fn railing(stage: Stage, shown: Option<Shown>, beside: Vec<Option<Shown>>) -> Event {
-    let mut rail = Rail { loaded: true, stage, shown, ..Rail::default() };
-    rail.row.beside = beside;
-    Event::Rail(Box::new(rail))
-}
-
-/// SHELL-BROWSER-14: a sub-row is lit while the Workspace is up and its pane is in the grid, the
-/// shown pane or one beside it; on another stage none is lit.
-#[gpui_kit::test]
-fn a_sub_row_is_lit_only_on_the_workspace_and_only_for_a_pane_in_its_grid(cx: &mut TestAppContext) {
-    let opened = open(cx);
-    let connected = on_stage(Connection::Connected).remove(0);
-    hear(cx, &opened, vec![connected.clone(), railing(Stage::Workspace, Some(shown_browser(106)), Vec::new()), two()]);
-    assert!(lit(cx, &opened, "nav-browser-106"), "the shown pane");
-    assert!(!lit(cx, &opened, "nav-browser-105"));
-    hear(cx, &opened, vec![railing(Stage::Workspace, None, vec![Some(shown_browser(106))])]);
-    assert!(lit(cx, &opened, "nav-browser-106"), "a pane beside");
-    assert!(!lit(cx, &opened, "nav-browser-105"));
-    hear(cx, &opened, vec![railing(Stage::Browsers, Some(shown_browser(106)), vec![Some(shown_browser(105))])]);
-    assert!(!lit(cx, &opened, "nav-browser-106"), "the Browsers stage lights none");
-    assert!(!lit(cx, &opened, "nav-browser-105"));
-}
-
-/// SHELL-BROWSER-14 and the page's `.nav-sub .ttl`: the name is `.grow` and the title keeps its words,
-/// so a row too narrow for both loses the name first, and the title is cut at the row's edge.
-#[gpui_kit::test]
-fn a_narrow_sub_row_cuts_the_name_before_the_title_and_the_title_at_the_edge(cx: &mut TestAppContext) {
-    let opened = open(cx);
-    let mut short = browser(105, "trim", true);
-    short.title = "Docs".into();
-    let mut long = browser(106, "screens", true);
-    long.title = "A page whose title is far too long to share the sidebar with anybody's name at all".into();
-    let mut events = on_stage(Connection::Connected);
-    events.push(Event::Browsers(Box::new(BrowsersPage { browsers: vec![short, long] })));
-    hear(cx, &opened, events);
-    let bounds = |cx: &mut TestAppContext, id: &str| cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).bounds()).unwrap();
-    let (row, name, meta) = (bounds(cx, "nav-browser-105"), bounds(cx, "nav-browser-105-name"), bounds(cx, "nav-browser-105-meta"));
-    assert!(name.size.width > gpui_kit::px(10.0) && meta.right() <= row.right(), "room for both: the name takes what the title leaves");
-    let (row, name, meta) = (bounds(cx, "nav-browser-106"), bounds(cx, "nav-browser-106-name"), bounds(cx, "nav-browser-106-meta"));
-    assert!(meta.right() <= row.right(), "the title is cut at the row's edge, not past it");
-    assert!(f32::from(name.size.width) < 1.0, "and the name went first, to nothing");
 }
 
 fn browsers_docked() -> Event {

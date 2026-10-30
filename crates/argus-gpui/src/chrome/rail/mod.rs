@@ -1,29 +1,36 @@
-//! The sidebar: the nav, the picked project's repositories with their checkouts and panes, and the
-//! foot, as wide as the person made it and folded to icons when it is narrow.
+//! The sidebar: an icon strip of the stages down its left edge, and beside it the panel with the
+//! project, the filter chips and the picked project's repositories with their checkouts and panes,
+//! as wide as the person made it and folded to the strip alone when it is narrow.
 //!
 //! Our own list rather than `gpui-kit`'s `Sidebar`, whose selection a test cannot observe
 //! (`GPUI.md`, what the spike found). Everything it draws is the latest `Rail` event, read through a
 //! slice it compares (`slice`), and a press only sends the `Call` the page sends: the rail changes
 //! when the daemon's tree says it did. Which row is picked and which + menu is open are the
 //! session's (`chrome::cursor`), so a press asks and the row is marked when the event comes back.
+//! The filter chip and the quiet row's fold are the window's own, since they are ways of looking.
 //!
 //! While the daemon is gone the list is dimmed and answers no press (`Heard::held`): no call, and
 //! no pick either.
 
-pub mod brand;
-pub mod browsers;
+pub mod chips;
 pub mod calls;
 pub mod checkout;
+pub mod counts;
+pub mod filter;
+pub mod header;
 pub mod keys;
 pub mod listing;
 pub mod menus;
 pub mod pane;
 pub mod popup;
+pub mod quiet;
 pub mod repository;
 pub mod row;
 pub mod scroll;
+pub mod server;
 pub mod slice;
 pub mod stages;
+pub mod strip;
 pub mod switcher;
 pub mod start;
 pub mod status;
@@ -36,10 +43,9 @@ use std::rc::Rc;
 use argus_desktop_core::connection::page::Stage;
 use argus_desktop_core::keys::keymap::Layer;
 use argus_desktop_core::layout::dragged_width::{rail_drawn, rail_icons, RAIL, RAIL_FOLDED};
-use gpui_kit::component::{v_flex, ActiveTheme as _};
+use gpui_kit::component::v_flex;
 use gpui_kit::{prelude::*, Bounds, Context, Entity, FocusHandle, Pixels, ScrollHandle, Subscription, TestSupportExt as _, Window};
 
-use crate::chrome::foot::foot;
 use crate::connection::caller::Caller;
 use crate::connection::heard::Heard;
 use crate::kit::split::Split;
@@ -50,6 +56,7 @@ use crate::theme::Tokens;
 use keys::{RailKeys, StartKeys};
 use row::Ctx;
 use slice::Slice;
+use filter::Filter;
 use tail::ViewsFold;
 
 pub struct RailView {
@@ -77,10 +84,12 @@ pub struct RailView {
     /// Whether the pointer is on a + button: a press on the one that opened a menu toggles it, and
     /// must not also be a press outside it.
     plus_hover: Rc<Cell<bool>>,
+    /// Which filter chip is on: a way of looking at the tree, the window's own.
+    filter: Filter,
+    /// Whether the quiet-repositories row is open.
+    quiet_open: bool,
     /// What only the window knows of the Views fold.
     views: ViewsFold,
-    /// Whether the Browsers item lists its open browsers; starts unfolded.
-    browsers_listed: bool,
     /// The edge the rail is dragged by, which holds the width until Rust says what it kept.
     split: Entity<Split>,
     #[cfg(test)]
@@ -135,8 +144,9 @@ impl RailView {
             scroll: ScrollHandle::new(),
             shown_row: Rc::default(),
             plus_hover: Rc::default(),
+            filter: Filter::All,
+            quiet_open: false,
             views: ViewsFold { listed: false, all: false, unfolded: HashSet::new() },
-            browsers_listed: true,
             split,
             #[cfg(test)]
             changes: Cell::new(0),
@@ -173,15 +183,26 @@ impl Render for RailView {
             icons,
             height: f32::from(viewport.height),
         };
-        let mono = cx.theme().mono_font_family.clone();
         self.schedule_scroll(window, cx);
         let rail = slice.rail.clone();
-        let body = v_flex()
-            .flex_1()
-            .min_h_0()
-            .when(slice.furniture, |body| body.child(self.nav(&slice, ctx, &mono, &tokens, cx)))
-            .child(self.listing(&rail, ctx, &tokens, cx));
-        v_flex()
+        let list = self.listing(&slice, ctx, &tokens, cx);
+        // A folded rail is the strip alone, its pane tiles under the stages; a wide one is the strip and,
+        // beside it, the panel.
+        let (middle, panel) = if icons {
+            (Some(list.into_any_element()), None)
+        } else {
+            let panel = v_flex()
+                .id("rail-panel")
+                .test_support()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .child(self.header(&rail, &slice, ctx, &tokens, cx))
+                .child(self.chips(rail.needs_you, rail.working, &tokens, cx))
+                .child(list);
+            (None, Some(panel))
+        };
+        gpui_kit::component::h_flex()
             .id("rail")
             .test_support()
             .key_context("Rail")
@@ -196,10 +217,8 @@ impl Render for RailView {
             .border_color(tokens.line)
             .text_color(tokens.fg_muted)
             .text_size(rem(tokens.fs_md))
-            .child(self.brand(&rail, ctx, &tokens, cx))
-            .child(body)
-            // A fullscreen console puts the nav and the foot away and keeps the projects.
-            .when(slice.furniture, |column| column.child(foot(&slice.foot, &self.caller, slice.held, icons, &tokens)))
+            .child(self.strip(&slice, ctx, middle, &tokens, cx))
+            .children(panel)
             // The edge: dragged to size the rail, a double-click gives back the usual width. A narrow
             // window has no room to size it.
             .when(!narrow, |column| {

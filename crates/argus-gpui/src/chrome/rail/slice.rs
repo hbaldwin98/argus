@@ -16,9 +16,9 @@ use argus_desktop_core::keys::keymap::{Action, Place};
 use argus_desktop_core::panes::console::ConsolePlace;
 use argus_desktop_core::views::nav::{self, NavView};
 
-use super::browsers::Sub;
-use crate::chrome::foot::{Console, Foot};
+use super::counts::Counts;
 use crate::chrome::nav::Nav;
+use crate::chrome::server::{Console, Server};
 use crate::chrome::stage::route::frame;
 use crate::connection::heard::Heard;
 use crate::keys::caps;
@@ -28,11 +28,12 @@ pub(super) struct Slice {
     pub rail: Rc<Rail>,
     pub git_up: bool,
     pub held: bool,
-    /// A fullscreen console puts the nav and the foot away and keeps the projects.
+    /// A fullscreen console puts the strip away and keeps the panel.
     pub furniture: bool,
-    /// The keys named beside each nav item, in `Nav::ALL`'s order.
-    pub keys: Vec<Vec<String>>,
-    pub foot: Foot,
+    /// Each nav item's words with the keys the keymap names for it, in `Nav::ALL`'s order: its tooltip.
+    pub titles: Vec<String>,
+    pub counts: Counts,
+    pub server: Server,
     /// The Extensions fold: every view listed where the person is, and whether it is unfolded.
     pub extensions: Vec<ExtTab>,
     pub extensions_listed: bool,
@@ -42,8 +43,6 @@ pub(super) struct Slice {
     /// The panes that are browsers, which the tree's rows do not say: their rows wear a globe and
     /// are told apart from a shell.
     pub browsers: Vec<u64>,
-    /// The Browsers item's sub-rows, in the stage's order.
-    pub subs: Vec<Sub>,
 }
 
 impl Slice {
@@ -53,21 +52,18 @@ impl Slice {
             Some(before) if *before.rail == heard.rail => before.rail.clone(),
             _ => Rc::new(heard.rail.clone()),
         };
-        let keys = Nav::ALL
+        let titles = Nav::ALL
             .iter()
-            .map(|nav| {
-                nav.action()
-                    .and_then(|action| caps::presses(&heard.keymap, action, Place::Anywhere).into_iter().next())
-                    .unwrap_or_default()
+            .map(|nav| match nav.action() {
+                Some(action) => caps::titled(nav.label(), &heard.keymap, action, Place::Anywhere),
+                None => nav.label().to_owned(),
             })
             .collect();
         let console = Console { shown: heard.console.place != ConsolePlace::Hidden, count: heard.console.tabs.len() };
         let words = if console.shown { "Hide the console" } else { "Show the console" };
         let status = heard.status.as_ref();
-        let foot = Foot {
+        let server = Server {
             link: heard.link(),
-            needs_you: rail.needs_you,
-            working: rail.working,
             alarm: status.and_then(|s| s.alarm.clone()),
             chime: status.is_none_or(|s| s.chime),
             console,
@@ -78,14 +74,14 @@ impl Slice {
             furniture: frame(&heard.rail, heard.console.place).furniture,
             git_up: heard.git_up(),
             held: heard.held(),
-            keys,
-            foot,
+            titles,
+            counts: Counts::of(heard, &rail),
+            server,
             extensions: heard.extension_views.clone(),
             extensions_listed: heard.extensions_listed,
             saved: heard.saved_views.clone(),
             lit: nav::lit(&heard.saved_panels, &heard.docks),
             browsers: heard.browsers.browsers.iter().map(|browser| browser.pane).collect(),
-            subs: heard.browsers.browsers.iter().map(|browser| Sub::of(browser, &rail)).collect(),
             rail,
         }
     }

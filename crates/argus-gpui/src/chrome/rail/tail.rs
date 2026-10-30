@@ -1,5 +1,5 @@
-//! The nav's dynamic tail: the Extensions fold and the Views fold after the built-in items, each
-//! drawing nothing while it holds nothing (SHELL-STAGE-18).
+//! The Extensions and Views lists the strip's icons open, drawn at the top of the panel's list
+//! under a section head each and nothing while shut or empty (SHELL-STAGE-18).
 //!
 //! Extensions lists every view of an extension listed where the person is, its fold Rust's
 //! (`toggle_extensions`); Views lists the saved views by scope, filtered to here or all, nested
@@ -20,7 +20,7 @@ use super::row::{line, Ctx};
 use super::slice::Slice;
 use super::RailView;
 use crate::kit::icons::Glyph;
-use crate::kit::segment;
+use crate::kit::{section, segment};
 use crate::kit::tip::tip;
 use crate::layout::carry::Carrier;
 use crate::style::Typed as _;
@@ -46,51 +46,20 @@ impl ViewsFold {
 }
 
 impl RailView {
+    /// What the strip's Extensions and Views icons open: each list under its section head, at the top
+    /// of the panel's list, drawing nothing while it is shut or holds nothing.
     pub(super) fn tail(&self, slice: &Slice, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let extensions = (!slice.extensions.is_empty()).then(|| self.extensions(slice, ctx, tokens, cx));
-        let saved = (!slice.saved.is_empty()).then(|| self.saved(slice, ctx, tokens, cx));
-        v_flex().gap(rem(tokens.sp_2)).children(extensions).children(saved)
-    }
-
-    /// `.nav.nav-fold`: the icon cell holding the chevron, the label, the count.
-    fn fold(&self, id: &'static str, label: &'static str, count: usize, listed: bool, ctx: Ctx, tokens: &Tokens) -> super::row::Line {
-        let fill = tokens.fill;
-        line(id, tokens.rail_row_h, tokens)
-            .w_full()
-            .px(rem(tokens.sp_8))
-            .gap(rem(tokens.sp_12))
-            .text_size(rem(tokens.fs_md))
-            .text_color(tokens.fg_muted)
-            .aria_expanded(listed)
-            .aria_label(label)
-            .hover(move |style| style.bg(fill).text_color(tokens.fg))
-            .when(ctx.held, |row| row.opacity(tokens.opacity_dim))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(rem(tokens.nav_icon_cell))
-                    .flex_shrink_0()
-                    .text_color(tokens.fg_muted)
-                    .child(if listed { Glyph::Down } else { Glyph::Right }.at(tokens.icon_xs)),
-            )
-            .child(div().flex_1().min_w_0().truncate().child(label))
-            .child(div().typed(tokens.type_small).text_color(tokens.fg_fainter).child(count.to_string()))
+        let extensions = (!slice.extensions.is_empty() && slice.extensions_listed).then(|| self.extensions(slice, ctx, tokens, cx));
+        let saved = (!slice.saved.is_empty() && self.views.listed).then(|| self.saved(slice, ctx, tokens, cx));
+        v_flex().flex_none().children(extensions).children(saved)
     }
 
     fn extensions(&self, slice: &Slice, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let held = ctx.held;
-        let listed = slice.extensions_listed;
-        let views: Vec<AnyElement> = if listed {
-            slice.extensions.iter().map(|view| self.extension_view(view, ctx, tokens, cx).into_any_element()).collect()
-        } else {
-            Vec::new()
-        };
+        let views: Vec<AnyElement> = slice.extensions.iter().map(|view| self.extension_view(view, ctx, tokens, cx).into_any_element()).collect();
+        // `.nav-nest`: the views under their head.
         v_flex()
-            .child(self.fold("nav-extensions", "Extensions", slice.extensions.len(), listed, ctx, tokens).on_click(cx.listener(move |this, _, _, _| this.ask(held, Call::ToggleExtensions))))
-            // `.nav-nest`: the views, 12px in.
-            .when(listed, |col| col.child(v_flex().id("nav-extensions-list").role(Role::Group).aria_label("Extensions").pl(rem(tokens.sp_12)).gap(rem(tokens.sp_2)).children(views)))
+            .child(section::head("nav-extensions-head", "Extensions", Some(slice.extensions.len()), None, tokens))
+            .child(v_flex().id("nav-extensions-list").role(Role::Group).aria_label("Extensions").gap(rem(tokens.sp_2)).children(views))
     }
 
     /// An extension's view: its mark, title and the extension it is from, lit while it is on screen.
@@ -140,15 +109,9 @@ impl RailView {
     }
 
     fn saved(&self, slice: &Slice, ctx: Ctx, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let listed = self.views.listed;
-        let body = listed.then(|| self.saved_list(slice, ctx, tokens, cx));
-        v_flex()
-            .child(self.fold("nav-views", "Views", slice.saved.len(), listed, ctx, tokens).on_click(cx.listener(|this, _, _, cx| {
-                this.views.listed = !this.views.listed;
-                cx.notify();
-            })))
-            .children(body)
+        v_flex().child(section::head("nav-views-head", "Views", Some(slice.saved.len()), None, tokens)).child(self.saved_list(slice, ctx, tokens, cx))
     }
+
 
     /// `.nav-saved-list`: the Here and All filter, then each scope's label over its views. It
     /// scrolls on its own past a share of the window, so the panes under it stay in sight.
@@ -167,8 +130,6 @@ impl RailView {
             .id("nav-saved-list")
             .role(Role::Group)
             .aria_label("Saved views")
-            // Its rows have no icon, so they start where the fold's label does.
-            .pl(rem(tokens.nav_icon_cell + tokens.sp_12))
             .max_h(px(ctx.height * tokens.nav_saved_share))
             .overflow_y_scroll()
             .child(filter)

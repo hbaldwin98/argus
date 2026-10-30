@@ -208,14 +208,14 @@ fn a_fullscreen_console_puts_the_nav_the_foot_and_the_docks_away_and_keeps_the_s
     let docks = DocksPage { right: DockPage { tabs: vec![DockTab { panel: panel.clone(), title: "Views".into() }], shown: Some(panel), size: 400 }, ..DocksPage::default() };
     let console = |place| Event::Console(Box::new(ConsolePage { place, ..ConsolePage::default() }));
     hear(cx, &opened, vec![status(Connection::Connected, None, None), Event::Rail(Box::new(Rail { shown: Some(shown()), ..project_rail() })), Event::Docks(Box::new(docks)), console(ConsolePlace::Docked)]);
-    assert!(has(cx, &opened, "nav-search") && has(cx, &opened, "foot-status") && has(cx, &opened, "dock-right"));
+    assert!(has(cx, &opened, "nav-workspace") && has(cx, &opened, "foot-status") && has(cx, &opened, "dock-right"));
     hear(cx, &opened, vec![console(ConsolePlace::Fullscreen)]);
     assert!(has(cx, &opened, "rail"), "the sidebar's projects stay");
-    for gone in ["nav-search", "foot-status", "dock-right"] {
+    for gone in ["nav-workspace", "foot-status", "dock-right"] {
         assert!(!has(cx, &opened, gone), "{gone}");
     }
     hear(cx, &opened, vec![console(ConsolePlace::Tab)]);
-    assert!(has(cx, &opened, "nav-search") && has(cx, &opened, "foot-status"), "the Console stage keeps the nav");
+    assert!(has(cx, &opened, "nav-workspace") && has(cx, &opened, "foot-status"), "the Console stage keeps the nav");
 }
 
 #[gpui_kit::test]

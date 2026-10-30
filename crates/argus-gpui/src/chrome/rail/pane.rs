@@ -19,12 +19,15 @@ use super::status::pane_word;
 use super::RailView;
 use crate::kit::area;
 use crate::kit::icons::Glyph;
-use crate::kit::pill::quiet_pill;
+
 use crate::kit::status_dot::status_dot;
 use crate::kit::tip::tip;
 use crate::layout::carry::{Carried, Carrier};
 use crate::theme::scale::{rem, Mark};
 use crate::theme::Tokens;
+
+/// `.pn`: a pane row is 30px, a little taller than the checkout and repository lines above it.
+const PANE_H: f32 = 30.0;
 
 /// The tooltip a pane's row says: its title, then its note or what it is. A browser is told apart
 /// from a shell here and by its glyph: the page drew it as a shell (SHELL-BROWSER-20).
@@ -75,11 +78,11 @@ impl RailView {
         let boxed = pane.on && !ctx.offstage;
         let group = SharedString::from(format!("pane-row-{id}"));
         // `--mark-sel`: a bar down the leading edge, or a hairline all round, or the fill alone.
-        let hairline = boxed && tokens.mark_sel == Mark::Hairline;
+        let hairline = boxed && tokens.mark_sel != Mark::Bar;
         let ring = if picked {
             tokens.ring
         } else if hairline {
-            tokens.mark_sel_edge
+            tokens.line_strong
         } else {
             Hsla::transparent_black()
         };
@@ -91,14 +94,14 @@ impl RailView {
             None
         };
         let shown = pane.on.then(|| area::measure(self.shown_row.clone()));
-        let row = line(format!("pane-{id}"), tokens.rail_row_h, tokens)
+        let row = line(format!("pane-{id}"), PANE_H, tokens)
             .group(group.clone())
             .relative()
             .w_full()
             // One pixel less each side: the ring is a border here, an outline in the page.
-            .pl(rem(tokens.sp_12 - 1.0))
-            .pr(rem(tokens.sp_8 - 1.0))
-            .gap(rem(tokens.sp_12))
+            .pl(rem(9.0))
+            .pr(rem(9.0))
+            .gap(rem(9.0))
             .text_size(rem(tokens.fs_md))
             // Only the pane on screen is in the text colour, as only the lit stage is; the rest are muted.
             .text_color(if pane.on { tokens.fg } else { tokens.fg_muted })
@@ -112,8 +115,8 @@ impl RailView {
             .when_some(edge, |row, width| row.child(div().absolute().left_0().top_0().bottom_0().w(rem(width)).bg(tokens.mark_sel_edge)))
             .children(shown);
         self.presses(row, checkout, pane, held, cx)
-            // One status encoding per row: the pill when it has a word, else the dot.
-            .when(word.is_none(), |row| row.child(status_dot(format!("pane-{id}"), pane.status, tokens)))
+            // The dot says every status; "needs you" is the one that adds a word.
+            .child(status_dot(format!("pane-{id}"), pane.status, tokens))
             // A browser is not a program in a terminal: its row wears the globe.
             .when(browser, |row| {
                 row.child(div().id(format!("pane-{id}-browser")).test_support().flex_shrink_0().text_color(tokens.fg_faint).child(Glyph::Globe.at(tokens.icon_xs)))
@@ -121,7 +124,17 @@ impl RailView {
             .child(div().flex_1().min_w_0().truncate().child(pane.title.clone()))
             .when_some(word, |row, word| {
                 // `.pane-end`: gives way to the close button while the row is pointed at.
-                row.child(div().flex_shrink_0().group_hover(group.clone(), |style| style.invisible()).child(quiet_pill(format!("pane-{id}-word"), word, pane.status, tokens)))
+                row.child(
+                    div()
+                        .id(format!("pane-{id}-word"))
+                        .test_support()
+                        .aria_label(word)
+                        .flex_shrink_0()
+                        .group_hover(group.clone(), |style| style.invisible())
+                        .text_size(rem(tokens.fs_sm))
+                        .text_color(tokens.attention)
+                        .child(word),
+                )
             })
             // `.pane-row .close`: over the status word, only under the pointer.
             .child(
@@ -132,7 +145,7 @@ impl RailView {
                     .aria_label(format!("Close {}", pane.title))
                     .absolute()
                     .right(rem(tokens.sp_8))
-                    .top(rem((tokens.rail_row_h - tokens.icon_box) / 2.0 - 1.0))
+                    .top(rem((PANE_H - tokens.icon_box) / 2.0 - 1.0))
                     .size(rem(tokens.icon_box))
                     .flex()
                     .items_center()

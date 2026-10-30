@@ -1,5 +1,4 @@
-//! How a status looks on the rail's rows: the dot a status earns, and the words a few statuses
-//! say (the pill they are said in is `kit/pill`).
+//! How a status looks on the rail's rows: the dot a status earns, and the one word a row says.
 
 use gpui_kit::{div, prelude::*, Hsla};
 
@@ -20,15 +19,8 @@ pub(super) fn status_colour(word: &str, tokens: &Tokens) -> Option<Hsla> {
     }
 }
 
-/// The few statuses a pane row says in words: only what asks for a look, or
-/// that it has ended. Working shows in the dot alone.
+/// The one status a pane row says in words, `needs you`: every other is its dot alone, so a column
+/// of rows has one loud word at most per row (`project/Blend.dc.html`).
 pub(super) fn pane_word(status: &str) -> Option<&'static str> {
-    match status {
-        "waiting" => Some("needs you"),
-        "needs-review" => Some("review"),
-        "failed" => Some("failed"),
-        "exited" => Some("exited"),
-        "done" => Some("done"),
-        _ => None,
-    }
+    (status == "waiting").then_some("needs you")
 }

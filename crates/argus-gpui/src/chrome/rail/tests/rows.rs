@@ -6,25 +6,40 @@ use super::*;
 fn the_rail_lists_the_rows_of_the_rail_it_was_given(cx: &mut TestAppContext) {
     let opened = open(cx, connected_and_busy());
     for nav in Nav::ALL {
-        assert_eq!(label(cx, &opened, nav.id()).as_deref(), Some(nav.label()));
+        let said = label(cx, &opened, nav.id());
+        // Workspace says how many need the person; every other stage here has no count to say.
+        let wanted = if nav == Nav::Workspace { "Workspace 1 needs you" } else { nav.label() };
+        assert_eq!(said.as_deref(), Some(wanted));
     }
     assert_eq!(label(cx, &opened, "repo-11").as_deref(), Some("argus"));
-    assert_eq!(label(cx, &opened, "repo-11-count").as_deref(), Some("3"));
-    // A quiet repository says how long since it was used, and draws nothing under it while shut.
+    // Several checkouts: the header says how many worktrees.
+    assert_eq!(label(cx, &opened, "repo-11-count").as_deref(), Some("2 worktrees"));
+    // A quiet repository folds into one row at the foot, and opens to its name and how long since it was used.
+    assert_eq!(label(cx, &opened, "rail-quiet").as_deref(), Some("1 quiet repository"));
+    assert!(!present(cx, &opened, "repo-10"), "folded away");
+    open_quiet(cx, &opened);
     assert_eq!(label(cx, &opened, "repo-10-count").as_deref(), Some("16m"));
-    assert!(!present(cx, &opened, "checkout-100"));
+    assert!(!present(cx, &opened, "checkout-100"), "and draws nothing under it while shut");
     assert!(!present(cx, &opened, "pane-6"));
     assert_eq!(label(cx, &opened, "checkout-110").as_deref(), Some("main checkout on main"));
     assert_eq!(label(cx, &opened, "pane-1").as_deref(), Some("Trim context · agent, working"));
     assert_eq!(label(cx, &opened, "pane-2").as_deref(), Some("zsh · shell, idle"));
-    // Only what asks for a look is said in words.
-    assert_eq!(label(cx, &opened, "pane-4-word").as_deref(), Some("review"));
+    // Only a pane that needs the person says so in words; the rest are their dot alone.
+    assert!(!present(cx, &opened, "pane-4-word"));
     assert!(!present(cx, &opened, "pane-1-word"));
     assert!(!present(cx, &opened, "pane-2-word"));
     // A folded checkout draws no pane and speaks for them: how many, and who shares it.
     assert!(!present(cx, &opened, "pane-5"));
     assert_eq!(label(cx, &opened, "checkout-112-folded").as_deref(), Some("1 pane folded away"));
     assert_eq!(label(cx, &opened, "checkout-112-shared").as_deref(), Some("shared by 2 agents"));
+}
+
+#[gpui_kit::test]
+fn a_pane_that_needs_you_says_so_in_words_and_no_other_does(cx: &mut TestAppContext) {
+    let mut rail = busy();
+    rail.project.as_mut().unwrap().repositories[0].checkouts[1].open = true;
+    let opened = open(cx, vec![status(Connection::Connected), Event::Rail(Box::new(rail))]);
+    assert_eq!(label(cx, &opened, "pane-5-word").as_deref(), Some("needs you"));
 }
 
 #[gpui_kit::test]
@@ -128,6 +143,7 @@ fn a_row_a_carried_pane_would_move_to_is_drawn_as_the_target(cx: &mut TestAppCon
 fn a_repository_has_a_clock_that_opens_its_recent_sessions_without_choosing_it(cx: &mut TestAppContext) {
     // SHELL-RAIL-5.
     let opened = open(cx, connected_and_busy());
+    open_quiet(cx, &opened);
     assert_eq!(label(cx, &opened, "repo-10-sessions").as_deref(), Some("Recent agent sessions in dotfiles"));
     // Drawn only while the row is pointed at.
     hover(cx, &opened, "repo-10");
@@ -208,4 +224,46 @@ fn the_browsers_item_goes_to_the_stage_of_every_agents_browsers(cx: &mut TestApp
     assert_eq!(label(cx, &opened, "nav-browsers").as_deref(), Some("Browsers"));
     click(cx, &opened, "nav-browsers");
     assert_eq!(taken(&opened), ["ShowBrowsers { pane: None }"]);
+}
+
+#[gpui_kit::test]
+fn a_filter_chip_keeps_the_panes_of_its_kind_and_sends_nothing(cx: &mut TestAppContext) {
+    let opened = open(cx, connected_and_busy());
+    click(cx, &opened, "rail-filter-need");
+    assert!(present(cx, &opened, "pane-4"), "a review needs a look");
+    assert!(!present(cx, &opened, "pane-1") && !present(cx, &opened, "pane-2"));
+    assert!(!present(cx, &opened, "rail-quiet"), "quiet repositories have no panes to keep");
+    assert_eq!(selected(cx, &opened, "rail-filter-need"), Some(true));
+    click(cx, &opened, "rail-filter-working");
+    assert!(present(cx, &opened, "pane-1") && !present(cx, &opened, "pane-4"));
+    click(cx, &opened, "rail-filter-all");
+    assert!(present(cx, &opened, "pane-2") && present(cx, &opened, "rail-quiet"));
+    assert!(taken(&opened).is_empty(), "a chip is the window's own: {:?}", taken(&opened));
+}
+
+#[gpui_kit::test]
+fn a_repository_with_one_checkout_is_one_line_and_a_press_chooses_it_and_picks_the_checkout(cx: &mut TestAppContext) {
+    let mut rail = busy();
+    let repos = &mut rail.project.as_mut().unwrap().repositories;
+    repos[0].checkouts.truncate(1);
+    repos[0].checkouts[0].git = Some("!3".into());
+    repos[0].checkouts[0].clean = false;
+    rail.repository = Some(10);
+    let opened = open(cx, vec![status(Connection::Connected), Event::Rail(Box::new(rail))]);
+    assert!(!present(cx, &opened, "repo-11"), "no header of its own");
+    assert_eq!(label(cx, &opened, "checkout-110").as_deref(), Some("argus \u{b7} main checkout on main"));
+    assert!(present(cx, &opened, "pane-1"), "its panes hang straight under it");
+    click(cx, &opened, "checkout-110");
+    assert_eq!(taken(&opened), ["ChooseRepository { repository: 11 }", "RailPick { checkout: 110, pane: None }"]);
+}
+
+#[gpui_kit::test]
+fn a_checkout_with_no_panes_among_several_says_so(cx: &mut TestAppContext) {
+    let mut rail = busy();
+    let argus = &mut rail.project.as_mut().unwrap().repositories[0];
+    argus.checkouts[1].panes.clear();
+    argus.checkouts[1].count = 0;
+    let opened = open(cx, vec![status(Connection::Connected), Event::Rail(Box::new(rail))]);
+    assert_eq!(label(cx, &opened, "checkout-112-none").as_deref(), Some("no panes"));
+    assert!(!present(cx, &opened, "checkout-110-none"));
 }

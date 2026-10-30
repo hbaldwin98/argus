@@ -73,7 +73,7 @@ fn the_folds_draw_nothing_while_they_hold_nothing(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn the_extensions_fold_counts_its_views_and_asks_rust_to_open_it(cx: &mut TestAppContext) {
     let opened = open(cx, with(vec![extensions(false)]));
-    assert_eq!(label(cx, &opened, "nav-extensions").as_deref(), Some("Extensions"));
+    assert_eq!(label(cx, &opened, "nav-extensions").as_deref(), Some("Extensions, 2"));
     assert!(!present(cx, &opened, "ext-view-docker-containers"), "folded, the views are not drawn");
     click(cx, &opened, "nav-extensions");
     assert_eq!(taken(&opened), ["ToggleExtensions"], "the fold is Rust's, drawn when it says");
@@ -95,7 +95,7 @@ fn an_extension_view_is_lit_while_on_screen_and_opens_where_it_lives(cx: &mut Te
 fn the_views_fold_is_the_windows_own_and_lists_what_is_about_here_first(cx: &mut TestAppContext) {
     // CHECKOUTS-CODE-VIEWS-SAVED-13..16.
     let opened = open(cx, with(vec![views(Vec::new())]));
-    assert_eq!(label(cx, &opened, "nav-views").as_deref(), Some("Views"));
+    assert_eq!(label(cx, &opened, "nav-views").as_deref(), Some("Views, 3"));
     assert!(!present(cx, &opened, "saved-plan"), "folded");
     click(cx, &opened, "nav-views");
     assert!(taken(&opened).is_empty(), "no call: the fold is the window's");
@@ -143,12 +143,13 @@ fn a_fold_whose_filter_leaves_nothing_draws_its_list_without_rows(cx: &mut TestA
 }
 
 #[gpui_kit::test]
-fn the_tail_comes_after_every_built_in_item_and_a_held_rail_sends_nothing_from_it(cx: &mut TestAppContext) {
+fn the_lists_come_under_the_chips_extensions_first_and_a_held_rail_sends_nothing_from_them(cx: &mut TestAppContext) {
     let opened = open(cx, with(vec![extensions(true), views(Vec::new())]));
     let top = |cx: &mut TestAppContext, id: &str| cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).bounds().origin.y.as_f32()).unwrap();
-    let last_builtin = Nav::ALL.iter().map(|nav| top(cx, nav.id())).fold(f32::MIN, f32::max);
-    assert!(top(cx, "nav-extensions") > last_builtin);
-    assert!(top(cx, "nav-views") > top(cx, "nav-extensions"));
+    let chips = top(cx, "rail-chips");
+    click(cx, &opened, "nav-views");
+    assert!(top(cx, "nav-extensions-head") > chips);
+    assert!(top(cx, "nav-views-head") > top(cx, "nav-extensions-head"));
     hear(cx, &opened, vec![status(Connection::Stopped)]);
     click(cx, &opened, "nav-extensions");
     click(cx, &opened, "ext-view-ci-runs");
