@@ -203,3 +203,33 @@ fn the_views_launcher_sends_what_rust_says_unless_the_daemon_is_gone(cx: &mut Te
         assert_eq!(*calls.borrow(), if held { Vec::<String>::new() } else { vec!["HideViews".to_owned()] }, "held: {held}");
     }
 }
+
+#[gpui_kit::test]
+fn a_stage_puts_its_tabs_after_the_crumb_and_a_press_only_calls(cx: &mut TestAppContext) {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let opened = open(cx);
+    let pressed: Rc<Cell<u32>> = Rc::default();
+    let seen = pressed.clone();
+    cx.update(|cx| {
+        Slots::of(cx).offer(
+            Stage::Code,
+            Offer::default().tabs(move |_, _| {
+                let seen = seen.clone();
+                Some(tabs::Tabs::new(
+                    "code-tabs",
+                    "Which files",
+                    vec![tabs::Tab::new("tab-a", "All files", true, |_, _| {}), tabs::Tab::new("tab-b", "Changed", false, move |_, _| seen.set(seen.get() + 1)).count(Some(4))],
+                ))
+            }),
+        );
+    });
+    hear(cx, &opened, vec![connected(), rail(None, Stage::Code)]);
+    let selected = |cx: &mut TestAppContext, id: &'static str| cx.update_window(opened.handle, |_, window, _| window.find(id.to_owned()).selected()).unwrap();
+    assert_eq!((selected(cx, "tab-a"), selected(cx, "tab-b")), (Some(true), Some(false)));
+    click(cx, &opened, "tab-b");
+    assert_eq!(pressed.get(), 1);
+    assert_eq!(selected(cx, "tab-b"), Some(false), "the bar never predicts: the stage says which tab is on");
+    hear(cx, &opened, vec![rail(None, Stage::Checkouts)]);
+    assert!(!has(cx, &opened, "tab-a"), "another stage shows none of Code's tabs");
+}

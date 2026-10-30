@@ -26,7 +26,7 @@ use argus_desktop_core::code::edit::EditEvent;
 use argus_desktop_core::code::stage::CodePage;
 use argus_desktop_core::code::start::Opened;
 use argus_desktop_core::chrome::add_project::AddProjectPage;
-use argus_desktop_core::connection::page::{Connection, Event, Features, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
+use argus_desktop_core::connection::page::{Connection, Event, Features, NoticeTone, HistoryPage, Palette, Rail, ReviewPage, SettingsPage, Side, Status, ViewsPage};
 use argus_desktop_core::board::tracker::link_dialog::LinkPage;
 use argus_desktop_core::board::tracker::reconcile_dialog::ReconcilePage;
 use argus_desktop_core::extensions::keys::{ExtCommandPage, ExtGroup};
@@ -65,10 +65,12 @@ pub enum Link {
 /// the kit's own default is 5 s.
 pub const NOTICE_FOR: Duration = Duration::from_secs(6);
 
-/// One line the window says along its bottom (SHELL-NOTICE-1).
+/// One line the window says in the title bar a while (SHELL-NOTICE-1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notice {
     pub text: String,
+    /// How it looks: the source's to say, never read from the words.
+    pub tone: NoticeTone,
     /// Which notice it is, counted from the first; a replacement with the
     /// same words has another, so its timer starts over.
     pub serial: u64,
@@ -363,9 +365,9 @@ impl Heard {
                 return false;
             }
             // The newest replaces the one showing, even with the same words.
-            Event::Notice { text } => {
+            Event::Notice { text, tone } => {
                 self.noticed += 1;
-                self.notice = Some(Notice { text, serial: self.noticed });
+                self.notice = Some(Notice { text, tone, serial: self.noticed });
             }
             Event::Browsers(page) => {
                 for pane in self.pictures.page(&page) {
@@ -625,22 +627,22 @@ mod tests {
     #[test]
     fn a_notice_is_held_and_the_next_replaces_it_even_with_the_same_words() {
         let mut heard = Heard::new();
-        assert!(heard.hear(Event::Notice { text: "no pane is on screen".into() }));
+        assert!(heard.hear(Event::refused("no pane is on screen")));
         let first = heard.notice.clone().expect("held");
         assert_eq!(first.text, "no pane is on screen");
-        assert!(heard.hear(Event::Notice { text: "no pane is on screen".into() }));
+        assert!(heard.hear(Event::refused("no pane is on screen")));
         let second = heard.notice.clone().expect("held");
         assert_ne!(first.serial, second.serial, "the same words are a notice of their own");
-        heard.hear(Event::Notice { text: "could not copy".into() });
+        heard.hear(Event::refused("could not copy"));
         assert_eq!(heard.notice.as_ref().map(|n| n.text.as_str()), Some("could not copy"));
     }
 
     #[test]
     fn a_timer_for_an_earlier_notice_leaves_the_one_that_replaced_it() {
         let mut heard = Heard::new();
-        heard.hear(Event::Notice { text: "one".into() });
+        heard.hear(Event::refused("one"));
         let earlier = heard.notice.as_ref().unwrap().serial;
-        heard.hear(Event::Notice { text: "two".into() });
+        heard.hear(Event::refused("two"));
         assert!(!heard.dismiss_notice(earlier));
         assert_eq!(heard.notice.as_ref().map(|n| n.text.as_str()), Some("two"));
         let current = heard.notice.as_ref().unwrap().serial;

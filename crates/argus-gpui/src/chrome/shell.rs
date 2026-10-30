@@ -8,7 +8,7 @@
 //! it. The header says what `StripPage` (core) makes of the pane on screen or the stage up, with
 //! the stage's own words and tools from `chrome/header/slots`.
 
-use argus_desktop_core::chrome::strip::{Says, StripPage};
+use argus_desktop_core::chrome::strip::{Part, Says, StripPage};
 use argus_desktop_core::connection::page::{Call, Side, Stage};
 use argus_desktop_core::panes::console::ConsolePlace;
 use argus_desktop_core::system::clock::Clock;
@@ -21,7 +21,7 @@ use crate::checkouts::stage::CheckoutsStage;
 use crate::code::stage::CodeStage;
 use crate::chrome::header::launcher::launcher;
 use crate::chrome::header::more;
-use crate::chrome::header::slots::Slots;
+use crate::chrome::header::slots::{Slot, Slots};
 use crate::chrome::header::Header;
 use crate::chrome::notice::NoticeView;
 use crate::chrome::projects::add::AddView;
@@ -159,11 +159,14 @@ impl Shell {
         &self.split
     }
 
-    /// What the strip says: Git is named by its title alone; else the stage up, or the pane on
-    /// screen, by `StripPage`, with what the stage's own view says (`says`).
+    /// What the strip says: Git is its repository and the branch it reads, then its title; else the
+    /// stage up, or the pane on screen, by `StripPage`, with what the stage's own view says (`says`).
     pub fn strip(heard: &Heard, says: &Says, clock: &Clock) -> StripPage {
         if heard.git_up() {
-            return StripPage::titled("Git");
+            let branch = heard.history.as_ref().map(|page| page.branch.clone()).or_else(|| heard.review.as_ref().map(|page| page.branch.clone()));
+            let repository = heard.rail.shown.as_ref().map(|shown| shown.repository.clone());
+            let crumb = repository.map(Part::Text).into_iter().chain(branch.filter(|branch| !branch.is_empty()).map(Part::Mono)).collect();
+            return StripPage { crumb, ..StripPage::titled("Git") };
         }
         StripPage::of(&heard.rail, heard.console.place == ConsolePlace::Fullscreen, says, clock)
     }
@@ -185,19 +188,22 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tokens = *Tokens::global(cx);
         let slots = Slots::of(cx);
-        let (strip, stage, held, frame, waiting) = {
+        let (strip, slot, held, frame, waiting, noticed) = {
             let heard = self.heard.read(cx);
-            let stage = Shell::strip_stage(heard);
-            let says = slots.says(stage, cx);
-            (Shell::strip(heard, &says, &Clock::local()), stage, heard.held(), frame(&heard.rail, heard.console.place), Shell::views_waiting(heard))
+            // Git is drawn where the Workspace's pane is, and has a slot of its own.
+            let slot = if heard.git_up() { Slot::Git } else { Slot::Stage(Shell::strip_stage(heard)) };
+            let says = slots.says(slot, cx);
+            (Shell::strip(heard, &says, &Clock::local()), slot, heard.held(), frame(&heard.rail, heard.console.place), Shell::views_waiting(heard), heard.notice.is_some())
         };
+        let dot = strip.pane.as_ref().and(self.heard.read(cx).rail.shown.as_ref()).map(|shown| shown.status);
+        let tabs = slots.tabs(slot, window, cx);
+        let notice = noticed.then(|| self.notice.clone().into_any_element());
         // The grid of the pane on screen: Git and the other stages have none to name.
         let size = if strip.pane.is_some() { self.terminal.read(cx).size_label(cx).to_owned() } else { String::new() };
         // A pane has its `...` menu; another stage has the tools its own view offers.
         let tools = match &strip.pane {
             Some(pane) => Some(more::button(pane, &self.caller, &self.heard, &tokens, cx).into_any_element()),
-            None if self.heard.read(cx).git_up() => None,
-            None => slots.tools(stage, window, cx),
+            None => slots.tools(slot, window, cx),
         };
         let launcher = launcher(waiting.0, waiting.1, waiting.2, held, &self.caller, &tokens).map(IntoElement::into_any_element);
         let mic = self.heard.read(cx).dictation.clone().and_then(|page| {
@@ -218,10 +224,8 @@ impl Render for Shell {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .child(Header::new().strip(strip).size(size).held(held).dictation(mic).launcher(launcher).tools(tools))
-                    .child(div().id("stage").flex_1().min_h_0().bg(tokens.see_sunken).child(self.work.clone()))
-                    // Over the stage, under nothing: a notice is the last thing drawn.
-                    .child(self.notice.clone()),
+                    .child(Header::new().strip(strip).size(size).held(held).dot(dot).tabs(tabs).notice(notice).dictation(mic).launcher(launcher).tools(tools))
+                    .child(div().id("stage").flex_1().min_h_0().bg(tokens.see_sunken).child(self.work.clone())),
             )
             // The page's `.scrim`: the kit paints none of its own, so a dialog that is up dims the window here, under the dialog layer.
             .when(scrimmed, |shell| shell.child(div().absolute().top_0().left_0().size_full().bg(tokens.scrim)))

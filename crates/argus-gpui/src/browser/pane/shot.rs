@@ -38,9 +38,13 @@ fn copy(pane: u64, heard: &Entity<Heard>, cx: &mut App) {
                 write_picture(&picture.bytes).map_err(|why| format!("The picture was not copied: {why}"))
             })
             .await;
-        let text = copied.map(|()| COPIED.to_owned()).unwrap_or_else(|why| why);
+        let said = match copied {
+            Ok(()) => Event::done(COPIED),
+            Err(why) if why == NOTHING_TO_COPY => Event::refused(why),
+            Err(why) => Event::failed(why),
+        };
         heard.update(cx, |heard, cx| {
-            heard.hear(Event::Notice { text });
+            heard.hear(said);
             cx.notify();
         });
     })

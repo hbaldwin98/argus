@@ -3,9 +3,9 @@
 //!
 //! Core has no Git stage (`review::entry` is how the window enters and leaves it), so this draws
 //! what the session says: the review as the Changes tab, the history as the History tab, and
-//! nothing of either before its event. The header names the branch, switches the tab, counts the
-//! files and has the refresh and the close; each sends a call, and the stage changes when the
-//! session's event says it did.
+//! nothing of either before its event. The title bar switches the tab and counts the files
+//! (`tabs`); the stage's strip names the branch and has the refresh and the close. Each sends a
+//! call, and the stage changes when the session's event says it did.
 //!
 //! The stage holds the keys while it is up: the keys of the open tab are heard here when no field
 //! has them (`review::keys`; `/` takes the history's filter field), every other key is held and
@@ -15,6 +15,7 @@
 
 pub mod keys;
 pub mod strip;
+pub mod tabs;
 
 use std::rc::Rc;
 
@@ -65,6 +66,7 @@ impl GitStage {
         for layer in [Layer::Review, Layer::History] {
             layers.register(layer, Rc::new(StageKeys { stage: cx.weak_entity(), layer }));
         }
+        tabs::offer(cx.weak_entity(), heard.clone(), cx);
         let mut stage = Self {
             heard,
             caller,

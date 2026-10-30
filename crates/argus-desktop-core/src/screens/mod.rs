@@ -2471,6 +2471,21 @@ fn main_scenes() -> Vec<Scene> {
             }));
             w.s
         }),
+        scene("notice-done", "Notice — something finished", || {
+            let mut w = Window::showing(P_TRIM);
+            w.receive(ServerMsg::ReviewCommentSaved { id: 41, delivered: true, request_id: 1 });
+            w.s
+        }),
+        scene("notice-arrived", "Notice — a picture pasted into the pane", || {
+            let mut w = Window::showing(P_TRIM);
+            w.s.paste_file("clipboard.png".into(), vec![0x89, b'P', b'N', b'G']);
+            w.s
+        }),
+        scene("notice-failed", "Notice — the machine said no", || {
+            let mut w = Window::showing(P_TRIM);
+            w.receive(ServerMsg::Error { message: "could not copy: the clipboard is busy".into() });
+            w.s
+        }),
         scene("agent-views", "Views — what an agent showed, beside its pane", || {
             let mut w = Window::showing(P_TRIM);
             w.call(Call::OpenView { pane: P_TRIM, id: "trim-progress".into() });

@@ -175,7 +175,7 @@ fn an_unrelated_event_does_not_redraw_the_rail_and_a_change_of_what_it_draws_doe
     let opened = open(cx, connected_and_busy());
     let changes = |cx: &mut TestAppContext| cx.update(|cx| opened.rail.read(cx).changes());
     let before = changes(cx);
-    hear(cx, &opened, vec![Event::Notice { text: "something passed".into() }]);
+    hear(cx, &opened, vec![Event::refused("something passed")]);
     hear(cx, &opened, vec![Event::Rail(Box::new(busy()))]);
     assert_eq!(changes(cx), before, "nothing the rail draws changed");
     let mut changed = busy();

@@ -299,7 +299,7 @@ impl OpenFeature {
     /// Says a notice the window knows from what the feature shows.
     fn say(&self, text: String, cx: &mut Context<Self>) {
         self.heard.update(cx, |heard, cx| {
-            heard.hear(argus_desktop_core::connection::page::Event::Notice { text });
+            heard.hear(argus_desktop_core::connection::page::Event::refused(text));
             cx.notify();
         });
     }

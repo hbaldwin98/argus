@@ -1,24 +1,50 @@
-//! The line the window says something along its bottom in: an info mark, the words and a way to
-//! put it away (SHELL-NOTICE-1).
+//! The pill the window says something in, left of the Dictation chip in the title bar: an icon
+//! for the tone, the words and, where there is something to put away, a way to put it away.
 //!
-//! What it says is the session's: a refusal's reason, a copy that failed, a key nobody binds.
-//! `Heard` holds the newest, which replaces the one showing; this draws it and ends it after
-//! [`NOTICE_FOR`], the page's six seconds, counted from when it arrived. The kit's notification
-//! would stack them and wait on the pointer; a notice here is one line that is replaced.
+//! What it says is the session's: a refusal's reason, a copy that failed, a commit made. `Heard`
+//! holds the newest, which replaces the one showing; this draws it and ends it after
+//! [`NOTICE_FOR`], the page's six seconds, counted from when it arrived, fading over the last of
+//! them. The kit's notification would stack them and wait on the pointer; a notice here is one
+//! pill that is replaced.
+//!
+//! The tone is the source's (`NoticeTone`), so the colour and icon say what the words mean
+//! without this reading them. A done notice needs nothing from the person and has no close; the
+//! others do. A paste has no undo to press (the daemon keeps the file and pastes its path in one
+//! go), so its close only puts the pill away.
 
+use argus_desktop_core::connection::page::NoticeTone;
 use gpui_kit::component::h_flex;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, Context, Entity, Role, SharedString, Subscription, Task, Window};
+use gpui_kit::{div, prelude::*, Animation, AnimationExt as _, Context, ElementId, Entity, Hsla, Role, SharedString, Subscription, Task, Window};
 
 use crate::connection::heard::{Heard, NOTICE_FOR};
-use crate::kit::icon_button::icon_button;
 use crate::kit::icons::Glyph;
+use crate::kit::tip::tip;
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
-/// The share of the stage a notice may take before its words wrap.
-const WIDEST: f32 = 0.7;
+/// The widest a notice grows before its words are cut with an ellipsis (the whole text is its
+/// tooltip).
+const WIDEST: f32 = 360.0;
+
+/// How much of the six seconds is the fade at its end.
+const FADE: f32 = 0.08;
+
+/// The pill's opacity `delta` of the way through its time: whole, then gone over the last [`FADE`].
+fn opacity(delta: f32) -> f32 {
+    if delta <= 1.0 - FADE { 1.0 } else { ((1.0 - delta) / FADE).clamp(0.0, 1.0) }
+}
+
+/// The colour, mark and whether it has a close, by tone.
+fn look(tone: NoticeTone, tokens: &Tokens) -> (Hsla, Glyph, bool) {
+    match tone {
+        NoticeTone::Done => (tokens.ok, Glyph::Tick, false),
+        NoticeTone::Arrived => (tokens.accent, Glyph::Picture, true),
+        NoticeTone::Refused => (tokens.attention, Glyph::Info, true),
+        NoticeTone::Failed => (tokens.danger, Glyph::Warn, true),
+    }
+}
 
 pub struct NoticeView {
     heard: Entity<Heard>,
@@ -68,46 +94,59 @@ impl Render for NoticeView {
             return div().into_any_element();
         };
         let (heard, serial) = (self.heard.clone(), notice.serial);
-        // Along the bottom of the stage, in the middle: `.notice`, `bottom: --sp-24`. The page
-        // lifts it over its own command band; this window has none.
-        div()
-            .absolute()
-            .bottom(rem(tokens.sp_24))
-            .left_0()
-            .w_full()
-            .flex()
-            .justify_center()
-            .child(
-                h_flex()
-                    .id("notice")
-                    .role(Role::Status)
-                    .test_support()
-                    .aria_label(SharedString::from(notice.text.clone()))
-                    .max_w(gpui_kit::relative(WIDEST))
-                    .gap(rem(tokens.sp_8))
-                    .items_center()
-                    .py(rem(tokens.sp_4))
-                    .pl(rem(tokens.sp_12))
-                    .pr(rem(tokens.sp_4))
-                    .bg(tokens.bg_raised)
-                    .border_1()
-                    .border_color(tokens.line_strong)
-                    .rounded(rem(tokens.r_md))
-                    .shadow(tokens.shadow_pop())
-                    .typed(tokens.type_body)
-                    .text_color(tokens.fg)
-                    .child(div().flex_shrink_0().text_color(tokens.attention).child(Glyph::Info.at(tokens.icon_sm)))
-                    .child(div().min_w_0().py(rem(tokens.sp_4)).child(SharedString::from(notice.text)))
-                    .child(icon_button("notice-dismiss", "Dismiss", false, &tokens).child(Glyph::Close.at(tokens.icon_sm)).on_click(
-                        move |_, _, cx| {
+        let (colour, glyph, closes) = look(notice.tone, &tokens);
+        let words = SharedString::from(notice.text);
+        // The pill is the Dictation chip's height and shape, tinted as a status pill is.
+        h_flex()
+            .id("notice")
+            .role(if notice.tone == NoticeTone::Failed { Role::Alert } else { Role::Status })
+            .test_support()
+            .aria_label(words.clone())
+            .tooltip(tip(words.clone()))
+            .flex_none()
+            .max_w(rem(WIDEST))
+            .h(rem(tokens.dictate_chip_h))
+            .pl(rem(tokens.sp_8))
+            .pr(rem(if closes { tokens.sp_4 } else { tokens.sp_8 }))
+            .gap(rem(tokens.sp_6))
+            .items_center()
+            .rounded(rem(tokens.r_sm))
+            .border_1()
+            .border_color(colour.opacity(0.40))
+            .bg(colour.opacity(0.12))
+            .typed(tokens.type_small)
+            .text_size(rem(tokens.fs_xs))
+            .text_color(tokens.fg)
+            .child(div().flex_none().text_color(colour).child(glyph.at(tokens.icon_sm)))
+            .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(words))
+            .when(closes, |pill| {
+                pill.child(
+                    div()
+                        .id("notice-dismiss")
+                        .role(Role::Button)
+                        .test_support()
+                        .aria_label(SharedString::from("Dismiss"))
+                        .tooltip(tip("Dismiss"))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .size(rem(tokens.sp_16))
+                        .rounded(rem(tokens.r_xs))
+                        .text_color(tokens.fg_muted)
+                        .cursor_pointer()
+                        .hover(move |style| style.text_color(tokens.fg).bg(tokens.hover_fill))
+                        .child(Glyph::Close.at(tokens.icon_xs))
+                        .on_click(move |_, _, cx| {
                             heard.update(cx, |heard, cx| {
                                 if heard.dismiss_notice(serial) {
                                     cx.notify();
                                 }
                             });
-                        },
-                    )),
-            )
+                        }),
+                )
+            })
+            .with_animation(ElementId::from(("notice-fade", serial)), Animation::new(NOTICE_FOR), |pill, delta| pill.opacity(opacity(delta)))
             .into_any_element()
     }
 }

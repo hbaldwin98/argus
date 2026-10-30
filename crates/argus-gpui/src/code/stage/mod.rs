@@ -16,6 +16,7 @@
 
 mod keys;
 mod outline;
+mod tabs;
 mod widths;
 
 use std::cell::Cell;
@@ -114,7 +115,7 @@ impl CodeStage {
         let (find_typing, find_keys) = super::side::wire_find(&find, &heard, &caller, window, cx);
         let (glob_typing, glob_keys) = super::side::wire_glob(&glob, &heard, &caller, window, cx);
         // The strip names the checkout and its branch, and carries the button for this view's keys.
-        let (saying, helping) = (heard.clone(), caller.clone());
+        let (saying, helping, tabbing) = (heard.clone(), caller.clone(), (heard.clone(), caller.clone()));
         let stage = Self {
             heard: heard.clone(),
             caller,
@@ -141,7 +142,7 @@ impl CodeStage {
         };
         Slots::of(cx).offer(
             Stage::Code,
-            Offer::default().says(move |cx| Says { trail: trail(saying.read(cx).code.as_deref()), ..Says::default() }).tools(move |_, cx| {
+            Offer::default().says(move |cx| Says { trail: trail(saying.read(cx).code.as_deref()), ..Says::default() }).tabs(move |_, cx| tabs::tabs(&tabbing.0, &tabbing.1, cx)).tools(move |_, cx| {
                 let tokens = *Tokens::global(cx);
                 let caller = helping.clone();
                 icon_button("code-help", "Keys for this view", false, &tokens)

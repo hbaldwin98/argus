@@ -8,27 +8,19 @@ use argus_desktop_core::checkouts::marks;
 use argus_desktop_core::code::side::scope_tip;
 use argus_desktop_core::code::stage::{CodeClick, CodeGesture, CodePage};
 use gpui_kit::component::{h_flex, v_flex};
-use gpui_kit::{div, prelude::*, AnyElement, App, Context, Role, SharedString, TestSupportExt as _, Window};
+use gpui_kit::{div, prelude::*, AnyElement, App, Context, SharedString, TestSupportExt as _, Window};
 
 use super::super::stage::CodeStage;
 use crate::kit::ghosts::ghosts;
-use crate::kit::segment::{count, pill, track};
 use crate::kit::tip::tip;
 use crate::kit::tree::{self, Row};
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl CodeStage {
-    /// `.code-tools`: the checkout's name and a two-way choice of which files the tree lists.
-    fn scope(&self, page: &CodePage, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let choice = |id: &'static str, label: &'static str, only: bool, shown: Option<usize>| {
-            pill(id, Role::RadioButton, page.changed_only == only, tokens)
-                .child(label)
-                .when_some(shown, |pill, n| pill.child(count(n.to_string(), tokens)))
-                .on_click(cx.listener(move |this, _, _, cx| this.send(CodeGesture::Click { target: CodeClick::ChangedOnly { only } }, cx)))
-        };
-        let all = choice("code-all", "All", false, None);
-        let changed = choice("code-changed-only", "Changed", true, Some(page.changed));
+    /// `.code-tools`: the checkout's name. Which files the tree lists is the title bar's to choose
+    /// (`stage::tabs`).
+    fn scope(&self, page: &CodePage, tokens: &Tokens) -> impl IntoElement {
         h_flex()
             .id("code-scope-row")
             .test_support()
@@ -50,7 +42,6 @@ impl CodeStage {
                     .tooltip(tip(scope_tip(page).to_owned()))
                     .child(SharedString::from(page.name.clone())),
             )
-            .child(track("code-which", "Which files", Role::RadioGroup, tokens).child(all).child(changed))
     }
 
     pub(super) fn tree(&self, page: &CodePage, _window: &mut Window, tokens: &Tokens, cx: &mut Context<Self>) -> AnyElement {
@@ -87,7 +78,7 @@ impl CodeStage {
             .flex_1()
             .min_h_0()
             .gap(rem(tokens.sp_6))
-            .child(self.scope(page, tokens, cx))
+            .child(self.scope(page, tokens))
             .child(
                 v_flex()
                     .id("code-list")

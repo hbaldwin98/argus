@@ -666,7 +666,7 @@ fn a_refused_send_keeps_the_box_and_its_words(cx: &mut TestAppContext) {
     type_text(cx, &opened, "keep me");
     press(cx, &opened, "secondary-enter");
     // The session answers with the same box (a refusal is a notice, not a closed box).
-    hear(cx, &opened, vec![Event::Notice { text: "the comment is empty".into() }, reviewing(commenting())]);
+    hear(cx, &opened, vec![Event::refused("the comment is empty"), reviewing(commenting())]);
     forget(&opened);
     press(cx, &opened, "secondary-enter");
     assert_eq!(taken(&opened), ["ReviewComment { body: Some(\"keep me\") }"], "the words stay across an update");

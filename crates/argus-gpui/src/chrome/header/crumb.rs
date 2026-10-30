@@ -15,18 +15,23 @@ pub fn crumb(parts: &[Part], tokens: &Tokens) -> impl IntoElement {
         .flex_shrink_0()
         .gap(rem(tokens.sp_4))
         .items_center()
-        .text_size(rem(tokens.fs_sm))
-        .text_color(tokens.fg_faint)
+        .text_size(rem(tokens.fs_md))
+        .text_color(tokens.fg_muted)
         .whitespace_nowrap()
         .overflow_hidden();
     for (at, part) in parts.iter().enumerate() {
         if at > 0 {
-            line = line.child("/");
+            line = line.child(slash(tokens));
         }
         line = match part {
-            Part::Mono(text) => line.child(div().font_family(mono.clone()).child(SharedString::from(text.clone()))),
+            Part::Mono(text) => line.child(div().font_family(mono.clone()).text_size(rem(tokens.fs_sm)).child(SharedString::from(text.clone()))),
             other => line.child(SharedString::from(other.words().to_owned())),
         };
     }
-    line.child("/")
+    line.child(slash(tokens))
+}
+
+/// The slash between two parts, a step quieter than the words.
+fn slash(tokens: &Tokens) -> impl IntoElement {
+    div().text_color(tokens.fg_fainter).child("/")
 }

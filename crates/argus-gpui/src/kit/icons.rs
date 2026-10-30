@@ -98,6 +98,8 @@ pub enum Glyph {
     FileSm,
     File,
     Help,
+    /// A picture: what a pasted image is, in the title bar's notice.
+    Picture,
     /// A padlock: what a task waits behind.
     Lock,
     /// The sessions' Filter button, and the four verbs a transcript's tool lines are told by.
@@ -177,6 +179,7 @@ impl Glyph {
             Glyph::FileSm => include_bytes!("../../assets/icons/file-sm.svg"),
             Glyph::File => include_bytes!("../../assets/icons/file.svg"),
             Glyph::Help => include_bytes!("../../assets/icons/help.svg"),
+            Glyph::Picture => include_bytes!("../../assets/icons/picture.svg"),
             Glyph::Lock => include_bytes!("../../assets/icons/lock.svg"),
             Glyph::Filter => include_bytes!("../../assets/icons/filter.svg"),
             Glyph::ToolRead => include_bytes!("../../assets/icons/tool-read.svg"),

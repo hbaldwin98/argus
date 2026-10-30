@@ -25,7 +25,7 @@ fn a_call_the_daemon_refuses_leaves_the_rail_as_it_was(cx: &mut TestAppContext) 
     open_quiet(cx, &opened);
     let before = drawn(cx, &opened);
     let refused = |cx: &mut TestAppContext, what: &str| {
-        hear(cx, &opened, vec![Event::Notice { text: format!("{what} refused") }]);
+        hear(cx, &opened, vec![Event::refused(format!("{what} refused"))]);
         assert_eq!(drawn(cx, &opened), before, "{what} changed the rail before a Rail was heard");
     };
     hover(cx, &opened, "checkout-110");
@@ -66,7 +66,7 @@ fn a_closed_pane_stays_on_the_rail_until_the_tree_drops_it(cx: &mut TestAppConte
     hear(cx, &opened, vec![picking(110, Some(2))]);
     type_key(cx, &opened, "x");
     assert!(taken(&opened).contains(&"RailKey { action: Close }".to_owned()));
-    hear(cx, &opened, vec![Event::Notice { text: "refused".into() }]);
+    hear(cx, &opened, vec![Event::refused("refused")]);
     assert!(present(cx, &opened, "pane-2"), "a refused close drew the pane gone");
     let mut without = busy();
     without.project.as_mut().unwrap().repositories[0].checkouts[0].panes.retain(|p| p.id != 2);

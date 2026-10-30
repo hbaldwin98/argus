@@ -1,5 +1,5 @@
 use super::*;
-use argus_desktop_core::chrome::strip::Says;
+use argus_desktop_core::chrome::strip::{Part, Says};
 use argus_desktop_core::system::clock::Clock;
 use crate::keys::root::tests::open;
 use argus_desktop_core::connection::page::{Connection, Event, Frame, FrameCursor, Rail, Shown, Status};
@@ -37,13 +37,14 @@ fn the_header_names_the_pane_on_screen_and_says_nothing_with_none() {
 }
 
 #[test]
-fn git_is_named_by_its_title_alone() {
+fn git_is_named_by_its_title_after_the_repository_it_reads() {
     let mut heard = Heard::new();
     heard.hear(Event::Rail(Box::new(Rail { shown: Some(shown("Trim context", "working")), ..Rail::default() })));
     let open = heard.open();
     heard.git.enter(open, None);
     let strip = Shell::strip(&heard, &Says::default(), &clock());
-    assert_eq!((strip.title.as_str(), strip.crumb.is_empty(), strip.pane), ("Git", true, None));
+    // The branch joins the crumb once a review or a history says which it reads.
+    assert_eq!((strip.title.as_str(), strip.crumb, strip.pane), ("Git", vec![Part::Text("argus".into())], None));
 }
 
 fn grid(rows: u16, cols: u16) -> Event {

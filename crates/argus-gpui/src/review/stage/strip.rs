@@ -1,39 +1,23 @@
-//! The strip above the tab: the branch, the tabs, the files' count and the refresh and close
-//! buttons, and the filter field while History is the tab.
+//! The strip above the tab: the branch, the refresh and close buttons, and the filter field while
+//! History is the tab. The tabs and the files' count are the title bar's (`tabs`).
 
 use argus_desktop_core::connection::page::Call;
 use argus_desktop_core::layout::docks::{DockGesture, Panel};
 use gpui_kit::component::{h_flex, ActiveTheme as _};
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{div, prelude::*, Context, Role, SharedString};
+use gpui_kit::{div, prelude::*, Context, SharedString};
 
 use super::GitStage;
-use crate::kit::counts::counts;
 use crate::kit::tip::tip;
 use crate::kit::icon_button::icon_button;
 use crate::kit::icons::Glyph;
-use crate::kit::segment;
 use crate::review::entry::Tab;
 use crate::style::Typed as _;
 use crate::theme::scale::rem;
 use crate::theme::Tokens;
 
 impl GitStage {
-    pub(super) fn tab(&self, id: &'static str, label: &'static str, count: Option<usize>, tab: Tab, on: bool, cx: &mut Context<Self>) -> impl IntoElement {
-        let tokens = *Tokens::global(cx);
-        segment::pill(id, Role::Tab, on, &tokens)
-            .child(label)
-            .when_some(count, |pill, n| pill.child(segment::count(n.to_string(), &tokens)))
-            .on_click(cx.listener(move |this, _, window, cx| {
-                // A pill takes focus when clicked, and the tab's keys are heard
-                // only on the stage itself.
-                window.focus(&this.focus, cx);
-                this.show(tab, cx)
-            }))
-    }
-
-    /// The strip above the tab: the branch, the tabs, the files' count and the
-    /// two buttons.
+    /// The strip above the tab: the branch and the buttons.
     pub(super) fn strip(&self, tab: Tab, tokens: &Tokens, cx: &mut Context<Self>) -> impl IntoElement {
         let heard = self.heard.read(cx);
         let (review, history) = (heard.review.clone(), heard.history.clone());
@@ -44,8 +28,6 @@ impl GitStage {
             Tab::Changes => review.as_ref().map(|page| (page.branch.clone(), page.name.clone())),
             Tab::History => history.as_ref().map(|page| (page.branch.clone(), page.name.clone())),
         };
-        // The pane's own list head counts the changes, so the tab names them only.
-        let files = None;
         let changes_on = tab == Tab::Changes;
         let mono = cx.theme().mono_font_family.clone();
         let close_label = if changes_on { "Close the review" } else { "Close the history" };
@@ -81,36 +63,12 @@ impl GitStage {
                         .child(SharedString::from(branch)),
                 )
             })
-            .child(
-                segment::track("git-tabs", "Git view", Role::TabList, tokens)
-                    .child(self.tab("git-tab-changes", "Changes", files, Tab::Changes, changes_on, cx))
-                    .child(self.tab("git-tab-history", "History", None, Tab::History, !changes_on, cx)),
-            )
             // `.meta`: what the history lists, beside the tabs as the page's head says it.
             .when(!changes_on && history.is_some(), |strip| {
                 strip.child(div().typed(tokens.type_small).text_color(tokens.fg_muted).child("newest 100 on HEAD"))
             })
             .child(div().flex_1())
             .when(!changes_on && history.is_some(), |strip| strip.child(self.filter.clone()))
-            .when_some(review.as_ref().filter(|page| changes_on && !page.files.is_empty()), |strip, page| {
-                let plural = if page.files.len() == 1 { "" } else { "s" };
-                strip.child(
-                    h_flex()
-                        .id("review-count")
-                        .test_support()
-                        .aria_label(SharedString::from(format!(
-                            "{} file{plural} \u{b7} +{} \u{2212}{}",
-                            page.files.len(),
-                            page.added,
-                            page.removed
-                        )))
-                        .gap(rem(tokens.sp_4))
-                        .typed(tokens.type_small)
-                        .text_color(tokens.fg_muted)
-                        .child(SharedString::from(format!("{} file{plural} \u{b7}", page.files.len())))
-                        .child(counts(page.added, page.removed, tokens)),
-                )
-            })
             .when(changes_on && review.is_some(), |strip| {
                 strip.child(
                     icon_button("review-refresh", "Refresh", false, tokens)

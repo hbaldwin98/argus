@@ -56,7 +56,7 @@ fn settle(cx: &mut TestAppContext, opened: &Opened) {
 fn say(cx: &mut TestAppContext, opened: &Opened, text: &str) {
     cx.update(|cx| {
         opened.heard.update(cx, |heard, cx| {
-            heard.hear(Event::Notice { text: text.to_owned() });
+            heard.hear(Event::refused(text.to_owned()));
             cx.notify();
         })
     });
@@ -126,4 +126,52 @@ fn the_same_words_again_start_the_six_seconds_over(cx: &mut TestAppContext) {
     say(cx, &opened, "no pane is on screen");
     wait(cx, &opened, Duration::from_secs(4));
     assert!(showing(cx, &opened).is_some(), "a repeat did not restart the timer");
+}
+
+fn say_as(cx: &mut TestAppContext, opened: &Opened, event: Event) {
+    cx.update(|cx| {
+        opened.heard.update(cx, |heard, cx| {
+            heard.hear(event);
+            cx.notify();
+        })
+    });
+    settle(cx, opened);
+}
+
+fn present(cx: &mut TestAppContext, opened: &Opened, id: &'static str) -> bool {
+    cx.update_window(opened.handle, |_, window, _| window.try_find(id.to_owned()).is_some()).unwrap()
+}
+
+#[gpui_kit::test]
+fn a_done_notice_has_no_close_and_the_others_have_one(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    say_as(cx, &opened, Event::done("committed"));
+    assert!(!present(cx, &opened, "notice-dismiss"));
+    for event in [Event::arrived("pasted a.png"), Event::refused("no pane"), Event::failed("could not copy")] {
+        say_as(cx, &opened, event);
+        assert!(present(cx, &opened, "notice-dismiss"));
+    }
+}
+
+#[gpui_kit::test]
+fn a_long_notice_is_cut_at_360px_and_keeps_its_whole_words_for_the_tooltip_and_the_screen_reader(cx: &mut TestAppContext) {
+    let opened = open(cx);
+    let words = "That session's pane has ended; open it again from the repository's recent sessions, which are listed under it";
+    say_as(cx, &opened, Event::refused(words));
+    let (width, label) = cx
+        .update_window(opened.handle, |_, window, _| {
+            let found = window.find("notice".to_owned());
+            (f32::from(found.bounds().size.width), found.label().map(str::to_owned))
+        })
+        .unwrap();
+    assert!(width <= 360.5, "{width}");
+    assert_eq!(label.as_deref(), Some(words));
+}
+
+#[test]
+fn the_fade_holds_then_goes_over_the_last_of_the_six_seconds() {
+    assert_eq!(opacity(0.0), 1.0);
+    assert_eq!(opacity(1.0 - FADE), 1.0);
+    assert!(opacity(1.0 - FADE / 2.0) < 1.0 && opacity(1.0 - FADE / 2.0) > 0.0);
+    assert_eq!(opacity(1.0), 0.0);
 }
