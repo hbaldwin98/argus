@@ -79,7 +79,7 @@ A project finds its repositories under `root`, names them in `repos`, or both:
 
 ### Agent templates
 
-With no `[[agent]]` entries, Argus supplies `claude`, `codex`, `opencode` (`opencode --auto`), `pi`,
+With no `[[agent]]` entries, Argus supplies `claude`, `codex`, `opencode` (`opencode --standalone --auto`), `pi`,
 `agy` and `agent` (Cursor's CLI). Any `[[agent]]` entry replaces that list, so list every template
 you want.
 

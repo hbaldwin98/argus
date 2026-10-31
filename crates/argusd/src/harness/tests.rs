@@ -844,8 +844,8 @@ note: init.body,
   });
 };
 
-const { ArgusStatus } = await import(pathToFileURL(process.argv[2]));
-const hooks = await ArgusStatus();
+const { default: plugin } = await import(pathToFileURL(process.argv[2]));
+const hooks = await plugin.server();
 await hooks["chat.message"]({ sessionID: "old" });
 await hooks.event({
   event: {
@@ -975,8 +975,8 @@ const client = {{
     promptAsync: async (args) => calls.push(["prompt", args]),
   }},
 }};
-const {{ ArgusStatus }} = await import(pathToFileURL(process.argv[2]));
-const hooks = await ArgusStatus({{ client }});
+const {{ default: plugin }} = await import(pathToFileURL(process.argv[2]));
+const hooks = await plugin.server({{ client }});
 const event = (type, properties) => hooks.event({{ event: {{ type, properties }} }});
 await event("session.created", {{ info: {{ id: "root" }} }});
 await event("session.status", {{ sessionID: "root", status: {{ type: "busy" }} }});
@@ -993,6 +993,120 @@ process.stdout.write(JSON.stringify(calls));
             ["prompt", { "path": { "id": "root" }, "body": { "parts": [{ "type": "text", "text": "also run clippy" }] } }],
         ])
     );
+}
+
+/// A plugin context for opencode V2 that records the hooks registered on
+/// it and holds its event stream shut until `release()`, so a script can
+/// order hook calls before the events.
+const V2_CONTEXT: &str = r#"
+const hooks = new Map();
+const prompts = [];
+let release;
+const gate = new Promise((resolve) => (release = resolve));
+const v2 = (events) => ({
+  session: {
+    hook: async (name, cb) => (hooks.set(`session.${name}`, cb), { dispose: async () => {} }),
+    prompt: async (input) => prompts.push(input),
+  },
+  tool: {
+    hook: async (name, cb) => (hooks.set(`tool.${name}`, cb), { dispose: async () => {} }),
+  },
+  event: {
+    subscribe: () => (async function* () { await gate; yield* events; })(),
+  },
+});
+const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
+"#;
+
+#[test]
+fn the_opencode_plugin_reports_through_the_v2_plugin_api() {
+    // opencode 2 refuses a module without a default `{ id, setup }`, and
+    // its events carry `data` where V1's carried `properties`.
+    let script = format!(
+        r#"
+import {{ pathToFileURL }} from "node:url";
+{V2_CONTEXT}
+const reports = [];
+globalThis.fetch = async (url, init) => {{
+  if (url.endsWith("/inbox")) return {{ ok: false }};
+  const body = url.endsWith("/telemetry") ? JSON.parse(init.body) : init.body;
+  reports.push({{ url, session: init.headers["X-Argus-Session"], body }});
+}};
+process.env.ARGUS_INSTRUCTIONS = "name your row";
+const {{ default: plugin }} = await import(pathToFileURL(process.argv[2]));
+await plugin.setup(v2([
+  {{ id: "e1", type: "session.execution.failed", data: {{ sessionID: "old", error: {{ type: "provider", message: "rate limited\nretry later" }} }} }},
+  {{ id: "e2", type: "session.created", data: {{ sessionID: "child", parentID: "old" }} }},
+  {{ id: "e3", type: "permission.asked", data: {{ sessionID: "child", id: "p1", action: "bash", resources: [], message: "Approve child tool" }} }},
+  {{ id: "e4", type: "session.deleted", data: {{ sessionID: "child" }} }},
+  {{ id: "e5", type: "session.created", data: {{ sessionID: "new" }} }},
+  {{ id: "e6", type: "session.step.started", data: {{ sessionID: "new", assistantMessageID: "a1", model: {{ id: "m1", providerID: "p" }} }} }},
+  {{ id: "e7", type: "session.step.ended", data: {{ sessionID: "new", assistantMessageID: "a1", cost: 0.5, tokens: {{ input: 10, output: 5, reasoning: 1, cache: {{ read: 2, write: 3 }} }} }} }},
+  {{ id: "e8", type: "session.status", data: {{ sessionID: "new", status: {{ type: "busy" }} }} }},
+  {{ id: "e9", type: "session.status", data: {{ sessionID: "new", status: {{ type: "idle" }} }} }},
+]));
+await hooks.get("session.prompt")({{ sessionID: "old", messageID: "m", prompt: {{}}, delivery: "queue" }});
+await hooks.get("tool.execute.before")({{ tool: "bash", sessionID: "old" }});
+await hooks.get("tool.execute.after")({{ tool: "bash", sessionID: "old", status: "completed" }});
+const context = {{ sessionID: "old", system: [] }};
+await hooks.get("session.context")(context);
+release();
+await settle();
+process.stdout.write(JSON.stringify({{ id: plugin.id, reports, system: context.system }}));
+"#
+    );
+    let Some(out) = run_node(Harness::opencode().plugin.unwrap().source, &script) else {
+        return;
+    };
+    let url = |route: &str| format!("http://127.0.0.1/pane/1/{route}");
+    assert_eq!(out["id"], "argus-status");
+    assert_eq!(out["system"], json!([{ "type": "text", "text": "name your row" }]));
+    assert_eq!(
+        out["reports"],
+        json!([
+            { "url": url("session"), "session": "old", "body": "old" },
+            { "url": url("status/working"), "session": "old", "body": "" },
+            { "url": url("telemetry"), "session": "old", "body": { "tool": "bash" } },
+            { "url": url("telemetry"), "session": "old", "body": { "tool": "" } },
+            { "url": url("status/failed"), "session": "old", "body": "rate limited" },
+            { "url": url("status/working"), "session": "child", "body": "" },
+            { "url": url("status/waiting"), "session": "child", "body": "Approve child tool" },
+            { "url": url("status/idle"), "session": "child", "body": "" },
+            { "url": url("session"), "session": "new", "body": "new" },
+            { "url": url("status/idle"), "session": "new", "body": "" },
+            { "url": url("telemetry"), "session": "new", "body": {
+                "model": "m1", "context_tokens": 21, "input_tokens": 15, "output_tokens": 6, "cost_usd": 0.5,
+            } },
+            { "url": url("status/working"), "session": "new", "body": "" },
+            { "url": url("status/idle"), "session": "new", "body": "" },
+        ])
+    );
+}
+
+#[test]
+fn the_opencode_plugin_takes_messages_through_opencode_v2() {
+    let script = format!(
+        r#"
+import {{ pathToFileURL }} from "node:url";
+{INBOX_STUB}
+{V2_CONTEXT}
+globalThis.fetch = stubFetch([
+  {{ Message: {{ text: "also run clippy" }} }},
+]);
+const {{ default: plugin }} = await import(pathToFileURL(process.argv[2]));
+await plugin.setup(v2([
+  {{ id: "e1", type: "session.created", data: {{ sessionID: "root" }} }},
+  {{ id: "e2", type: "session.status", data: {{ sessionID: "root", status: {{ type: "busy" }} }} }},
+]));
+release();
+await new Promise((resolve) => setTimeout(resolve, 400));
+process.stdout.write(JSON.stringify(prompts));
+"#
+    );
+    let Some(prompts) = run_node(Harness::opencode().plugin.unwrap().source, &script) else {
+        return;
+    };
+    assert_eq!(prompts, json!([{ "sessionID": "root", "text": "also run clippy" }]));
 }
 
 #[test]
@@ -1046,8 +1160,8 @@ globalThis.fetch = async (url, init) => {
   reports.push({ url, note: init.body });
 };
 
-const { ArgusStatus } = await import(pathToFileURL(process.argv[2]));
-const hooks = await ArgusStatus();
+const { default: plugin } = await import(pathToFileURL(process.argv[2]));
+const hooks = await plugin.server();
 await hooks["chat.message"](
   { sessionID: "s1" },
   { parts: [{ type: "text", text: "fixing the pty deadlock\nmore" }] },

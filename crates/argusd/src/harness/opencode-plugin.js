@@ -6,7 +6,14 @@
 //
 // Everything it needs comes from the environment Argus hands the pane, so a
 // single file serves every pane in the checkout and each opencode process
-// still reports to its own row.
+// still reports to its own row. That holds only while the plugin runs in a
+// process the pane started: opencode V2 hosts plugins in a background server
+// shared by every client, which inherits the environment of whichever pane
+// started it, so Argus launches opencode with `--standalone`.
+//
+// opencode V2 loads the default export and calls `setup`; V1 from 1.18.29
+// calls `server` and takes the hooks it returns. Both report through the
+// same functions below.
 
 const BASE = process.env.ARGUS_HOOK_URL;
 const TOKEN = process.env.ARGUS_HOOK_TOKEN;
@@ -62,9 +69,9 @@ async function reportSession(sessionID) {
   }
 }
 
-// Telemetry is the pane's own conversation only, summed across its
-// assistant messages. Each message.updated repeats the whole message, so
-// usage is kept per message id and totalled, never added on each update.
+// Telemetry is the pane's own conversation only, summed across its model
+// calls. V1 repeats a whole message on each update, so usage is kept per
+// call and totalled, never added on each update.
 const usage = new Map();
 let lastTelemetry;
 
@@ -88,32 +95,37 @@ async function reportTelemetry(fields, sessionID) {
   }
 }
 
-async function messageTelemetry(info) {
-  if (info?.role !== "assistant" || !info.id) return;
-  const tokens = info.tokens ?? {};
+// One model call's usage, under a key that names the call. Both versions
+// spell tokens the same way: input, output, reasoning and cache.read/write.
+async function recordUsage(key, { cost, tokens = {}, model, sessionID }) {
   const cache = tokens.cache ?? {};
-  usage.set(info.id, {
-    cost: Number(info.cost) || 0,
+  usage.set(key, {
+    cost: Number(cost) || 0,
     input: (tokens.input ?? 0) + (cache.read ?? 0) + (cache.write ?? 0),
     output: (tokens.output ?? 0) + (tokens.reasoning ?? 0),
   });
-  let cost = 0, input = 0, output = 0;
+  let total = { cost: 0, input: 0, output: 0 };
   for (const u of usage.values()) {
-    cost += u.cost;
-    input += u.input;
-    output += u.output;
+    total.cost += u.cost;
+    total.input += u.input;
+    total.output += u.output;
   }
-  const context = usage.get(info.id).input + usage.get(info.id).output;
+  const context = usage.get(key).input + usage.get(key).output;
   await reportTelemetry(
     {
-      model: info.modelID ? String(info.modelID) : null,
+      model: model ? String(model) : null,
       context_tokens: context > 0 ? context : null,
-      input_tokens: input,
-      output_tokens: output,
-      cost_usd: cost,
+      input_tokens: total.input,
+      output_tokens: total.output,
+      cost_usd: total.cost,
     },
-    info.sessionID,
+    sessionID,
   );
+}
+
+function forgetUsage() {
+  usage.clear();
+  lastTelemetry = undefined;
 }
 
 // --- the inbox -----------------------------------------------------------
@@ -130,21 +142,18 @@ let inboxOpen = false;
 // its own.
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref?.());
 
-async function act(client, item) {
-  const session = { path: { id: rootSession } };
+async function act(send, item) {
   try {
-    if (item?.Message) {
-      const body = { parts: [{ type: "text", text: item.Message.text }] };
-      const send = client.session.promptAsync ?? client.session.prompt;
-      await send.call(client.session, { ...session, body });
-    }
+    if (item?.Message) await send(rootSession, item.Message.text);
   } catch {
     // The agent is where it is; what happens next shows in its pane.
   }
 }
 
-async function openInbox(client) {
-  if (inboxOpen || !BASE || !TOKEN || !client) return;
+// `send(sessionID, text)` puts one message to the agent, in whichever
+// version's words.
+async function openInbox(send) {
+  if (inboxOpen || !BASE || !TOKEN || !send) return;
   inboxOpen = true;
   let wait = 500;
   for (;;) {
@@ -166,7 +175,7 @@ async function openInbox(client) {
             const event = buffer.slice(0, end);
             buffer = buffer.slice(end + 2);
             for (const line of event.split("\n")) {
-              if (line.startsWith("data: ")) await act(client, JSON.parse(line.slice(6)));
+              if (line.startsWith("data: ")) await act(send, JSON.parse(line.slice(6)));
             }
           }
         }
@@ -188,65 +197,198 @@ function ownedByPane(sessionID) {
   return sessionID === rootSession;
 }
 
-// One line a human can act on, from whichever field this event carries it
-// in. An empty note is better than a serialized event under a row.
-function noteFrom(props) {
-  const raw =
-    props.title ??
-    props.error?.data?.message ??
-    props.error?.name ??
-    props.message ??
-    "";
+// One line a human can act on. An empty note is better than a serialized
+// event under a row.
+function firstLine(raw) {
   return typeof raw === "string" ? raw.split("\n")[0].trim().slice(0, 200) : "";
 }
 
-export const ArgusStatus = async ({ client } = {}) => {
+// --- what both versions report alike ------------------------------------
+
+// The instant signal: this fires when the prompt is submitted, before any
+// model call, which is what turns the row over as you hit enter.
+async function promptSubmitted(sessionID) {
+  if (ownedByPane(sessionID)) {
+    await reportSession(rootSession);
+    await report(rootSession, "working");
+  } else {
+    await report(sessionID, "working");
+  }
+}
+
+async function toolStarted(tool, sessionID) {
+  if (ownedByPane(sessionID)) await reportTelemetry({ tool: String(tool) }, sessionID);
+}
+
+async function toolEnded(sessionID) {
+  if (ownedByPane(sessionID)) await reportTelemetry({ tool: "" }, sessionID);
+}
+
+async function childCreated(sessionID) {
+  children.add(sessionID);
+  await report(sessionID, "working");
+}
+
+// OpenCode keeps the same process and plugin when the user starts a new
+// conversation. A newly created root replaces the root this pane is
+// showing; otherwise every event from the new conversation would be
+// mistaken for another session and the previous status would stick.
+async function rootCreated(sessionID) {
+  rootSession = sessionID;
+  forgetUsage();
+  await reportSession(rootSession);
+  await report(rootSession, "idle");
+}
+
+// Every other event first settles whose it is, and opens the inbox once
+// the pane has a session for it to talk to.
+async function claim(sessionID, send) {
+  if (ownedByPane(sessionID)) await reportSession(rootSession);
+  if (rootSession) void openInbox(send);
+  return sessionID ?? rootSession;
+}
+
+async function sessionDeleted(sessionID) {
+  await report(sessionID, "idle");
+  children.delete(sessionID);
+  lastSent.delete(sessionID);
+}
+
+// The authoritative one. opencode drops the session to `idle` both when a
+// turn ends and when the user aborts it, which is what keeps a manually
+// stopped agent from sitting at "working" forever.
+async function statusChanged(sessionID, status) {
+  const kind = status?.type ?? status;
+  if (kind === "idle") await report(sessionID, "idle");
+  else if (kind === "busy" || kind === "retry") await report(sessionID, "working");
+}
+
+// --- opencode V2 ---------------------------------------------------------
+
+// The model of the call in flight, per session: V2 names it when a step
+// starts and counts its tokens when the step ends.
+const stepModel = new Map();
+
+async function v2Event(event, send) {
+  const type = event?.type;
+  const data = event?.data ?? {};
+  if (type === "session.created") {
+    if (data.parentID) await childCreated(data.sessionID);
+    else await rootCreated(data.sessionID);
+    return;
+  }
+  if (type === "session.step.started") {
+    stepModel.set(data.sessionID, data.model?.id);
+    return;
+  }
+  if (type === "session.step.ended") {
+    if (ownedByPane(data.sessionID)) {
+      await recordUsage(event.id ?? data.assistantMessageID, {
+        cost: data.cost,
+        tokens: data.tokens,
+        model: stepModel.get(data.sessionID),
+        sessionID: data.sessionID,
+      });
+    }
+    return;
+  }
+  const sessionID = await claim(data.sessionID, send);
+  switch (type) {
+    case "session.status":
+      await statusChanged(sessionID, data.status);
+      break;
+    case "session.idle":
+      await report(sessionID, "idle");
+      break;
+    case "session.deleted":
+      stepModel.delete(sessionID);
+      await sessionDeleted(sessionID);
+      break;
+    case "permission.asked":
+      await report(sessionID, "waiting", firstLine(data.message ?? data.action));
+      break;
+    case "permission.replied":
+    case "session.compaction.started":
+      await report(sessionID, "working");
+      break;
+    case "session.execution.failed":
+      await report(sessionID, "failed", firstLine(data.error?.message ?? data.error?.type));
+      break;
+    default:
+      break;
+  }
+}
+
+async function setup(ctx) {
+  if (!BASE || !TOKEN) return;
+  const send = (sessionID, text) => ctx.session.prompt({ sessionID, text });
+  const registrations = await Promise.all([
+    ctx.session.hook("prompt", (ev) => promptSubmitted(ev.sessionID)),
+    // Where the agent is told it can name its own row. The system prompt
+    // is the one place a standing fact like this survives compaction.
+    ctx.session.hook("context", (ev) => {
+      if (INSTRUCTIONS) ev.system.push({ type: "text", text: INSTRUCTIONS });
+    }),
+    ctx.tool.hook("execute.before", (ev) => toolStarted(ev.tool, ev.sessionID)),
+    ctx.tool.hook("execute.after", (ev) => toolEnded(ev.sessionID)),
+  ]);
+  const stop = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: stop.signal })) {
+        await v2Event(event, send);
+      }
+    } catch {
+      // The subscription ends with the plugin; nothing to report then.
+    }
+  })();
+  return async () => {
+    stop.abort();
+    for (const registration of registrations) await registration?.dispose?.();
+  };
+}
+
+// --- opencode V1 ---------------------------------------------------------
+
+async function server({ client } = {}) {
   if (!BASE || !TOKEN) return {};
+  const send = client
+    ? (sessionID, text) => {
+        const body = { parts: [{ type: "text", text }] };
+        const prompt = client.session.promptAsync ?? client.session.prompt;
+        return prompt.call(client.session, { path: { id: sessionID }, body });
+      }
+    : undefined;
 
   return {
-    // The instant signal: this fires when the prompt is submitted, before
-    // any model call, which is what turns the row over as you hit enter.
-    "chat.message": async ({ sessionID }, ) => {
-      if (ownedByPane(sessionID)) {
-        await reportSession(rootSession);
-        await report(rootSession, "working");
-      } else {
-        await report(sessionID, "working");
-      }
-    },
+    "chat.message": async ({ sessionID }) => promptSubmitted(sessionID),
 
-    // Where the agent is told it can name its own row. opencode has no
-    // session-start hook whose output reaches the model, and the system
-    // prompt is the one place a standing fact like this survives
-    // compaction.
+    // V1 has no session-start hook whose output reaches the model either.
     "experimental.chat.system.transform": async (_input, output) => {
       if (INSTRUCTIONS) output.system.push(INSTRUCTIONS);
     },
 
-    "tool.execute.before": async ({ tool, sessionID }) => {
-      if (ownedByPane(sessionID)) await reportTelemetry({ tool: String(tool) }, sessionID);
-    },
-
-    "tool.execute.after": async ({ sessionID }) => {
-      if (ownedByPane(sessionID)) await reportTelemetry({ tool: "" }, sessionID);
-    },
+    "tool.execute.before": async ({ tool, sessionID }) => toolStarted(tool, sessionID),
+    "tool.execute.after": async ({ sessionID }) => toolEnded(sessionID),
 
     event: async ({ event }) => {
       const type = event?.type;
       const props = event?.properties ?? {};
-      const sessionID = props.sessionID ?? props.info?.id;
-
-      if (type === "session.created" && props.info?.id && props.info?.parentID) {
-        children.add(props.info.id);
-        await report(props.info.id, "working");
+      if (type === "session.created" && props.info?.id) {
+        if (props.info.parentID) await childCreated(props.info.id);
+        else await rootCreated(props.info.id);
         return;
       }
-      // OpenCode keeps the same process and plugin when the user starts a
-      // new conversation. A newly created root replaces the root this pane
-      // is showing; otherwise every event from the new conversation would
-      // be mistaken for another session and the previous status would stick.
       if (type === "message.updated") {
-        if (ownedByPane(props.info?.sessionID)) await messageTelemetry(props.info);
+        const info = props.info;
+        if (info?.role === "assistant" && info.id && ownedByPane(info.sessionID)) {
+          await recordUsage(info.id, {
+            cost: info.cost,
+            tokens: info.tokens,
+            model: info.modelID,
+            sessionID: info.sessionID,
+          });
+        }
         return;
       }
       if (type === "message.part.updated") {
@@ -254,54 +396,37 @@ export const ArgusStatus = async ({ client } = {}) => {
         if (part && ownedByPane(part.sessionID)) await reportSession(rootSession);
         return;
       }
-      if (type === "session.created" && props.info?.id && !props.info.parentID) {
-        rootSession = props.info.id;
-        usage.clear();
-        lastTelemetry = undefined;
-        await reportSession(rootSession);
-        await report(rootSession, "idle");
-        return;
-      }
-      const root = ownedByPane(sessionID);
-      if (root) await reportSession(rootSession);
-      if (rootSession) void openInbox(client);
-
+      const sessionID = await claim(props.sessionID ?? props.info?.id, send);
       switch (type) {
-        // The authoritative one. opencode drops the session to `idle` both
-        // when a turn ends and when the user aborts it, which is what keeps
-        // a manually stopped agent from sitting at "working" forever.
-        case "session.status": {
-          const kind = props.status?.type ?? props.status;
-          if (kind === "idle") await report(sessionID ?? rootSession, "idle");
-          else if (kind === "busy" || kind === "retry") {
-            await report(sessionID ?? rootSession, "working");
-          }
+        case "session.status":
+          await statusChanged(sessionID, props.status);
           break;
-        }
         case "session.idle":
-          await report(sessionID ?? rootSession, "idle");
+          await report(sessionID, "idle");
           break;
         case "session.deleted":
-          await report(sessionID ?? rootSession, "idle");
-          children.delete(sessionID);
-          lastSent.delete(sessionID);
+          await sessionDeleted(sessionID);
           break;
         case "permission.asked":
         case "permission.updated":
-          await report(sessionID ?? rootSession, "waiting", noteFrom(props));
+          await report(sessionID, "waiting", firstLine(props.title ?? props.message));
           break;
         case "permission.replied":
-          await report(sessionID ?? rootSession, "working");
-          break;
         case "session.compacted":
-          await report(sessionID ?? rootSession, "working");
+          await report(sessionID, "working");
           break;
         case "session.error":
-          await report(sessionID ?? rootSession, "failed", noteFrom(props));
+          await report(
+            sessionID,
+            "failed",
+            firstLine(props.error?.data?.message ?? props.error?.name ?? props.message),
+          );
           break;
         default:
           break;
       }
     },
   };
-};
+}
+
+export default { id: "argus-status", setup, server };

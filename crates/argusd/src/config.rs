@@ -380,8 +380,12 @@ pub fn default_agents() -> Vec<AgentConfig> {
         .into_iter()
         .map(|name| AgentConfig {
             name: name.to_string(),
+            // opencode V2 hosts plugins in one background server shared by
+            // every client, which reads the environment of whichever pane
+            // started it; a private server is what keeps each pane's
+            // reports on its own row.
             cmd: if name == "opencode" {
-                vec![name.to_string(), "--auto".to_string()]
+                ["opencode", "--standalone", "--auto"].map(String::from).to_vec()
             } else {
                 vec![name.to_string()]
             },
@@ -589,13 +593,13 @@ mod tests {
     }
 
     #[test]
-    fn the_built_in_opencode_agent_starts_in_auto_mode() {
+    fn the_built_in_opencode_agent_starts_in_auto_mode_on_its_own_server() {
         let opencode = default_agents()
             .into_iter()
             .find(|agent| agent.name == "opencode")
             .expect("the built-in opencode agent should exist");
 
-        assert_eq!(opencode.cmd, ["opencode", "--auto"]);
+        assert_eq!(opencode.cmd, ["opencode", "--standalone", "--auto"]);
     }
 
     #[test]

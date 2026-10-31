@@ -38,7 +38,7 @@ views (`view`), other agents (`agents`, `agent` to start one in a pane of its ow
 | --- | --- | --- |
 | Claude Code | hooks in `.claude/settings.local.json`; a mod under Argus's config directory (2.1.287+) | The mod delivers messages and reports context window and cost |
 | Codex | `.codex/hooks.json` | Codex asks you to trust project hooks once; the command stays identical across starts |
-| OpenCode | `.opencode/plugin/argus-status.js` | |
+| OpenCode | `.opencode/plugin/argus-status.js` | Runs with `--standalone`: a shared opencode server would report every pane to whichever started it |
 | pi | `.pi/extensions/argus-status.ts` | pi asks you to trust the project once |
 | AGY | `.agents/hooks.json` under the `argus` key | |
 | Cursor Agent | `.cursor/hooks.json` and `.cursor/rules/argus.mdc` | |
