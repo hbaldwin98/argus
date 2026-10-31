@@ -389,7 +389,17 @@ pub fn default_agents() -> Vec<AgentConfig> {
             } else {
                 vec![name.to_string()]
             },
-            env: Default::default(),
+            // opencode 2's session tab strip lets one pane hop between
+            // sessions, so the row would show one session while the pane
+            // runs another; Argus's sidebar is the tab strip. opencode
+            // hides it on its own only inside Herdr.
+            env: if name == "opencode" {
+                [("OPENCODE_CLI_CONFIG_CONTENT".to_string(), r#"{"tabs":{"mode":"off"}}"#.to_string())]
+                    .into_iter()
+                    .collect()
+            } else {
+                Default::default()
+            },
             harness: None,
             restart: Restart::Never,
         })
@@ -600,6 +610,19 @@ mod tests {
             .expect("the built-in opencode agent should exist");
 
         assert_eq!(opencode.cmd, ["opencode", "--standalone", "--auto"]);
+    }
+
+    #[test]
+    fn the_built_in_opencode_agent_hides_opencodes_session_tabs() {
+        let opencode = default_agents()
+            .into_iter()
+            .find(|agent| agent.name == "opencode")
+            .expect("the built-in opencode agent should exist");
+
+        assert_eq!(
+            opencode.env.get("OPENCODE_CLI_CONFIG_CONTENT").map(String::as_str),
+            Some(r#"{"tabs":{"mode":"off"}}"#)
+        );
     }
 
     #[test]
