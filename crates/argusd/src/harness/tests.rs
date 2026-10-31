@@ -818,8 +818,10 @@ fn the_opencode_plugin_maps_every_automatic_state() {
         );
     }
     // What a manual stop relies on: opencode drops the session to idle
-    // on abort as well as on a finished turn.
+    // on abort as well as on a finished turn: V1 through `session.status`,
+    // V2 through the end of an execution.
     assert!(source.contains("session.status"));
+    assert!(source.contains("session.execution.interrupted"));
     assert!(source.contains("chat.message"));
 }
 
@@ -1042,8 +1044,10 @@ await plugin.setup(v2([
   {{ id: "e5", type: "session.created", data: {{ sessionID: "new" }} }},
   {{ id: "e6", type: "session.step.started", data: {{ sessionID: "new", assistantMessageID: "a1", model: {{ id: "m1", providerID: "p" }} }} }},
   {{ id: "e7", type: "session.step.ended", data: {{ sessionID: "new", assistantMessageID: "a1", cost: 0.5, tokens: {{ input: 10, output: 5, reasoning: 1, cache: {{ read: 2, write: 3 }} }} }} }},
-  {{ id: "e8", type: "session.status", data: {{ sessionID: "new", status: {{ type: "busy" }} }} }},
-  {{ id: "e9", type: "session.status", data: {{ sessionID: "new", status: {{ type: "idle" }} }} }},
+  {{ id: "e8", type: "session.execution.started", data: {{ sessionID: "new" }} }},
+  {{ id: "e9", type: "session.execution.succeeded", data: {{ sessionID: "new" }} }},
+  {{ id: "e10", type: "session.execution.started", data: {{ sessionID: "new" }} }},
+  {{ id: "e11", type: "session.execution.interrupted", data: {{ sessionID: "new", reason: "user" }} }},
 ]));
 await hooks.get("session.prompt")({{ sessionID: "old", messageID: "m", prompt: {{}}, delivery: "queue" }});
 await hooks.get("tool.execute.before")({{ tool: "bash", sessionID: "old" }});
@@ -1074,11 +1078,73 @@ process.stdout.write(JSON.stringify({{ id: plugin.id, reports, system: context.s
             { "url": url("status/idle"), "session": "child", "body": "" },
             { "url": url("session"), "session": "new", "body": "new" },
             { "url": url("status/idle"), "session": "new", "body": "" },
+            { "url": url("status/working"), "session": "new", "body": "" },
             { "url": url("telemetry"), "session": "new", "body": {
                 "model": "m1", "context_tokens": 21, "input_tokens": 15, "output_tokens": 6, "cost_usd": 0.5,
             } },
+            { "url": url("status/idle"), "session": "new", "body": "" },
             { "url": url("status/working"), "session": "new", "body": "" },
             { "url": url("status/idle"), "session": "new", "body": "" },
+        ])
+    );
+}
+
+#[test]
+fn the_opencode_plugin_waits_on_a_question_and_says_why_it_retries() {
+    // The question tool stops the agent as a permission does, and a form
+    // names its session inside itself. A retry keeps the row working with
+    // the error under it until the next model call starts. A compaction's
+    // cost counts, but its tokens are the old transcript, not the context.
+    let script = format!(
+        r#"
+import {{ pathToFileURL }} from "node:url";
+{V2_CONTEXT}
+const reports = [];
+globalThis.fetch = async (url, init) => {{
+  if (url.endsWith("/inbox")) return {{ ok: false }};
+  const body = url.endsWith("/telemetry") ? JSON.parse(init.body) : init.body;
+  reports.push({{ url, session: init.headers["X-Argus-Session"], body }});
+}};
+const {{ default: plugin }} = await import(pathToFileURL(process.argv[2]));
+await plugin.setup(v2([
+  {{ id: "e1", type: "session.created", data: {{ sessionID: "s" }} }},
+  {{ id: "e2", type: "session.execution.started", data: {{ sessionID: "s" }} }},
+  {{ id: "e3", type: "form.created", data: {{ form: {{ id: "f1", sessionID: "s", title: "Which branch?\nmore", fields: [] }} }} }},
+  {{ id: "e4", type: "form.replied", data: {{ id: "f1", sessionID: "s", answer: {{}} }} }},
+  {{ id: "e5", type: "form.created", data: {{ form: {{ id: "f2", sessionID: "s", title: "Again?", fields: [] }} }} }},
+  {{ id: "e6", type: "form.cancelled", data: {{ id: "f2", sessionID: "s" }} }},
+  {{ id: "e7", type: "session.retry.scheduled", data: {{ sessionID: "s", assistantMessageID: "a1", attempt: 1, at: 0, error: {{ type: "provider", message: "overloaded\ndetail" }} }} }},
+  {{ id: "e8", type: "session.step.started", data: {{ sessionID: "s", assistantMessageID: "a1", model: {{ id: "m1", providerID: "p" }} }} }},
+  {{ id: "e9", type: "session.step.ended", data: {{ sessionID: "s", assistantMessageID: "a1", cost: 0.5, tokens: {{ input: 10, output: 5 }} }} }},
+  {{ id: "e10", type: "session.compaction.ended", data: {{ sessionID: "s", reason: "auto", model: {{ id: "m2", providerID: "p" }}, text: "", cost: 0.25, tokens: {{ input: 100, output: 7 }} }} }},
+]));
+release();
+await settle();
+process.stdout.write(JSON.stringify(reports));
+"#
+    );
+    let Some(reports) = run_node(Harness::opencode().plugin.unwrap().source, &script) else {
+        return;
+    };
+    let url = |route: &str| format!("http://127.0.0.1/pane/1/{route}");
+    assert_eq!(
+        reports,
+        json!([
+            { "url": url("session"), "session": "s", "body": "s" },
+            { "url": url("status/idle"), "session": "s", "body": "" },
+            { "url": url("status/working"), "session": "s", "body": "" },
+            { "url": url("status/waiting"), "session": "s", "body": "Which branch?" },
+            { "url": url("status/working"), "session": "s", "body": "" },
+            { "url": url("status/waiting"), "session": "s", "body": "Again?" },
+            { "url": url("status/working"), "session": "s", "body": "" },
+            { "url": url("status/working"), "session": "s", "body": "retrying: overloaded" },
+            { "url": url("status/working"), "session": "s", "body": "" },
+            { "url": url("telemetry"), "session": "s", "body": {
+                "model": "m1", "context_tokens": 15, "input_tokens": 10, "output_tokens": 5, "cost_usd": 0.5,
+            } },
+            { "url": url("telemetry"), "session": "s", "body": {
+                "model": "m2", "context_tokens": 15, "input_tokens": 110, "output_tokens": 12, "cost_usd": 0.75,
+            } },
         ])
     );
 }
@@ -1096,7 +1162,7 @@ globalThis.fetch = stubFetch([
 const {{ default: plugin }} = await import(pathToFileURL(process.argv[2]));
 await plugin.setup(v2([
   {{ id: "e1", type: "session.created", data: {{ sessionID: "root" }} }},
-  {{ id: "e2", type: "session.status", data: {{ sessionID: "root", status: {{ type: "busy" }} }} }},
+  {{ id: "e2", type: "session.execution.started", data: {{ sessionID: "root" }} }},
 ]));
 release();
 await new Promise((resolve) => setTimeout(resolve, 400));

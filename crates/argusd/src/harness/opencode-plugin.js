@@ -95,9 +95,13 @@ async function reportTelemetry(fields, sessionID) {
   }
 }
 
+// The newest call's size, which is what the context holds now. A call that
+// does not measure it (a compaction) leaves the last one standing.
+let lastContext = null;
+
 // One model call's usage, under a key that names the call. Both versions
 // spell tokens the same way: input, output, reasoning and cache.read/write.
-async function recordUsage(key, { cost, tokens = {}, model, sessionID }) {
+async function recordUsage(key, { cost, tokens = {}, model, sessionID, measuresContext = true }) {
   const cache = tokens.cache ?? {};
   usage.set(key, {
     cost: Number(cost) || 0,
@@ -110,11 +114,14 @@ async function recordUsage(key, { cost, tokens = {}, model, sessionID }) {
     total.input += u.input;
     total.output += u.output;
   }
-  const context = usage.get(key).input + usage.get(key).output;
+  if (measuresContext) {
+    const context = usage.get(key).input + usage.get(key).output;
+    lastContext = context > 0 ? context : null;
+  }
   await reportTelemetry(
     {
       model: model ? String(model) : null,
-      context_tokens: context > 0 ? context : null,
+      context_tokens: lastContext,
       input_tokens: total.input,
       output_tokens: total.output,
       cost_usd: total.cost,
@@ -125,6 +132,7 @@ async function recordUsage(key, { cost, tokens = {}, model, sessionID }) {
 
 function forgetUsage() {
   usage.clear();
+  lastContext = null;
   lastTelemetry = undefined;
 }
 
@@ -279,6 +287,9 @@ async function v2Event(event, send) {
   }
   if (type === "session.step.started") {
     stepModel.set(data.sessionID, data.model?.id);
+    // A model call under way: clears a retry's note once the retry is
+    // answered, and costs nothing while the row already says working.
+    await report(data.sessionID, "working");
     return;
   }
   if (type === "session.step.ended") {
@@ -292,12 +303,32 @@ async function v2Event(event, send) {
     }
     return;
   }
-  const sessionID = await claim(data.sessionID, send);
+  // A summary is a paid model call like any other, but the transcript it
+  // read is the one it replaces, so it says nothing of the context left.
+  if (type === "session.compaction.ended") {
+    if (ownedByPane(data.sessionID)) {
+      await recordUsage(event.id ?? `compaction ${data.sessionID}`, {
+        cost: data.cost,
+        tokens: data.tokens,
+        model: data.model?.id,
+        sessionID: data.sessionID,
+        measuresContext: false,
+      });
+    }
+    return;
+  }
+  // A form names its session inside itself; every other event beside it.
+  const sessionID = await claim(data.sessionID ?? data.form?.sessionID, send);
   switch (type) {
-    case "session.status":
-      await statusChanged(sessionID, data.status);
+    // V2's public stream has no `session.status` or `session.idle`; those
+    // are V1's. An execution is one run of the agent loop, and it ends in
+    // exactly one of succeeded, interrupted (a manual stop among them) or
+    // failed, which is what opencode's own TUI goes idle on.
+    case "session.execution.started":
+      await report(sessionID, "working");
       break;
-    case "session.idle":
+    case "session.execution.succeeded":
+    case "session.execution.interrupted":
       await report(sessionID, "idle");
       break;
     case "session.deleted":
@@ -307,9 +338,21 @@ async function v2Event(event, send) {
     case "permission.asked":
       await report(sessionID, "waiting", firstLine(data.message ?? data.action));
       break;
+    // The question tool: the agent has stopped to ask the user something,
+    // and only an answer or a dismissal sets it going again.
+    case "form.created":
+      await report(sessionID, "waiting", firstLine(data.form?.title));
+      break;
     case "permission.replied":
+    case "form.replied":
+    case "form.cancelled":
     case "session.compaction.started":
       await report(sessionID, "working");
+      break;
+    // A provider error the loop will try again: still working, but a row
+    // stuck on one call should say why.
+    case "session.retry.scheduled":
+      await report(sessionID, "working", firstLine(`retrying: ${data.error?.message ?? data.error?.type ?? ""}`));
       break;
     case "session.execution.failed":
       await report(sessionID, "failed", firstLine(data.error?.message ?? data.error?.type));
