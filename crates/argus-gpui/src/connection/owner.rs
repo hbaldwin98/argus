@@ -143,6 +143,15 @@ impl Owner {
                 }
             }
             Call::Edit { gesture } => self.send(vec![gesture.message()]),
+            // A drag across a pane: the cells are the session's, so the text is read there.
+            Call::Copy { from, to } => {
+                let text = lock(&self.session).selected_text(from, to);
+                if !text.is_empty() {
+                    if let Err(why) = clipboard::System.write(&text) {
+                        self.act(|s| s.note(format!("could not copy: {why}")));
+                    }
+                }
+            }
             // Written here, so the window's views are never granted the clipboard (SHELL-SYSTEM-3).
             Call::CopyText { text } => {
                 if let Err(why) = clipboard::System.write(&text) {
